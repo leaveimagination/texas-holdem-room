@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import process from "node:process";
 import next from "next";
 import { LiveRoomStore, type KeyValueStore } from "./live-room-store";
-import { createGameServer } from "./realtime/game-server";
+import { createGameServer, handleGameServerUpgrade } from "./realtime/game-server";
 import { RoomRepository } from "./repositories/room-repository";
 import { createRedisClient } from "./redis";
 
@@ -18,25 +18,34 @@ const isDev = isExplicitProd
   ? true
   : process.env.NODE_ENV !== "production";
 
-const app = next({ dev: isDev });
+let requestHandler: ReturnType<ReturnType<typeof next>["getRequestHandler"]> | null = null;
+const server = createServer((req, res) => {
+  void requestHandler?.(req, res);
+});
+const app = next({ dev: isDev, hostname: host, port, httpServer: server });
 
 void (async () => {
   try {
     await app.prepare();
 
-    const requestHandler = app.getRequestHandler();
-    const server = createServer((req, res) => {
-      void requestHandler(req, res);
-    });
+    requestHandler = app.getRequestHandler();
+    const nextUpgradeHandler = app.getUpgradeHandler();
     const roomRepository = new RoomRepository();
 
-    createGameServer({
+    const gameServer = createGameServer({
       server,
       liveRooms: new LiveRoomStore(createKeyValueStore(createRedisClient())),
       auth: {
         verifyParticipantToken: (roomId, token) => roomRepository.verifyParticipantToken(roomId, token),
         verifyHostToken: (roomId, token) => roomRepository.verifyHostToken(roomId, token)
       }
+    });
+    server.on("upgrade", (req, socket, head) => {
+      if (handleGameServerUpgrade(gameServer, req, socket, head)) {
+        return;
+      }
+
+      void nextUpgradeHandler(req, socket, head);
     });
 
     server.listen(port, host, () => {

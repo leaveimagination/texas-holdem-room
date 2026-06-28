@@ -119,6 +119,7 @@ export function CreateRoomForm() {
         <section aria-label="Room links" style={{ display: "grid", gap: 8 }}>
           <a href={result.inviteUrl}>Invite link</a>
           <a href={result.hostUrl}>Host link</a>
+          <p style={{ margin: 0, color: "var(--muted)" }}>Keep the host link private.</p>
         </section>
       ) : null}
     </form>

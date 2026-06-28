@@ -1,4 +1,6 @@
 import type { Server as HttpServer } from "node:http";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData } from "ws";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 import { ClientMessageSchema } from "@/lib/realtime/messages";
@@ -24,17 +26,6 @@ export function createGameServer(options: GameServerOptions): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new SessionRegistry();
 
-  options.server.on("upgrade", (request, socket, head) => {
-    const pathname = new URL(request.url ?? "", "http://localhost").pathname;
-    if (pathname !== path) {
-      return;
-    }
-
-    wss.handleUpgrade(request, socket, head, (upgradedSocket) => {
-      wss.emit("connection", upgradedSocket, request);
-    });
-  });
-
   wss.on("connection", (socket) => {
     const session = sessions.add("", null, socket);
 
@@ -48,6 +39,24 @@ export function createGameServer(options: GameServerOptions): WebSocketServer {
   });
 
   return wss;
+}
+
+export function handleGameServerUpgrade(
+  wss: WebSocketServer,
+  request: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+  path = "/ws"
+): boolean {
+  const pathname = new URL(request.url ?? "", "http://localhost").pathname;
+  if (pathname !== path) {
+    return false;
+  }
+
+  wss.handleUpgrade(request, socket, head, (upgradedSocket) => {
+    wss.emit("connection", upgradedSocket, request);
+  });
+  return true;
 }
 
 async function handleIncomingMessage(

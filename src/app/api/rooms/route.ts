@@ -25,6 +25,7 @@ export async function POST(request: Request) {
   const room = createInitialRoomState(settings, roomId);
   const redis = createRedisClient();
   redis.on("error", () => undefined);
+  let durableRoomCreated = false;
 
   try {
     await prisma.room.create({
@@ -36,9 +37,14 @@ export async function POST(request: Request) {
         settings: settings as Prisma.InputJsonValue
       }
     });
+    durableRoomCreated = true;
 
     await new LiveRoomStore(createKeyValueStore(redis)).saveRoom(room);
   } catch (error) {
+    if (durableRoomCreated) {
+      await prisma.room.delete({ where: { id: roomId } }).catch(() => undefined);
+    }
+
     const message = error instanceof Error ? error.message : "Unable to create room";
     return NextResponse.json({ error: message }, { status: 500 });
   } finally {
@@ -47,7 +53,7 @@ export async function POST(request: Request) {
 
   const baseUrl = new URL(request.url).origin;
   const inviteUrl = `${baseUrl}/room/${roomId}`;
-  const hostUrl = `${inviteUrl}?hostToken=${encodeURIComponent(hostToken)}`;
+  const hostUrl = `${inviteUrl}?host=${encodeURIComponent(hostToken)}`;
 
   return NextResponse.json({ roomId, inviteUrl, hostUrl }, { status: 201 });
 }

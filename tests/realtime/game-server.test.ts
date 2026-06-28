@@ -3,7 +3,7 @@ import { createServer, type Server as HttpServer } from "node:http";
 import WebSocket from "ws";
 import { createInitialRoomState, type RoomState } from "@/lib/poker/engine";
 import { LiveRoomStore, type KeyValueStore } from "@/server/live-room-store";
-import { createGameServer, type RealtimeAuth } from "@/server/realtime/game-server";
+import { createGameServer, handleGameServerUpgrade, type RealtimeAuth } from "@/server/realtime/game-server";
 import { SessionRegistry } from "@/server/realtime/session-registry";
 
 class MemoryStore implements KeyValueStore {
@@ -265,7 +265,12 @@ function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
 
 async function startTestServer(liveRooms: LiveRoomStore, auth: RealtimeAuth = validAuth): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
-  createGameServer({ server, liveRooms, auth });
+  const gameServer = createGameServer({ server, liveRooms, auth });
+  server.on("upgrade", (request, socket, head) => {
+    if (!handleGameServerUpgrade(gameServer, request, socket, head)) {
+      socket.destroy();
+    }
+  });
   serversToClose.add(server);
 
   await new Promise<void>((resolve, reject) => {
