@@ -145,6 +145,25 @@ describe("engine", () => {
     expect(nextActions).not.toContainEqual({ type: "raise", minAmountTo: 25, maxAmountTo: 100 });
   });
 
+  it("finishes after the next player calls a short-big-blind completion in three-handed play", () => {
+    const started = startHand(createReadyThreeHandedState([100, 100, 15]), fixedDeck);
+    const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
+    const called = applyPlayerAction(completed, { type: "call", playerId: completed.hand!.actorId });
+
+    expect(started.seats[2].status).toBe("all-in");
+    expect(completed.hand?.finished).toBe(false);
+    expect(completed.hand?.actorId).toBe("p2");
+    expect(called.hand?.finished).toBe(true);
+    expect(called.hand?.winners).toEqual([]);
+    expect(called.hand?.betting.players).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "p1", allIn: false, streetCommitted: 20 }),
+        expect.objectContaining({ id: "p2", allIn: false, streetCommitted: 20 }),
+        expect.objectContaining({ id: "p3", allIn: true, streetCommitted: 15 })
+      ])
+    );
+  });
+
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
     expect(() => startHand(createReadyHeadsUpState([5, 15]), fixedDeck)).toThrow("No player can act after blinds");
   });
