@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPlayerAction,
   canClaimSeat,
   claimSeat,
   createInitialRoomState,
@@ -72,6 +73,67 @@ describe("room mode rules", () => {
     expect(disconnected.status).toBe("playing");
     expect(disconnected.seats[0].status).toBe("disconnected");
   });
+
+  it("eliminates zero-chip tournament players and finishes with one remaining player", () => {
+    const state = {
+      ...createPlayingHeadsUpTournamentRoom(),
+      hand: {
+        ...createPlayingHeadsUpTournamentRoom().hand!,
+        actorId: "p2",
+        betting: {
+          ...createPlayingHeadsUpTournamentRoom().hand!.betting,
+          actorId: "p2",
+          players: [
+            { id: "p1", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false },
+            { id: "p2", stack: 0, committed: 1000, streetCommitted: 1000, folded: false, allIn: false }
+          ]
+        }
+      },
+      seats: createPlayingHeadsUpTournamentRoom().seats.map((seat) =>
+        seat.participantId === "p2" ? { ...seat, chips: 0, status: "all-in" as const } : seat
+      )
+    };
+
+    const finished = applyPlayerAction(state, { type: "fold", playerId: "p2" });
+
+    expect(finished.seats.find((seat) => seat.participantId === "p2")?.status).toBe("eliminated");
+    expect(finished.status).toBe("finished");
+  });
+
+  it("increases tournament blinds after the configured number of hands", () => {
+    const state = {
+      ...createPlayingTournamentRoom(),
+      handCounter: 5,
+      hand: {
+        ...createPlayingTournamentRoom().hand!,
+        actorId: "p3",
+        number: 5,
+        betting: {
+          ...createPlayingTournamentRoom().hand!.betting,
+          actorId: "p3",
+          players: [
+            { id: "p1", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false },
+            { id: "p2", stack: 1000, committed: 0, streetCommitted: 0, folded: true, allIn: false },
+            { id: "p3", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false }
+          ]
+        }
+      },
+      seats: createPlayingTournamentRoom().seats.map((seat, index) => ({
+        ...seat,
+        participantId: `p${index + 1}`,
+        displayName: `Player ${index + 1}`,
+        chips: 1000,
+        cumulativeBuyIn: 1000,
+        status: index === 1 ? "folded" as const : "active" as const
+      }))
+    };
+
+    const finished = applyPlayerAction(state, { type: "fold", playerId: "p3" });
+
+    expect(finished.status).toBe("playing");
+    expect(finished.settings.smallBlind).toBe(20);
+    expect(finished.settings.bigBlind).toBe(40);
+  });
 });
 
 function createPlayingCashRoom() {
@@ -106,6 +168,109 @@ function createPlayingCashRoom() {
       participantId: `p${index + 1}`,
       displayName: `Player ${index + 1}`,
       chips: 1000,
+      cumulativeBuyIn: 1000,
+      status: "active" as const
+    }))
+  };
+}
+
+function createPlayingTournamentRoom() {
+  const room = createInitialRoomState(
+    {
+      mode: "tournament",
+      seats: 3,
+      initialChips: 1000,
+      smallBlind: 10,
+      bigBlind: 20,
+      actionTimerSeconds: null,
+      blindIncrease: { type: "hands", interval: 5 }
+    },
+    "room-1"
+  );
+
+  return {
+    ...room,
+    status: "playing" as const,
+    handCounter: 1,
+    hand: {
+      id: "room-1-1",
+      number: 1,
+      street: "preflop" as const,
+      board: [],
+      deck: [],
+      actorId: "p1",
+      betting: {
+        street: "preflop" as const,
+        currentBet: 0,
+        minRaise: 20,
+        actorId: "p1",
+        players: [
+          { id: "p1", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false },
+          { id: "p2", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false },
+          { id: "p3", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false }
+        ]
+      },
+      holeCardsByParticipantId: {},
+      actions: [],
+      finished: false,
+      winners: []
+    },
+    seats: room.seats.map((seat, index) => ({
+      ...seat,
+      participantId: `p${index + 1}`,
+      displayName: `Player ${index + 1}`,
+      chips: 1000,
+      cumulativeBuyIn: 1000,
+      status: "active" as const
+    }))
+  };
+}
+
+function createPlayingHeadsUpTournamentRoom() {
+  const room = createInitialRoomState(
+    {
+      mode: "tournament",
+      seats: 2,
+      initialChips: 1000,
+      smallBlind: 10,
+      bigBlind: 20,
+      actionTimerSeconds: null,
+      blindIncrease: { type: "hands", interval: 5 }
+    },
+    "room-1"
+  );
+
+  return {
+    ...room,
+    status: "playing" as const,
+    handCounter: 1,
+    hand: {
+      id: "room-1-1",
+      number: 1,
+      street: "preflop" as const,
+      board: [],
+      deck: [],
+      actorId: "p2",
+      betting: {
+        street: "preflop" as const,
+        currentBet: 0,
+        minRaise: 20,
+        actorId: "p2",
+        players: [
+          { id: "p1", stack: 1000, committed: 0, streetCommitted: 0, folded: false, allIn: false },
+          { id: "p2", stack: 0, committed: 1000, streetCommitted: 1000, folded: false, allIn: false }
+        ]
+      },
+      holeCardsByParticipantId: {},
+      actions: [],
+      finished: false,
+      winners: []
+    },
+    seats: room.seats.map((seat, index) => ({
+      ...seat,
+      participantId: `p${index + 1}`,
+      displayName: `Player ${index + 1}`,
+      chips: index === 1 ? 0 : 1000,
       cumulativeBuyIn: 1000,
       status: "active" as const
     }))

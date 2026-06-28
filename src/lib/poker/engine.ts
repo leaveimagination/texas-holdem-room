@@ -315,13 +315,13 @@ export function finishHandIfReady(state: RoomState): RoomState {
       return state;
     }
 
-    return {
+    return applyPostHandRules({
       ...state,
       hand: {
         ...state.hand,
         finished: true
       }
-    };
+    });
   }
 
   const winnerId = remainingPlayers[0].id;
@@ -341,7 +341,7 @@ export function finishHandIfReady(state: RoomState): RoomState {
     };
   });
 
-  return {
+  return applyPostHandRules({
     ...state,
     seats,
     hand: {
@@ -349,7 +349,7 @@ export function finishHandIfReady(state: RoomState): RoomState {
       finished: true,
       winners: [winnerId]
     }
-  };
+  });
 }
 
 function getActiveSeats(seats: Seat[]): ActiveSeat[] {
@@ -473,4 +473,43 @@ function normalizeBlindCompletionMinRaise(state: RoomState, action: BettingActio
   }
 
   return betting;
+}
+
+function applyPostHandRules(state: RoomState): RoomState {
+  if (state.mode !== "tournament" || !state.hand?.finished) {
+    return state;
+  }
+
+  const seats = state.seats.map((seat) => {
+    if (seat.participantId && seat.chips === 0 && seat.status !== "empty" && seat.status !== "disconnected") {
+      return { ...seat, status: "eliminated" as const };
+    }
+
+    return seat;
+  });
+  const remainingPlayers = seats.filter((seat) => seat.participantId && seat.chips > 0 && seat.status !== "eliminated" && seat.status !== "disconnected");
+  const status: RoomState["status"] = remainingPlayers.length <= 1 ? "finished" : state.status;
+  const settings =
+    status !== "finished" && shouldIncreaseBlindsAfterHand(state)
+      ? {
+          ...state.settings,
+          smallBlind: state.settings.smallBlind * 2,
+          bigBlind: state.settings.bigBlind * 2
+        }
+      : state.settings;
+
+  return {
+    ...state,
+    status,
+    settings,
+    seats
+  };
+}
+
+function shouldIncreaseBlindsAfterHand(state: RoomState): boolean {
+  if (state.mode !== "tournament" || !("blindIncrease" in state.settings) || state.settings.blindIncrease.type !== "hands") {
+    return false;
+  }
+
+  return state.hand !== null && state.hand.number > 0 && state.hand.number % state.settings.blindIncrease.interval === 0;
 }
