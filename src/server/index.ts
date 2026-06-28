@@ -9,9 +9,6 @@ import { createRedisClient } from "./redis";
 
 loadLocalEnv();
 
-const requestedPort = Number(process.env.PORT ?? "3000");
-const port = Number.isNaN(requestedPort) ? 3000 : requestedPort;
-const host = process.env.HOST ?? "127.0.0.1";
 const args = new Set(process.argv.slice(2));
 const isExplicitDev = args.has("--dev");
 const isExplicitProd = args.has("--prod");
@@ -20,6 +17,9 @@ const isDev = isExplicitProd
   : isExplicitDev
   ? true
   : process.env.NODE_ENV !== "production";
+const requestedPort = Number(process.env.PORT ?? "3000");
+const port = Number.isNaN(requestedPort) ? 3000 : requestedPort;
+const host = process.env.HOST ?? (isDev ? "127.0.0.1" : "0.0.0.0");
 
 let requestHandler: ReturnType<ReturnType<typeof next>["getRequestHandler"]> | null = null;
 const server = createServer((req, res) => {
