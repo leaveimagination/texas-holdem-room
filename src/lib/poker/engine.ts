@@ -480,6 +480,10 @@ function applyPostHandRules(state: RoomState): RoomState {
     return state;
   }
 
+  if (state.hand.winners.length === 0) {
+    return state;
+  }
+
   const seats = state.seats.map((seat) => {
     if (seat.participantId && seat.chips === 0 && seat.status !== "empty" && seat.status !== "disconnected") {
       return { ...seat, status: "eliminated" as const };

@@ -4,6 +4,7 @@ import {
   canClaimSeat,
   claimSeat,
   createInitialRoomState,
+  finishHandIfReady,
   markDisconnected,
   rebuy
 } from "@/lib/poker/engine";
@@ -133,6 +134,35 @@ describe("room mode rules", () => {
     expect(finished.status).toBe("playing");
     expect(finished.settings.smallBlind).toBe(20);
     expect(finished.settings.bigBlind).toBe(40);
+  });
+
+  it("does not eliminate all-in tournament players before a winner is known", () => {
+    const state = {
+      ...createPlayingHeadsUpTournamentRoom(),
+      hand: {
+        ...createPlayingHeadsUpTournamentRoom().hand!,
+        betting: {
+          ...createPlayingHeadsUpTournamentRoom().hand!.betting,
+          currentBet: 1000,
+          players: [
+            { id: "p1", stack: 0, committed: 1000, streetCommitted: 1000, folded: false, allIn: true },
+            { id: "p2", stack: 0, committed: 1000, streetCommitted: 1000, folded: false, allIn: true }
+          ]
+        }
+      },
+      seats: createPlayingHeadsUpTournamentRoom().seats.map((seat) => ({
+        ...seat,
+        chips: 0,
+        status: "all-in" as const
+      }))
+    };
+
+    const finished = finishHandIfReady(state);
+
+    expect(finished.hand?.finished).toBe(true);
+    expect(finished.hand?.winners).toEqual([]);
+    expect(finished.status).toBe("playing");
+    expect(finished.seats.map((seat) => seat.status)).toEqual(["all-in", "all-in"]);
   });
 });
 
