@@ -102,11 +102,9 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
     };
   });
 
-  const actorSeat = activeSeats.length === 2 ? smallBlindSeat : nextSeatAfter(bigBlindSeat, activeSeats);
-  const actorId = seats.find((seat) => seat.seatNumber === actorSeat)?.participantId;
-  if (!actorId) {
-    throw new Error("Unable to determine first actor");
-  }
+  const currentBet = bettingPlayers.reduce((max, player) => Math.max(max, player.streetCommitted), 0);
+  const preferredActorSeat = activeSeats.length === 2 ? smallBlindSeat : nextSeatAfter(bigBlindSeat, activeSeats);
+  const actorId = findNextEligibleActorId(seats, bettingPlayers, preferredActorSeat);
 
   return {
     ...state,
@@ -123,7 +121,7 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
       actorId,
       betting: {
         street: "preflop",
-        currentBet: Math.min(state.settings.bigBlind, seats.find((seat) => seat.seatNumber === bigBlindSeat)!.chips + state.settings.bigBlind),
+        currentBet,
         minRaise: state.settings.bigBlind,
         actorId,
         players: bettingPlayers
@@ -274,6 +272,25 @@ function drawCard(deck: Card[]): Card {
   return card;
 }
 
+function findNextEligibleActorId(seats: Seat[], players: BettingState["players"], startingSeatNumber: number): string {
+  const eligibleSeats = seats.filter((seat) => {
+    const player = players.find((candidate) => candidate.id === seat.participantId);
+    return player && !player.folded && !player.allIn;
+  });
+
+  if (eligibleSeats.length === 0) {
+    throw new Error("No player can act after blinds");
+  }
+
+  const actorSeatNumber = nextSeatOnOrAfter(startingSeatNumber, eligibleSeats);
+  const actorId = seats.find((seat) => seat.seatNumber === actorSeatNumber)?.participantId;
+  if (!actorId) {
+    throw new Error("Unable to determine first actor");
+  }
+
+  return actorId;
+}
+
 function nextActorId(seats: Seat[], previousActorId: string, betting: BettingState): string | null {
   const eligibleSeats = seats.filter((seat) => {
     const player = betting.players.find((candidate) => candidate.id === seat.participantId);
@@ -291,6 +308,11 @@ function nextActorId(seats: Seat[], previousActorId: string, betting: BettingSta
 
   const nextSeatNumber = nextSeatAfter(currentSeat.seatNumber, eligibleSeats);
   return seats.find((seat) => seat.seatNumber === nextSeatNumber)?.participantId ?? null;
+}
+
+function nextSeatOnOrAfter(currentSeat: number, seats: ReadonlyArray<Seat>): number {
+  const orderedSeats = [...seats].sort((left, right) => left.seatNumber - right.seatNumber);
+  return orderedSeats.find((seat) => seat.seatNumber >= currentSeat)?.seatNumber ?? orderedSeats[0].seatNumber;
 }
 
 function toActionRecord(action: BettingAction): HandActionRecord {

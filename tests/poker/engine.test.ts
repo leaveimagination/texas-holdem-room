@@ -6,54 +6,71 @@ const fixedDeck = "As Ah Kd Kh Qs Qh Jd Jh Tc Td 9s 9h 8d 8h 7s 7h 6d 6h 5s 5h 4
   .split(" ")
   .map(parseCard);
 
-describe("engine", () => {
-  it("starts a hand with blinds and private hole cards", () => {
-    let state = createInitialRoomState(
-      { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
-      "room1"
-    );
-    state = {
-      ...state,
-      seats: state.seats.map((seat, index) => ({
-        ...seat,
-        participantId: `p${index + 1}`,
-        displayName: `P${index + 1}`,
-        chips: 1000,
-        cumulativeBuyIn: 1000,
-        status: "ready"
-      }))
-    };
+function createReadyHeadsUpState(chips: [number, number] = [1000, 1000]) {
+  let state = createInitialRoomState(
+    { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+    "room1"
+  );
 
-    const started = startHand(state, fixedDeck);
+  state = {
+    ...state,
+    seats: state.seats.map((seat, index) => ({
+      ...seat,
+      participantId: `p${index + 1}`,
+      displayName: `P${index + 1}`,
+      chips: chips[index],
+      cumulativeBuyIn: chips[index],
+      status: "ready"
+    }))
+  };
+
+  return state;
+}
+
+describe("engine", () => {
+  it("posts normal blinds, deals hole cards, and assigns the opening actor heads up", () => {
+    const started = startHand(createReadyHeadsUpState(), fixedDeck);
 
     expect(started.hand?.number).toBe(1);
     expect(started.hand?.street).toBe("preflop");
     expect(started.hand?.board).toEqual([]);
-    expect(started.seats[0].chips + started.seats[1].chips).toBe(1970);
+    expect(started.seats[0].chips).toBe(990);
+    expect(started.seats[1].chips).toBe(980);
+    expect(started.hand?.betting.currentBet).toBe(20);
+    expect(started.hand?.actorId).toBe("p1");
+    expect(started.hand?.actorId).toBe(started.hand?.betting.actorId);
     expect(started.hand?.holeCardsByParticipantId.p1).toHaveLength(2);
   });
 
-  it("ends hand early when everyone but one player folds", () => {
-    let state = createInitialRoomState(
-      { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
-      "room1"
-    );
-    state = {
-      ...state,
-      seats: state.seats.map((seat, index) => ({
-        ...seat,
-        participantId: `p${index + 1}`,
-        displayName: `P${index + 1}`,
-        chips: 1000,
-        cumulativeBuyIn: 1000,
-        status: "ready"
-      }))
-    };
-
-    const started = startHand(state, fixedDeck);
+  it("awards the pot to the remaining player when the opener folds", () => {
+    const started = startHand(createReadyHeadsUpState(), fixedDeck);
     const finished = applyPlayerAction(started, { type: "fold", playerId: started.hand!.actorId });
 
     expect(finished.hand?.finished).toBe(true);
-    expect(finished.hand?.winners.length).toBe(1);
+    expect(finished.hand?.winners).toEqual(["p2"]);
+    expect(finished.seats[0].chips).toBe(990);
+    expect(finished.seats[1].chips).toBe(1010);
+  });
+
+  it("does not choose an all-in small blind as the opening actor when the big blind can act", () => {
+    const started = startHand(createReadyHeadsUpState([5, 100]), fixedDeck);
+
+    expect(started.seats[0].status).toBe("all-in");
+    expect(started.hand?.actorId).toBe("p2");
+    expect(started.hand?.betting.actorId).toBe("p2");
+  });
+
+  it("uses the actual posted big blind when the big blind posts short", () => {
+    const started = startHand(createReadyHeadsUpState([100, 15]), fixedDeck);
+    const called = applyPlayerAction(started, { type: "call", playerId: started.hand!.actorId });
+
+    expect(started.seats[1].status).toBe("all-in");
+    expect(started.hand?.betting.currentBet).toBe(15);
+    expect(started.hand?.actorId).toBe("p1");
+    expect(called.seats[0].chips).toBe(85);
+  });
+
+  it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
+    expect(() => startHand(createReadyHeadsUpState([5, 15]), fixedDeck)).toThrow("No player can act after blinds");
   });
 });
