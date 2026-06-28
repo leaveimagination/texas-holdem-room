@@ -1,33 +1,133 @@
-const FALLBACK_ACTIONS = ["Fold", "Check / Call", "Raise", "All in"];
+"use client";
 
-export function ActionControls({ legalActions }: { legalActions?: unknown }) {
-  const actions = readActionLabels(legalActions);
-  const labels = actions.length > 0 ? actions : FALLBACK_ACTIONS;
+import { useState } from "react";
+import type { ClientMessage } from "@/lib/realtime/messages";
+
+type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
+type ActionType = PlayerAction["type"];
+
+const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-in"];
+
+export function ActionControls({
+  legalActions,
+  actorId,
+  hostControls = false,
+  playerControls = false,
+  onStartRoom,
+  onPlayerAction,
+  onRebuy,
+  onHandleDisconnect
+}: {
+  legalActions?: unknown;
+  actorId?: string | null;
+  hostControls?: boolean;
+  playerControls?: boolean;
+  onStartRoom?: () => void;
+  onPlayerAction?: (action: PlayerAction) => void;
+  onRebuy?: (amount: number) => void;
+  onHandleDisconnect?: (participantId: string) => void;
+}) {
+  const [raiseAmount, setRaiseAmount] = useState("100");
+  const [rebuyAmount, setRebuyAmount] = useState("500");
+  const [disconnectedParticipantId, setDisconnectedParticipantId] = useState("");
+  const actions = readActions(legalActions);
+  const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : FALLBACK_ACTIONS;
+  const activeActorId = actorId ?? "pending-player";
+
+  function sendAction(type: ActionType) {
+    if (type === "bet" || type === "raise") {
+      const amountTo = readPositiveAmount(raiseAmount);
+      if (!amountTo) {
+        return;
+      }
+
+      onPlayerAction?.({ type, playerId: activeActorId, amountTo });
+      return;
+    }
+
+    onPlayerAction?.({ type, playerId: activeActorId } as PlayerAction);
+  }
+
+  function sendRebuy() {
+    const amount = readPositiveAmount(rebuyAmount);
+    if (amount) {
+      onRebuy?.(amount);
+    }
+  }
+
+  function sendDisconnectHandling() {
+    const participantId = disconnectedParticipantId.trim();
+    if (participantId) {
+      onHandleDisconnect?.(participantId);
+    }
+  }
 
   return (
     <section className="action-dock" aria-label="Actions">
+      {hostControls ? (
+        <div className="host-controls" aria-label="Host controls">
+          <button type="button" onClick={onStartRoom}>Start room</button>
+          <label>
+            Disconnected participant
+            <input
+              aria-label="Disconnected participant"
+              value={disconnectedParticipantId}
+              onChange={(event) => setDisconnectedParticipantId(event.target.value)}
+              placeholder="participant id"
+            />
+          </label>
+          <button type="button" onClick={sendDisconnectHandling}>Pause for disconnect</button>
+        </div>
+      ) : null}
+
       <div className="action-grid">
-        {labels.map((label) => (
-          <button type="button" key={label}>
-            {label}
+        {visibleActions.map((type) => (
+          <button type="button" key={type} onClick={() => sendAction(type)} disabled={!playerControls}>
+            {formatAction(type)}
           </button>
         ))}
       </div>
-      <div className="raise-strip" aria-label="Raise presets">
-        <button type="button">1/2 pot</button>
-        <button type="button">Pot</button>
-        <button type="button">Max</button>
+
+      <div className="raise-strip" aria-label="Raise controls">
+        <label>
+          Raise amount
+          <input
+            aria-label="Raise amount"
+            inputMode="numeric"
+            min={1}
+            type="number"
+            value={raiseAmount}
+            disabled={!playerControls}
+            onChange={(event) => setRaiseAmount(event.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="rebuy-strip" aria-label="Add chips controls">
+        <label>
+          Add chips amount
+          <input
+            aria-label="Add chips amount"
+            inputMode="numeric"
+            min={1}
+            type="number"
+            value={rebuyAmount}
+            disabled={!playerControls}
+            onChange={(event) => setRebuyAmount(event.target.value)}
+          />
+        </label>
+        <button type="button" onClick={sendRebuy} disabled={!playerControls}>Add chips</button>
       </div>
     </section>
   );
 }
 
-function readActionLabels(legalActions: unknown): string[] {
+function readActions(legalActions: unknown): Array<{ type: ActionType }> {
   const actions = Array.isArray(legalActions)
     ? legalActions
     : typeof legalActions === "object" && legalActions !== null && "actions" in legalActions
-    ? (legalActions as { actions: unknown }).actions
-    : null;
+      ? (legalActions as { actions: unknown }).actions
+      : null;
 
   if (!Array.isArray(actions)) {
     return [];
@@ -39,11 +139,20 @@ function readActionLabels(legalActions: unknown): string[] {
     }
 
     const type = (action as { type: unknown }).type;
-    return typeof type === "string" ? [formatAction(type)] : [];
+    return isActionType(type) ? [{ type }] : [];
   });
 }
 
-function formatAction(type: string): string {
+function isActionType(type: unknown): type is ActionType {
+  return type === "fold" || type === "check" || type === "call" || type === "bet" || type === "raise" || type === "all-in";
+}
+
+function readPositiveAmount(value: string): number | null {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatAction(type: ActionType): string {
   switch (type) {
     case "all-in":
       return "All in";
@@ -57,7 +166,5 @@ function formatAction(type: string): string {
       return "Bet";
     case "fold":
       return "Fold";
-    default:
-      return type;
   }
 }

@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 test("room page shows join flow and table surface", async ({ page }) => {
-  const webSocketPromise = page.waitForEvent("websocket");
+  const webSocketPromise = waitForRoomSocket(page);
   await page.goto("/room/test-room");
   const webSocket = await webSocketPromise;
   const joinFrame = new Promise<string>((resolve) => {
@@ -22,3 +23,62 @@ test("room page shows join flow and table surface", async ({ page }) => {
   await page.getByRole("button", { name: "Spectate" }).click();
   await expect(joinFrame).resolves.toContain("\"participantToken\":null");
 });
+
+test("table controls send room websocket commands", async ({ page }) => {
+  const webSocketPromise = waitForRoomSocket(page);
+  await page.addInitScript(() => {
+    const originalSend = WebSocket.prototype.send;
+    window.__sentRoomFrames = [];
+    WebSocket.prototype.send = function patchedSend(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+      if (typeof data === "string") {
+        (window.__sentRoomFrames ??= []).push(data);
+      }
+
+      return originalSend.call(this, data);
+    };
+    window.localStorage.setItem("holdem:test-room:participantToken", "participant-token");
+  });
+  await page.goto("/room/test-room?host=host-token");
+  await webSocketPromise;
+
+  await page.getByLabel("Nickname").fill("Alice");
+  await page.getByRole("button", { name: "Join" }).click();
+  await page.getByRole("button", { name: "Claim seat 1" }).click();
+  await expect.poll(() => findFrame(page, "claim_seat")).toContain("\"seatNumber\":1");
+
+  await page.getByRole("button", { name: "Start room" }).click();
+  await expect.poll(() => findFrame(page, "start_room")).toContain("\"hostToken\":\"host-token\"");
+
+  await page.getByRole("button", { name: "Fold" }).click();
+  await expect.poll(() => findFrame(page, "player_action", "\"fold\"")).toContain("\"participantToken\":\"participant-token\"");
+
+  await page.getByLabel("Raise amount").fill("120");
+  await page.getByRole("button", { name: "Raise" }).click();
+  await expect.poll(() => findFrame(page, "player_action", "\"raise\"")).toContain("\"amountTo\":120");
+
+  await page.getByRole("button", { name: "All in" }).click();
+  await expect.poll(() => findFrame(page, "player_action", "\"all-in\"")).toContain("\"type\":\"all-in\"");
+
+  await page.getByLabel("Add chips amount").fill("500");
+  await page.getByRole("button", { name: "Add chips" }).click();
+  await expect.poll(() => findFrame(page, "rebuy")).toContain("\"amount\":500");
+
+  await page.getByLabel("Disconnected participant").fill("p1");
+  await page.getByRole("button", { name: "Pause for disconnect" }).click();
+  await expect.poll(() => findFrame(page, "handle_disconnect")).toContain("\"participantId\":\"p1\"");
+});
+
+async function findFrame(page: Page, type: string, fragment?: string): Promise<string> {
+  const frames = await page.evaluate(() => window.__sentRoomFrames ?? []);
+  return frames.find((frame) => frame.includes(`"type":"${type}"`) && (!fragment || frame.includes(fragment))) ?? "";
+}
+
+function waitForRoomSocket(page: Page) {
+  return page.waitForEvent("websocket", (webSocket) => new URL(webSocket.url()).pathname === "/ws");
+}
+
+declare global {
+  interface Window {
+    __sentRoomFrames?: string[];
+  }
+}

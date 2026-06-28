@@ -6,19 +6,38 @@ interface SeatView {
   occupied: boolean;
 }
 
-export function SeatRing({ view }: { view: unknown }) {
+export function SeatRing({
+  view,
+  canClaimSeat = false,
+  onClaimSeat
+}: {
+  view: unknown;
+  canClaimSeat?: boolean;
+  onClaimSeat?: (seatNumber: number) => void;
+}) {
   const seats = readSeats(view);
   const displaySeats = seats.length > 0 ? seats : emptySeats(6);
 
   return (
     <div className="seat-ring" aria-label="Seats">
       {displaySeats.map((seat) => (
-        <article className={seat.occupied ? "seat is-occupied" : "seat"} key={seat.seatNumber}>
+        <button
+          type="button"
+          className={seat.occupied ? "seat is-occupied" : "seat"}
+          key={seat.seatNumber}
+          onClick={() => {
+            if (!seat.occupied && canClaimSeat) {
+              onClaimSeat?.(seat.seatNumber);
+            }
+          }}
+          aria-label={seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
+          disabled={seat.occupied || !canClaimSeat}
+        >
           <span className="seat-number">Seat {seat.seatNumber}</span>
           <strong>{seat.displayName ?? "Open"}</strong>
           <span>{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
           <small>{seat.status}</small>
-        </article>
+        </button>
       ))}
     </div>
   );

@@ -178,10 +178,16 @@ main {
   padding: 8px;
   display: grid;
   gap: 3px;
+  text-align: left;
 }
 
 .seat.is-occupied {
   background: rgba(23, 34, 31, 0.86);
+}
+
+.seat:disabled {
+  color: var(--ink);
+  opacity: 1;
 }
 
 .seat strong,
@@ -224,6 +230,14 @@ main {
   gap: 8px;
 }
 
+.host-controls,
+.rebuy-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+  gap: 8px;
+  align-items: end;
+}
+
 .action-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -237,7 +251,7 @@ main {
 .raise-strip,
 .quick-phrases {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -283,7 +297,9 @@ main {
   }
 
   .action-grid,
-  .quick-phrases {
+  .quick-phrases,
+  .host-controls,
+  .rebuy-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
