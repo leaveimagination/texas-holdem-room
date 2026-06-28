@@ -1,10 +1,13 @@
 import { createServer } from "node:http";
 import process from "node:process";
 import next from "next";
+import { loadLocalEnv } from "./env";
 import { LiveRoomStore, type KeyValueStore } from "./live-room-store";
 import { createGameServer, handleGameServerUpgrade } from "./realtime/game-server";
 import { RoomRepository } from "./repositories/room-repository";
 import { createRedisClient } from "./redis";
+
+loadLocalEnv();
 
 const requestedPort = Number(process.env.PORT ?? "3000");
 const port = Number.isNaN(requestedPort) ? 3000 : requestedPort;

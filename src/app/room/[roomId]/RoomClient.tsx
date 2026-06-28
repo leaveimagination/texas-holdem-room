@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
 import { PokerTable } from "@/components/table/PokerTable";
 import { SystemLog } from "@/components/table/SystemLog";
@@ -10,10 +10,15 @@ import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 export function RoomClient({ roomId }: { roomId: string }) {
   const { connected, error, messages, send } = useRoomSocket(roomId);
   const [displayName, setDisplayName] = useState("Player");
-  const [hasParticipantToken, setHasParticipantToken] = useState(() => Boolean(getParticipantToken(roomId)));
+  const [hasParticipantToken, setHasParticipantToken] = useState(false);
+  const [hostToken, setHostToken] = useState<string | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
-  const hostToken = readHostToken();
+
+  useEffect(() => {
+    setHasParticipantToken(Boolean(getParticipantToken(roomId)));
+    setHostToken(readHostToken());
+  }, [roomId]);
 
   function joinRoom(displayName: string, participantToken: string | null) {
     setDisplayName(displayName);
