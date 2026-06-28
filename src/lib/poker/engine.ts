@@ -359,7 +359,7 @@ function toActionRecord(action: BettingAction): HandActionRecord {
 function normalizeBlindCompletionMinRaise(state: RoomState, action: BettingAction, betting: BettingState): BettingState {
   if (
     state.hand?.street === "preflop" &&
-    action.type === "raise" &&
+    (action.type === "raise" || action.type === "all-in") &&
     state.hand.betting.currentBet < state.settings.bigBlind &&
     betting.currentBet === state.settings.bigBlind &&
     betting.minRaise < state.settings.bigBlind

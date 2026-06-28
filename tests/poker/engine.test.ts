@@ -145,6 +145,20 @@ describe("engine", () => {
     expect(nextActions).not.toContainEqual({ type: "raise", minAmountTo: 25, maxAmountTo: 100 });
   });
 
+  it("keeps the full blind as the future raise unit after an explicit all-in completes a short big blind", () => {
+    const started = startHand(createReadyThreeHandedState([20, 100, 15]), fixedDeck);
+    const completed = applyPlayerAction(started, { type: "all-in", playerId: started.hand!.actorId });
+    const nextActions = getLegalActions(completed.hand!.betting, completed.hand!.actorId);
+
+    expect(started.hand?.actorId).toBe("p1");
+    expect(completed.hand?.finished).toBe(false);
+    expect(completed.hand?.actorId).toBe("p2");
+    expect(completed.hand?.betting.currentBet).toBe(20);
+    expect(completed.hand?.betting.minRaise).toBe(20);
+    expect(nextActions).toContainEqual({ type: "raise", minAmountTo: 40, maxAmountTo: 100 });
+    expect(nextActions).not.toContainEqual({ type: "raise", minAmountTo: 25, maxAmountTo: 100 });
+  });
+
   it("finishes after the next player calls a short-big-blind completion in three-handed play", () => {
     const started = startHand(createReadyThreeHandedState([100, 100, 15]), fixedDeck);
     const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
