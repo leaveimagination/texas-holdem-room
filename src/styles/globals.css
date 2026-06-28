@@ -71,6 +71,13 @@ main {
   align-content: start;
 }
 
+.review-page {
+  min-height: 100dvh;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
 .room-header,
 .table-topline,
 .hand-result {
@@ -112,7 +119,8 @@ main {
 
 .join-panel,
 .table-surface,
-.system-log {
+.system-log,
+.review-section {
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -125,6 +133,23 @@ main {
 .inline-alert {
   margin: 10px 0 0;
   color: var(--danger);
+}
+
+.review-section {
+  background: var(--panel);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.review-section h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.review-empty {
+  margin: 0;
+  color: var(--muted);
 }
 
 .table-surface {
