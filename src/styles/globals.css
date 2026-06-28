@@ -196,6 +196,22 @@ main {
   overflow-wrap: anywhere;
 }
 
+.hole-card-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.mini-card {
+  min-width: 34px;
+  border-radius: 6px;
+  background: #f7f5ef;
+  color: #10201c;
+  font-weight: 800;
+  text-align: center;
+  padding: 4px 6px;
+}
+
 .seat-number,
 .seat small {
   color: var(--muted);

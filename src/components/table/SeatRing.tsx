@@ -1,9 +1,12 @@
+import React from "react";
+
 interface SeatView {
   seatNumber: number;
   displayName: string | null;
   chips: number;
   status: string;
   occupied: boolean;
+  holeCards: string[];
 }
 
 export function SeatRing({
@@ -36,6 +39,13 @@ export function SeatRing({
           <span className="seat-number">Seat {seat.seatNumber}</span>
           <strong>{seat.displayName ?? "Open"}</strong>
           <span>{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
+          {seat.holeCards.length > 0 ? (
+            <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
+              {seat.holeCards.map((card) => (
+                <span className="mini-card" key={card}>{card}</span>
+              ))}
+            </span>
+          ) : null}
           <small>{seat.status}</small>
         </button>
       ))}
@@ -45,6 +55,7 @@ export function SeatRing({
 
 function readSeats(view: unknown): SeatView[] {
   const value = typeof view === "object" && view !== null && "seats" in view ? (view as { seats: unknown }).seats : null;
+  const holeCardsBySeat = readHoleCardsBySeat(view);
   if (!Array.isArray(value)) {
     return [];
   }
@@ -64,9 +75,37 @@ function readSeats(view: unknown): SeatView[] {
       displayName: typeof seat.displayName === "string" ? seat.displayName : null,
       chips: typeof seat.chips === "number" ? seat.chips : 0,
       status: typeof seat.status === "string" ? seat.status : "empty",
-      occupied: typeof seat.occupied === "boolean" ? seat.occupied : seat.displayName !== null
+      occupied: typeof seat.occupied === "boolean" ? seat.occupied : seat.displayName !== null,
+      holeCards: holeCardsBySeat.get(seat.seatNumber) ?? []
     }];
   });
+}
+
+function readHoleCardsBySeat(view: unknown): Map<number, string[]> {
+  const result = new Map<number, string[]>();
+  const hand = readObject(readObject(view)?.hand);
+  const handSeats = hand?.seats;
+  if (!Array.isArray(handSeats)) {
+    return result;
+  }
+
+  for (const candidate of handSeats) {
+    const seat = readObject(candidate);
+    if (!seat || typeof seat.seatNumber !== "number" || !Array.isArray(seat.holeCards)) {
+      continue;
+    }
+
+    const holeCards = seat.holeCards.filter((card): card is string => typeof card === "string");
+    if (holeCards.length > 0) {
+      result.set(seat.seatNumber, holeCards);
+    }
+  }
+
+  return result;
+}
+
+function readObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
 }
 
 function emptySeats(count: number): SeatView[] {
@@ -75,6 +114,7 @@ function emptySeats(count: number): SeatView[] {
     displayName: null,
     chips: 0,
     status: "empty",
-    occupied: false
+    occupied: false,
+    holeCards: []
   }));
 }
