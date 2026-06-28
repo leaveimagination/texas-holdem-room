@@ -286,7 +286,7 @@ async function startTestServer(liveRooms: LiveRoomStore, auth: RealtimeAuth = va
 
   return {
     server,
-    url: `ws://127.0.0.1:${address.port}`
+    url: `ws://127.0.0.1:${address.port}/ws`
   };
 }
 

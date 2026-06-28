@@ -11,6 +11,7 @@ export interface GameServerOptions {
   server: HttpServer;
   liveRooms: LiveRoomStore;
   auth: RealtimeAuth;
+  path?: string;
 }
 
 export interface RealtimeAuth {
@@ -19,8 +20,20 @@ export interface RealtimeAuth {
 }
 
 export function createGameServer(options: GameServerOptions): WebSocketServer {
-  const wss = new WebSocketServer({ server: options.server });
+  const path = options.path ?? "/ws";
+  const wss = new WebSocketServer({ noServer: true });
   const sessions = new SessionRegistry();
+
+  options.server.on("upgrade", (request, socket, head) => {
+    const pathname = new URL(request.url ?? "", "http://localhost").pathname;
+    if (pathname !== path) {
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (upgradedSocket) => {
+      wss.emit("connection", upgradedSocket, request);
+    });
+  });
 
   wss.on("connection", (socket) => {
     const session = sessions.add("", null, socket);

@@ -1,3 +1,7 @@
 .worktrees/
 node_modules/
 tsconfig.tsbuildinfo
+.next/
+test-results/
+playwright-report/
+tmp-dev*.log
