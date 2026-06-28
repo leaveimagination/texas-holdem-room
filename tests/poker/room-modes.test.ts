@@ -26,16 +26,16 @@ describe("room mode rules", () => {
     });
   });
 
-  it("rejects cash rebuys before a player busts", () => {
+  it("rejects chip adds before a player busts", () => {
     const state = claimSeat(createCashRoom(), "p1", "Player 1", 1);
 
-    expect(() => rebuy(state, "p1", 500)).toThrow("Rebuy is only available after busting");
+    expect(() => rebuy(state, "p1", 500)).toThrow("Adding chips is only available after your stack reaches zero");
   });
 
-  it("rejects tournament rebuys", () => {
+  it("rejects tournament chip adds", () => {
     const state = claimSeat(createTournamentRoom(), "p1", "Player 1", 1);
 
-    expect(() => rebuy(state, "p1", 500)).toThrow("Rebuys are only allowed in cash games");
+    expect(() => rebuy(state, "p1", 500)).toThrow("Adding chips is only available at flexible tables");
   });
 
   it("disallows tournament late seat claims after play has started", () => {

@@ -98,11 +98,11 @@ export function claimSeat(state: RoomState, participantId: string, displayName: 
 
 export function rebuy(state: RoomState, participantId: string, amount: number): RoomState {
   if (state.mode !== "cash") {
-    throw new Error("Rebuys are only allowed in cash games");
+    throw new Error("Adding chips is only available at flexible tables");
   }
 
   if (!Number.isInteger(amount) || amount <= 0) {
-    throw new Error("Rebuy amount must be positive");
+    throw new Error("Chip amount must be positive");
   }
 
   const seat = state.seats.find((candidate) => candidate.participantId === participantId);
@@ -111,12 +111,12 @@ export function rebuy(state: RoomState, participantId: string, amount: number): 
   }
 
   if (seat.chips > 0) {
-    throw new Error("Rebuy is only available after busting");
+    throw new Error("Adding chips is only available after your stack reaches zero");
   }
 
   const activeHandPlayer = state.hand?.finished === false ? state.hand.betting.players.find((player) => player.id === participantId) : null;
   if (activeHandPlayer && !activeHandPlayer.folded) {
-    throw new Error("Rebuy is only available after the current hand");
+    throw new Error("Adding chips is only available after the current hand");
   }
 
   return {
