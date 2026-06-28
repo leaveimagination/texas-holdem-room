@@ -13,8 +13,11 @@ export default function CreateRoomPage() {
       }}
     >
       <header style={{ display: "grid", gap: 8 }}>
-        <p style={{ margin: 0, color: "var(--muted)" }}>Private table setup</p>
+        <p style={{ margin: 0, color: "var(--muted)" }}>Private friends-room setup</p>
         <h1 style={{ margin: 0, fontSize: 34, lineHeight: 1.1 }}>Create private room</h1>
+        <p style={{ margin: 0, color: "var(--muted)" }}>
+          Configure virtual chips for friendly play. Chips stay inside the room experience and have no external value.
+        </p>
       </header>
       <CreateRoomForm />
       <section aria-label="Join preview" style={{ borderTop: "1px solid var(--line)", paddingTop: 20 }}>

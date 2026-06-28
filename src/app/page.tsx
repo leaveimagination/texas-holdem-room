@@ -12,10 +12,10 @@ export default function HomePage() {
       }}
     >
       <section style={{ display: "grid", gap: 12 }}>
-        <p style={{ margin: 0, color: "var(--muted)" }}>Virtual-chip Hold'em with friends</p>
-        <h1 style={{ margin: 0, fontSize: 42, lineHeight: 1.05 }}>Private Hold'em Room</h1>
+        <p style={{ margin: 0, color: "var(--muted)" }}>Virtual-chip Hold'em for friends</p>
+        <h1 style={{ margin: 0, fontSize: 42, lineHeight: 1.05 }}>Private Friends Room</h1>
         <p style={{ margin: 0, maxWidth: 520, color: "var(--muted)" }}>
-          Create a private table, share the invite link, and play no-limit Texas Hold'em with room-scoped tokens.
+          Create an invite-only table and play no-limit Texas Hold'em with virtual chips that have no external value.
         </p>
       </section>
       <nav style={{ display: "flex", gap: 12, flexWrap: "wrap" }} aria-label="Primary">
