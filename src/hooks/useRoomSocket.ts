@@ -5,6 +5,7 @@ import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 
 export function useRoomSocket(roomId: string) {
   const socket = useRef<WebSocket | null>(null);
+  const pendingMessages = useRef<ClientMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ServerMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,10 @@ export function useRoomSocket(roomId: string) {
     ws.addEventListener("open", () => {
       if (socket.current === ws) {
         setConnected(true);
+        for (const message of pendingMessages.current) {
+          ws.send(JSON.stringify(message));
+        }
+        pendingMessages.current = [];
       }
     });
 
@@ -58,6 +63,11 @@ export function useRoomSocket(roomId: string) {
   const send = useCallback((message: ClientMessage) => {
     if (socket.current?.readyState === WebSocket.OPEN) {
       socket.current.send(JSON.stringify(message));
+      return;
+    }
+
+    if (!socket.current || socket.current.readyState === WebSocket.CONNECTING) {
+      pendingMessages.current.push(message);
     }
   }, []);
 

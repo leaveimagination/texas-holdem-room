@@ -41,6 +41,7 @@ model RoomParticipant {
   results       TournamentResult[]
 
   @@unique([roomId, seatNumber])
+  @@index([roomId, tokenHash])
 }
 
 model Hand {

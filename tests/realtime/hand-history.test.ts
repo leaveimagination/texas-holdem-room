@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Prisma } from "@prisma/client";
 import { GET } from "@/app/api/rooms/[roomId]/hands/route";
 import RoomReviewPage from "@/app/room/[roomId]/review/page";
 import { createHandPersistenceDetails, mapHandToPublicReview, RoomRepository } from "@/server/repositories/room-repository";
@@ -103,6 +104,7 @@ describe("hand history review shape", () => {
     const details = createHandPersistenceDetails(finishedRoom());
 
     expect(details.players).toHaveLength(2);
+    expect(details.players.every((player) => player.holeCards === Prisma.NullableJsonNullValueInput.JsonNull)).toBe(true);
     expect(details.actions).toEqual([
       expect.objectContaining({
         sequenceNumber: 1,
@@ -183,7 +185,16 @@ function finishedRoom(): RoomState {
           { id: "p2", stack: 980, committed: 20, streetCommitted: 20, folded: true, allIn: false }
         ]
       },
-      holeCardsByParticipantId: {},
+      holeCardsByParticipantId: {
+        p1: [
+          { rank: "A", suit: "s" },
+          { rank: "A", suit: "d" }
+        ],
+        p2: [
+          { rank: "2", suit: "c" },
+          { rank: "7", suit: "h" }
+        ]
+      },
       actions: [{ playerId: "p2", type: "fold", street: "preflop" }],
       finished: true,
       winners: ["p1"]

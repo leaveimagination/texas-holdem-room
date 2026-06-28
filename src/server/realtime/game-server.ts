@@ -14,7 +14,7 @@ export interface GameServerOptions {
   server: HttpServer;
   liveRooms: LiveRoomStore;
   auth: RealtimeAuth;
-  roomRepository?: Pick<RoomRepository, "recordHand">;
+  roomRepository?: Pick<RoomRepository, "recordHand" | "recordBuyIn">;
   path?: string;
 }
 
@@ -65,7 +65,7 @@ export function handleGameServerUpgrade(
 async function handleIncomingMessage(
   liveRooms: LiveRoomStore,
   auth: RealtimeAuth,
-  roomRepository: Pick<RoomRepository, "recordHand">,
+  roomRepository: Pick<RoomRepository, "recordHand" | "recordBuyIn">,
   sessions: SessionRegistry,
   session: Session,
   data: RawData
@@ -163,6 +163,7 @@ async function handleIncomingMessage(
         }
         updatedRoom = rebuy(room, session.participantId, message.amount);
         await liveRooms.saveRoom(updatedRoom);
+        await roomRepository.recordBuyIn(room.roomId, session.participantId, message.amount);
         break;
       case "handle_disconnect":
         if (!session.host) {

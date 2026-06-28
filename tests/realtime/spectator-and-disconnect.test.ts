@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server as HttpServer } from "node:http";
 import WebSocket from "ws";
 import { createInitialRoomState, startHand, type RoomState } from "@/lib/poker/engine";
@@ -66,7 +66,11 @@ describe("spectator and disconnect realtime rules", () => {
   it("allows authenticated cash players to rebuy without revealing cards to spectators", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createBustedCashRoom());
-    const { url } = await startTestServer(liveRooms);
+    const recordBuyIn = vi.fn().mockResolvedValue(undefined);
+    const { url } = await startTestServer(liveRooms, {
+      recordHand: vi.fn().mockResolvedValue(undefined),
+      recordBuyIn
+    });
     const playerSocket = connect(url);
     const spectatorSocket = connect(url);
     await Promise.all([waitForOpen(playerSocket), waitForOpen(spectatorSocket)]);
@@ -88,6 +92,7 @@ describe("spectator and disconnect realtime rules", () => {
 
     expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
     expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
+    expect(recordBuyIn).toHaveBeenCalledWith(roomId, "p1", 500);
     expect(getHandSeat(spectatorSnapshot, "p1")?.holeCards).toBeUndefined();
   });
 
@@ -171,9 +176,12 @@ function createBustedCashRoom(): RoomState {
   };
 }
 
-async function startTestServer(liveRooms: LiveRoomStore): Promise<{ server: HttpServer; url: string }> {
+async function startTestServer(
+  liveRooms: LiveRoomStore,
+  roomRepository = { recordHand: vi.fn().mockResolvedValue(undefined), recordBuyIn: vi.fn().mockResolvedValue(undefined) }
+): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
-  const gameServer = createGameServer({ server, liveRooms, auth });
+  const gameServer = createGameServer({ server, liveRooms, auth, roomRepository });
   server.on("upgrade", (request, socket, head) => {
     if (!handleGameServerUpgrade(gameServer, request, socket, head)) {
       socket.destroy();

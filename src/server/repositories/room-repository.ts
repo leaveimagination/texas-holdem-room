@@ -97,6 +97,17 @@ export class RoomRepository {
     });
   }
 
+  async recordBuyIn(roomId: string, participantId: string, amount: number): Promise<void> {
+    await prisma.buyIn.create({
+      data: {
+        id: this.createId("buyin"),
+        roomId,
+        participantId,
+        amount
+      }
+    });
+  }
+
   createId(prefix: string): string {
     return `${prefix}_${nanoid(12)}`;
   }
@@ -125,6 +136,25 @@ export class RoomRepository {
 
     return participant?.id ?? null;
   }
+
+  async createParticipant(roomId: string, displayName: string): Promise<CreatedParticipant> {
+    const participantToken = this.createId("participant");
+    const participant = await prisma.roomParticipant.create({
+      data: {
+        id: this.createId("participant"),
+        roomId,
+        displayName,
+        role: "player",
+        tokenHash: hashToken(participantToken)
+      },
+      select: { id: true }
+    });
+
+    return {
+      participantId: participant.id,
+      participantToken
+    };
+  }
 }
 
 export function hashToken(token: string): string {
@@ -152,6 +182,11 @@ export interface PublicHandAction {
   actionType: string;
   amount: number | null;
   resultingStack: number;
+}
+
+export interface CreatedParticipant {
+  participantId: string;
+  participantToken: string;
 }
 
 export interface HandPersistenceDetails {
@@ -228,7 +263,7 @@ export function createHandPersistenceDetails(room: RoomState): HandPersistenceDe
       seatNumber: seat.seatNumber,
       startingChips: betting.stack + betting.committed,
       endingChips: seat.chips,
-      holeCards: hand.holeCardsByParticipantId[seat.participantId] as unknown as Prisma.InputJsonValue
+      holeCards: Prisma.NullableJsonNullValueInput.JsonNull
     }];
   });
   const actions = hand.actions.map((action, index): Prisma.HandActionCreateManyInput => {
