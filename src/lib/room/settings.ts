@@ -13,7 +13,7 @@ export const RoomSettingsSchema = z.discriminatedUnion("mode", [
     smallBlind: z.number().int().min(1),
     bigBlind: z.number().int().min(2),
     actionTimerSeconds: z.number().int().min(5).max(300).nullable()
-  }),
+  }).strict(),
   z.object({
     mode: z.literal("tournament"),
     seats: z.number().int().min(2).max(6),
@@ -22,7 +22,7 @@ export const RoomSettingsSchema = z.discriminatedUnion("mode", [
     bigBlind: z.number().int().min(2),
     actionTimerSeconds: z.number().int().min(5).max(300).nullable(),
     blindIncrease: BlindIncreaseSchema
-  })
+  }).strict()
 ]);
 
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;

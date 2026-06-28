@@ -7,11 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RoomMode {
+  CASH @map("cash")
+  TOURNAMENT @map("tournament")
+}
+
 model Room {
   id             String            @id
   hostTokenHash  String
   inviteCode     String            @unique
-  mode           String
+  mode           RoomMode
   settings       Json
   createdAt      DateTime          @default(now())
   endedAt        DateTime?
@@ -33,6 +38,8 @@ model RoomParticipant {
   actions       HandAction[]
   buyIns        BuyIn[]
   results       TournamentResult[]
+
+  @@unique([roomId, seatNumber])
 }
 
 model Hand {
@@ -63,6 +70,8 @@ model HandPlayer {
   holeCards       Json?
   hand            Hand            @relation(fields: [handId], references: [id])
   participant     RoomParticipant @relation(fields: [participantId], references: [id])
+
+  @@unique([handId, participantId])
 }
 
 model HandAction {
@@ -109,4 +118,6 @@ model TournamentResult {
   finalRank        Int?
   room             Room            @relation(fields: [roomId], references: [id])
   participant      RoomParticipant @relation(fields: [participantId], references: [id])
+
+  @@unique([roomId, participantId])
 }
