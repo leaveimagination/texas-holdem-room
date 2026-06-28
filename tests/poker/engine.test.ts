@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCard, serializeCard } from "@/lib/poker/cards";
+import { getLegalActions } from "@/lib/poker/betting";
 import { applyPlayerAction, createInitialRoomState, startHand } from "@/lib/poker/engine";
 
 const fixedDeck = "As Ah Kd Kh Qs Qh Jd Jh Tc Td 9s 9h 8d 8h 7s 7h 6d 6h 5s 5h 4d 4h 3s 3h 2d 2h Ac Ad Kc Ks Qc Qd Jc Js Ts Th 9c 9d 8c 8s 7c 7d 6c 6s 5c 5d 4c 4s 3c 3d 2c 2s"
@@ -128,6 +129,20 @@ describe("engine", () => {
     expect(completed.hand?.finished).toBe(true);
     expect(completed.seats[0].chips).toBe(80);
     expect(completed.seats[1].chips).toBe(0);
+  });
+
+  it("keeps the full blind as the future raise unit after completing a short big blind", () => {
+    const started = startHand(createReadyThreeHandedState([100, 100, 15]), fixedDeck);
+    const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
+    const nextActions = getLegalActions(completed.hand!.betting, completed.hand!.actorId);
+
+    expect(started.hand?.actorId).toBe("p1");
+    expect(completed.hand?.finished).toBe(false);
+    expect(completed.hand?.actorId).toBe("p2");
+    expect(completed.hand?.betting.currentBet).toBe(20);
+    expect(completed.hand?.betting.minRaise).toBe(20);
+    expect(nextActions).toContainEqual({ type: "raise", minAmountTo: 40, maxAmountTo: 100 });
+    expect(nextActions).not.toContainEqual({ type: "raise", minAmountTo: 25, maxAmountTo: 100 });
   });
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {

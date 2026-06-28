@@ -143,7 +143,7 @@ export function applyPlayerAction(state: RoomState, action: BettingAction): Room
     throw new Error("No active hand");
   }
 
-  const betting = applyBettingAction(state.hand.betting, action);
+  const betting = normalizeBlindCompletionMinRaise(state, action, applyBettingAction(state.hand.betting, action));
   const seats = state.seats.map((seat) => {
     const player = betting.players.find((candidate) => candidate.id === seat.participantId);
     if (!player) {
@@ -353,4 +353,21 @@ function toActionRecord(action: BettingAction): HandActionRecord {
     type: action.type,
     amount: "amountTo" in action ? action.amountTo : undefined
   };
+}
+
+function normalizeBlindCompletionMinRaise(state: RoomState, action: BettingAction, betting: BettingState): BettingState {
+  if (
+    state.hand?.street === "preflop" &&
+    action.type === "raise" &&
+    state.hand.betting.currentBet < state.settings.bigBlind &&
+    betting.currentBet === state.settings.bigBlind &&
+    betting.minRaise < state.settings.bigBlind
+  ) {
+    return {
+      ...betting,
+      minRaise: state.settings.bigBlind
+    };
+  }
+
+  return betting;
 }
