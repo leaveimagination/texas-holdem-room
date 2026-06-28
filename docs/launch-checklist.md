@@ -21,7 +21,7 @@ Use this checklist before any preview, demo, or public share of the private frie
 Run the unsafe-copy search before launch:
 
 ```bash
-rg -n -i "money|cash|cashout|cash out|withdraw|recharge|deposit|prize|reward|settlement|gambl|public lobby|public matchmaking|casino|wallet|payment|exchange|redeem|redemption|bonus|payout|rebuy|buy-in|buy in|stake|wager" src/app src/components src/lib/poker README.md docs/launch-checklist.md
+rg -n -i "money|cash|cashout|cash out|withdraw|recharge|deposit|prize|reward|settlement|gambl|public lobby|public matchmaking|casino|wallet|payment|exchange|redeem|redemption|bonus|payout|rebuy|buy-in|buy in|stake|wager|account balance|leaderboard" src/app src/components src/lib/poker README.md docs/launch-checklist.md
 rg -n "赢钱|提现|充值|奖金|赌博|现金|真钱|兑换|奖品|公开大厅" src/app src/components src/lib/poker README.md docs/launch-checklist.md
 ```
 
