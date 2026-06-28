@@ -7,12 +7,14 @@ import { ClientMessageSchema } from "@/lib/realtime/messages";
 import { applyPlayerAction, claimSeat, markDisconnected, rebuy, startHand, type RoomState } from "@/lib/poker/engine";
 import { toParticipantView } from "@/lib/poker/visibility";
 import type { LiveRoomStore } from "@/server/live-room-store";
+import { RoomRepository } from "@/server/repositories/room-repository";
 import { SessionRegistry, type Session } from "./session-registry";
 
 export interface GameServerOptions {
   server: HttpServer;
   liveRooms: LiveRoomStore;
   auth: RealtimeAuth;
+  roomRepository?: Pick<RoomRepository, "recordHand">;
   path?: string;
 }
 
@@ -23,6 +25,7 @@ export interface RealtimeAuth {
 
 export function createGameServer(options: GameServerOptions): WebSocketServer {
   const path = options.path ?? "/ws";
+  const roomRepository = options.roomRepository ?? new RoomRepository();
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new SessionRegistry();
 
@@ -30,7 +33,7 @@ export function createGameServer(options: GameServerOptions): WebSocketServer {
     const session = sessions.add("", null, socket);
 
     socket.on("message", (data) => {
-      void handleIncomingMessage(options.liveRooms, options.auth, sessions, session, data);
+      void handleIncomingMessage(options.liveRooms, options.auth, roomRepository, sessions, session, data);
     });
 
     socket.on("close", () => {
@@ -62,6 +65,7 @@ export function handleGameServerUpgrade(
 async function handleIncomingMessage(
   liveRooms: LiveRoomStore,
   auth: RealtimeAuth,
+  roomRepository: Pick<RoomRepository, "recordHand">,
   sessions: SessionRegistry,
   session: Session,
   data: RawData
@@ -151,6 +155,7 @@ async function handleIncomingMessage(
         validatePlayerAction(message, room, session);
         updatedRoom = applyPlayerAction(room, message.action);
         await liveRooms.saveRoom(updatedRoom);
+        await recordFinishedHand(roomRepository, updatedRoom);
         break;
       case "rebuy":
         if (!session.participantId) {
@@ -178,6 +183,12 @@ async function handleIncomingMessage(
 
   if (updatedRoom) {
     broadcastSnapshot(sessions, updatedRoom);
+  }
+}
+
+async function recordFinishedHand(roomRepository: Pick<RoomRepository, "recordHand">, room: RoomState): Promise<void> {
+  if (room.hand?.finished) {
+    await roomRepository.recordHand(room);
   }
 }
 
