@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id             String            @id
+  hostTokenHash  String
+  inviteCode     String            @unique
+  mode           String
+  settings       Json
+  createdAt      DateTime          @default(now())
+  endedAt        DateTime?
+  participants   RoomParticipant[]
+  hands          Hand[]
+  buyIns         BuyIn[]
+  results        TournamentResult[]
+}
+
+model RoomParticipant {
+  id            String   @id
+  roomId        String
+  displayName   String
+  role          String
+  seatNumber    Int?
+  joinedAt      DateTime @default(now())
+  room          Room     @relation(fields: [roomId], references: [id])
+  handPlayers   HandPlayer[]
+  actions       HandAction[]
+  buyIns        BuyIn[]
+  results       TournamentResult[]
+}
+
+model Hand {
+  id           String       @id
+  roomId       String
+  handNumber   Int
+  buttonSeat   Int
+  smallBlind   Int
+  bigBlind     Int
+  board        Json
+  startedAt    DateTime    @default(now())
+  endedAt      DateTime?
+  room         Room        @relation(fields: [roomId], references: [id])
+  players      HandPlayer[]
+  actions      HandAction[]
+  pots         Pot[]
+
+  @@unique([roomId, handNumber])
+}
+
+model HandPlayer {
+  id              String          @id
+  handId          String
+  participantId   String
+  seatNumber      Int
+  startingChips   Int
+  endingChips     Int
+  holeCards       Json?
+  hand            Hand            @relation(fields: [handId], references: [id])
+  participant     RoomParticipant @relation(fields: [participantId], references: [id])
+}
+
+model HandAction {
+  id              String          @id
+  handId          String
+  sequenceNumber  Int
+  street          String
+  participantId   String
+  actionType      String
+  amount          Int?
+  resultingStack  Int
+  createdAt       DateTime        @default(now())
+  hand            Hand            @relation(fields: [handId], references: [id])
+  participant     RoomParticipant @relation(fields: [participantId], references: [id])
+
+  @@unique([handId, sequenceNumber])
+}
+
+model Pot {
+  id                  String @id
+  handId              String
+  potType             String
+  amount              Int
+  eligibleParticipantIds Json
+  winnerParticipantIds   Json
+  hand                Hand   @relation(fields: [handId], references: [id])
+}
+
+model BuyIn {
+  id              String          @id
+  roomId          String
+  participantId   String
+  amount          Int
+  createdAt       DateTime        @default(now())
+  room            Room            @relation(fields: [roomId], references: [id])
+  participant     RoomParticipant @relation(fields: [participantId], references: [id])
+}
+
+model TournamentResult {
+  id               String          @id
+  roomId           String
+  participantId    String
+  eliminationOrder Int?
+  finalRank        Int?
+  room             Room            @relation(fields: [roomId], references: [id])
+  participant      RoomParticipant @relation(fields: [participantId], references: [id])
+}
