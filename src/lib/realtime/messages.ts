@@ -10,29 +10,31 @@ const BettingActionSchema = z.discriminatedUnion("type", [
 ]);
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("join_room"), roomId: z.string(), participantToken: z.string().nullable(), displayName: z.string().min(1).max(24) }),
-  z.object({ type: z.literal("claim_seat"), roomId: z.string(), participantToken: z.string(), seatNumber: z.number().int().min(1).max(6) }),
-  z.object({ type: z.literal("leave_seat"), roomId: z.string(), participantToken: z.string() }),
-  z.object({ type: z.literal("set_ready"), roomId: z.string(), participantToken: z.string() }),
-  z.object({ type: z.literal("start_room"), roomId: z.string(), hostToken: z.string() }),
-  z.object({ type: z.literal("pause_room"), roomId: z.string(), hostToken: z.string() }),
-  z.object({ type: z.literal("resume_room"), roomId: z.string(), hostToken: z.string() }),
-  z.object({ type: z.literal("end_room"), roomId: z.string(), hostToken: z.string() }),
-  z.object({ type: z.literal("player_action"), roomId: z.string(), participantToken: z.string(), action: BettingActionSchema }),
-  z.object({ type: z.literal("rebuy"), roomId: z.string(), participantToken: z.string(), amount: z.number().int().positive() }),
+  z.object({ type: z.literal("join_room"), roomId: z.string(), participantToken: z.string().nullable(), displayName: z.string().min(1).max(24) }).strict(),
+  z
+    .object({ type: z.literal("claim_seat"), roomId: z.string(), participantToken: z.string(), seatNumber: z.number().int().min(1).max(6) })
+    .strict(),
+  z.object({ type: z.literal("leave_seat"), roomId: z.string(), participantToken: z.string() }).strict(),
+  z.object({ type: z.literal("set_ready"), roomId: z.string(), participantToken: z.string() }).strict(),
+  z.object({ type: z.literal("start_room"), roomId: z.string(), hostToken: z.string() }).strict(),
+  z.object({ type: z.literal("pause_room"), roomId: z.string(), hostToken: z.string() }).strict(),
+  z.object({ type: z.literal("resume_room"), roomId: z.string(), hostToken: z.string() }).strict(),
+  z.object({ type: z.literal("end_room"), roomId: z.string(), hostToken: z.string() }).strict(),
+  z.object({ type: z.literal("player_action"), roomId: z.string(), participantToken: z.string(), action: BettingActionSchema }).strict(),
+  z.object({ type: z.literal("rebuy"), roomId: z.string(), participantToken: z.string(), amount: z.number().int().positive() }).strict(),
   z.object({
     type: z.literal("quick_phrase"),
     roomId: z.string(),
     participantToken: z.string(),
     phrase: z.enum(["think", "nice_hand", "well_played", "another_hand", "wait_for_me", "back_now"])
-  }),
+  }).strict(),
   z.object({
     type: z.literal("handle_disconnect"),
     roomId: z.string(),
     hostToken: z.string(),
     participantId: z.string(),
     handling: z.enum(["wait", "fold", "remove", "pause"])
-  })
+  }).strict()
 ]);
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
