@@ -10,6 +10,12 @@ import { SessionRegistry, type Session } from "./session-registry";
 export interface GameServerOptions {
   server: HttpServer;
   liveRooms: LiveRoomStore;
+  auth: RealtimeAuth;
+}
+
+export interface RealtimeAuth {
+  verifyParticipantToken(roomId: string, token: string): Promise<string | null>;
+  verifyHostToken(roomId: string, token: string): Promise<boolean>;
 }
 
 export function createGameServer(options: GameServerOptions): WebSocketServer {
@@ -20,7 +26,7 @@ export function createGameServer(options: GameServerOptions): WebSocketServer {
     const session = sessions.add("", null, socket);
 
     socket.on("message", (data) => {
-      void handleIncomingMessage(options.liveRooms, sessions, session, data);
+      void handleIncomingMessage(options.liveRooms, options.auth, sessions, session, data);
     });
 
     socket.on("close", () => {
@@ -33,6 +39,7 @@ export function createGameServer(options: GameServerOptions): WebSocketServer {
 
 async function handleIncomingMessage(
   liveRooms: LiveRoomStore,
+  auth: RealtimeAuth,
   sessions: SessionRegistry,
   session: Session,
   data: RawData
@@ -43,39 +50,53 @@ async function handleIncomingMessage(
     return;
   }
 
-  session.roomId = message.roomId;
+  let updatedRoom: RoomState | null = null;
 
-  const room = await liveRooms.getRoom(message.roomId);
-  if (!room) {
-    sendMessage(session.socket, { type: "error", payload: { message: "Room not found" } });
-    return;
-  }
+  try {
+    session.roomId = message.roomId;
 
-  const participantToken = getParticipantToken(message);
-  if (participantToken) {
-    if (session.participantId && session.participantId !== participantToken) {
-      sendMessage(session.socket, { type: "error", payload: { message: "Participant token mismatch" } });
+    const room = await liveRooms.getRoom(message.roomId);
+    if (!room) {
+      sendMessage(session.socket, { type: "error", payload: { message: "Room not found" } });
       return;
     }
 
-    session.participantId = participantToken;
-  }
+    const participantToken = getParticipantToken(message);
+    if (participantToken) {
+      const participantId = await auth.verifyParticipantToken(message.roomId, participantToken);
+      if (!participantId) {
+        sendMessage(session.socket, { type: "error", payload: { message: "Invalid participant token" } });
+        return;
+      }
 
-  if (hasHostToken(message)) {
-    session.host = true;
-  }
+      if (session.participantId && session.participantId !== participantId) {
+        sendMessage(session.socket, { type: "error", payload: { message: "Participant token mismatch" } });
+        return;
+      }
 
-  if (message.type === "quick_phrase") {
-    sessions.broadcast(message.roomId, () => ({
-      type: "system_message",
-      payload: { message: message.phrase }
-    }));
-    return;
-  }
+      session.participantId = participantId;
+    }
 
-  let updatedRoom = room;
+    if (hasHostToken(message)) {
+      const host = await auth.verifyHostToken(message.roomId, message.hostToken);
+      if (!host) {
+        sendMessage(session.socket, { type: "error", payload: { message: "Invalid host token" } });
+        return;
+      }
 
-  try {
+      session.host = true;
+    }
+
+    if (message.type === "quick_phrase") {
+      sessions.broadcast(message.roomId, () => ({
+        type: "system_message",
+        payload: { message: message.phrase }
+      }));
+      return;
+    }
+
+    updatedRoom = room;
+
     switch (message.type) {
       case "join_room":
         break;
@@ -98,7 +119,9 @@ async function handleIncomingMessage(
     return;
   }
 
-  broadcastSnapshot(sessions, updatedRoom);
+  if (updatedRoom) {
+    broadcastSnapshot(sessions, updatedRoom);
+  }
 }
 
 function parseClientMessage(data: RawData): ClientMessage | null {
@@ -115,21 +138,21 @@ function getParticipantToken(message: ClientMessage): string | null {
   return "participantToken" in message ? message.participantToken : null;
 }
 
-function hasHostToken(message: ClientMessage): boolean {
+function hasHostToken(message: ClientMessage): message is ClientMessage & { hostToken: string } {
   return "hostToken" in message;
 }
 
 function validatePlayerAction(message: Extract<ClientMessage, { type: "player_action" }>, room: RoomState, session: Session): void {
-  if (message.participantToken !== message.action.playerId) {
+  if (session.participantId !== message.action.playerId) {
     throw new Error("Participant token does not match player action");
   }
 
-  const seat = room.seats.find((candidate) => candidate.participantId === message.participantToken);
+  const seat = room.seats.find((candidate) => candidate.participantId === session.participantId);
   if (!seat) {
     throw new Error("Participant is not seated");
   }
 
-  if (session.participantId !== message.participantToken) {
+  if (!session.participantId) {
     throw new Error("Participant token mismatch");
   }
 }

@@ -3,7 +3,7 @@ import { createServer, type Server as HttpServer } from "node:http";
 import WebSocket from "ws";
 import { createInitialRoomState, type RoomState } from "@/lib/poker/engine";
 import { LiveRoomStore, type KeyValueStore } from "@/server/live-room-store";
-import { createGameServer } from "@/server/realtime/game-server";
+import { createGameServer, type RealtimeAuth } from "@/server/realtime/game-server";
 import { SessionRegistry } from "@/server/realtime/session-registry";
 
 class MemoryStore implements KeyValueStore {
@@ -25,6 +25,21 @@ class MemoryStore implements KeyValueStore {
 const socketsToClose = new Set<WebSocket>();
 const serversToClose = new Set<HttpServer>();
 const roomId = "room-1";
+const validAuth: RealtimeAuth = {
+  async verifyParticipantToken(roomIdToVerify, token) {
+    if (roomIdToVerify !== roomId) {
+      return null;
+    }
+
+    return new Map([
+      ["p1-token", "p1"],
+      ["p2-token", "p2"]
+    ]).get(token) ?? null;
+  },
+  async verifyHostToken(roomIdToVerify, token) {
+    return roomIdToVerify === roomId && token === "host-token";
+  }
+};
 
 describe("SessionRegistry", () => {
   it("tracks sessions by room", () => {
@@ -76,7 +91,7 @@ describe("createGameServer", () => {
 
     const playerJoin = nextMessage(playerSocket);
     playerSocket.send(
-      JSON.stringify({ type: "join_room", roomId, participantToken: "p1", displayName: "Player 1" })
+      JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "Player 1" })
     );
     await expect(playerJoin).resolves.toMatchObject({ type: "room_snapshot", payload: { hand: null } });
 
@@ -115,7 +130,7 @@ describe("createGameServer", () => {
 
     const joined = nextMessage(playerSocket);
     playerSocket.send(
-      JSON.stringify({ type: "join_room", roomId, participantToken: "p1", displayName: "Player 1" })
+      JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "Player 1" })
     );
     await joined;
 
@@ -128,7 +143,7 @@ describe("createGameServer", () => {
       JSON.stringify({
         type: "player_action",
         roomId,
-        participantToken: "p1",
+        participantToken: "p1-token",
         action: { type: "fold", playerId: "p2" }
       })
     );
@@ -140,6 +155,67 @@ describe("createGameServer", () => {
 
     const room = await liveRooms.getRoom(roomId);
     expect(room?.hand?.actions).toEqual([]);
+  });
+
+  it("rejects invalid JSON and unsupported schema-valid message types", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+
+    const { url } = await startTestServer(liveRooms);
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const invalidJson = nextMessage(socket);
+    socket.send("{");
+    await expect(invalidJson).resolves.toMatchObject({ type: "error", payload: { message: "Invalid message" } });
+
+    const unsupported = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "set_ready", roomId, participantToken: "p1-token" }));
+    await expect(unsupported).resolves.toMatchObject({
+      type: "error",
+      payload: { message: "Unsupported message type: set_ready" }
+    });
+  });
+
+  it("rejects forged participant tokens before revealing private cards", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+
+    const { url } = await startTestServer(liveRooms);
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const forgedJoin = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p1", displayName: "Imposter" }));
+
+    await expect(forgedJoin).resolves.toMatchObject({
+      type: "error",
+      payload: { message: "Invalid participant token" }
+    });
+  });
+
+  it("rejects forged host tokens before starting a hand", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+
+    const { url } = await startTestServer(liveRooms);
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const join = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "Player 1" }));
+    await join;
+
+    const forgedStart = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "start_room", roomId, hostToken: "forged-host-token" }));
+
+    await expect(forgedStart).resolves.toMatchObject({
+      type: "error",
+      payload: { message: "Invalid host token" }
+    });
+
+    const room = await liveRooms.getRoom(roomId);
+    expect(room?.hand).toBeNull();
   });
 });
 
@@ -162,9 +238,9 @@ function createReadyHeadsUpRoomState(): RoomState {
   };
 }
 
-async function startTestServer(liveRooms: LiveRoomStore): Promise<{ server: HttpServer; url: string }> {
+async function startTestServer(liveRooms: LiveRoomStore, auth: RealtimeAuth = validAuth): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
-  createGameServer({ server, liveRooms });
+  createGameServer({ server, liveRooms, auth });
   serversToClose.add(server);
 
   await new Promise<void>((resolve, reject) => {

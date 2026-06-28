@@ -3,6 +3,7 @@ import process from "node:process";
 import next from "next";
 import { LiveRoomStore, type KeyValueStore } from "./live-room-store";
 import { createGameServer } from "./realtime/game-server";
+import { RoomRepository } from "./repositories/room-repository";
 import { createRedisClient } from "./redis";
 
 const requestedPort = Number(process.env.PORT ?? "3000");
@@ -27,10 +28,15 @@ void (async () => {
     const server = createServer((req, res) => {
       void requestHandler(req, res);
     });
+    const roomRepository = new RoomRepository();
 
     createGameServer({
       server,
-      liveRooms: new LiveRoomStore(createKeyValueStore(createRedisClient()))
+      liveRooms: new LiveRoomStore(createKeyValueStore(createRedisClient())),
+      auth: {
+        verifyParticipantToken: (roomId, token) => roomRepository.verifyParticipantToken(roomId, token),
+        verifyHostToken: (roomId, token) => roomRepository.verifyHostToken(roomId, token)
+      }
     });
 
     server.listen(port, host, () => {

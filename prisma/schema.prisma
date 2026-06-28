@@ -31,6 +31,7 @@ model RoomParticipant {
   roomId        String
   displayName   String
   role          String
+  tokenHash     String?
   seatNumber    Int?
   joinedAt      DateTime @default(now())
   room          Room     @relation(fields: [roomId], references: [id])
