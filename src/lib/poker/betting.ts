@@ -10,10 +10,11 @@ export function getLegalActions(state: BettingState, playerId: string): LegalAct
 
   if (toCall === 0) {
     const actions: LegalAction[] = [{ type: "check" }];
-    if (player.stack > 0) {
+    const maxAmountTo = player.streetCommitted + player.stack;
+    if (maxAmountTo >= state.minRaise) {
       actions.push({ type: "bet", minAmountTo: state.minRaise, maxAmountTo: player.streetCommitted + player.stack });
-      actions.push({ type: "all-in", amountTo: player.streetCommitted + player.stack });
     }
+    actions.push({ type: "all-in", amountTo: player.streetCommitted + player.stack });
     return actions;
   }
 
@@ -21,7 +22,7 @@ export function getLegalActions(state: BettingState, playerId: string): LegalAct
   const minAmountTo = state.currentBet + state.minRaise;
   const maxAmountTo = player.streetCommitted + player.stack;
 
-  if (maxAmountTo > state.currentBet) {
+  if (maxAmountTo >= minAmountTo) {
     actions.push({ type: "raise", minAmountTo, maxAmountTo });
   }
 
@@ -55,6 +56,9 @@ export function applyBettingAction(state: BettingState, action: BettingAction): 
   }
 
   if (action.type === "call") {
+    if (toCall === 0) {
+      throw new Error("Cannot call without a bet to match");
+    }
     commit(player, Math.min(toCall, player.stack));
     return next;
   }
@@ -79,6 +83,10 @@ export function applyBettingAction(state: BettingState, action: BettingAction): 
 
   if (action.type === "bet" && next.currentBet !== 0) {
     throw new Error("Cannot bet when a bet already exists");
+  }
+
+  if (action.type === "raise" && next.currentBet === 0) {
+    throw new Error("Use bet when there is no existing bet");
   }
 
   const minimum = next.currentBet === 0 ? next.minRaise : next.currentBet + next.minRaise;

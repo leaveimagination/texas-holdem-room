@@ -17,10 +17,69 @@ function state(): BettingState {
 }
 
 describe("betting", () => {
+  it("rejects call when no outstanding bet exists", () => {
+    const actions = {
+      ...state(),
+      currentBet: 0
+    };
+
+    expect(() => applyBettingAction(actions, { type: "call", playerId: "p3" })).toThrow(
+      "Cannot call without a bet to match"
+    );
+  });
+
+  it("rejects raise when no outstanding bet exists", () => {
+    const actions = {
+      ...state(),
+      currentBet: 0
+    };
+
+    expect(() => applyBettingAction(actions, { type: "raise", playerId: "p3", amountTo: 20 })).toThrow(
+      "Use bet when there is no existing bet"
+    );
+  });
+
   it("offers fold, call, raise, and all-in when facing a bet", () => {
     const actions = getLegalActions(state(), "p3").map((action) => action.type);
 
     expect(actions).toEqual(["fold", "call", "raise", "all-in"]);
+  });
+
+  it("does not offer a regular bet when actor is short-stacked", () => {
+    const actions = getLegalActions(
+      {
+        ...state(),
+        currentBet: 0,
+        minRaise: 20,
+        players: [
+          { id: "p1", stack: 990, committed: 10, streetCommitted: 10, folded: false, allIn: false },
+          { id: "p2", stack: 980, committed: 20, streetCommitted: 20, folded: false, allIn: false },
+          { id: "p3", stack: 10, committed: 0, streetCommitted: 0, folded: false, allIn: false }
+        ]
+      },
+      "p3"
+    ).map((action) => action.type);
+
+    expect(actions).toEqual(["check", "all-in"]);
+  });
+
+  it("does not offer a regular raise when actor cannot reach minimum raise amount", () => {
+    const actions = getLegalActions(
+      {
+        ...state(),
+        currentBet: 40,
+        minRaise: 20,
+        actorId: "p3",
+        players: [
+          { id: "p1", stack: 990, committed: 10, streetCommitted: 10, folded: false, allIn: false },
+          { id: "p2", stack: 980, committed: 20, streetCommitted: 20, folded: false, allIn: false },
+          { id: "p3", stack: 25, committed: 20, streetCommitted: 20, folded: false, allIn: false }
+        ]
+      },
+      "p3"
+    ).map((action) => action.type);
+
+    expect(actions).toEqual(["fold", "call", "all-in"]);
   });
 
   it("applies a call", () => {
