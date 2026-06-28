@@ -27,7 +27,7 @@ const serversToClose = new Set<HttpServer>();
 const roomId = "room-1";
 const validAuth: RealtimeAuth = {
   async verifyParticipantToken(roomIdToVerify, token) {
-    if (roomIdToVerify !== roomId) {
+    if (roomIdToVerify !== roomId && roomIdToVerify !== "room-2") {
       return null;
     }
 
@@ -177,6 +177,31 @@ describe("createGameServer", () => {
     });
   });
 
+  it("clears participant and host session state when switching rooms", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState(roomId));
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState("room-2"));
+
+    const { url } = await startTestServer(liveRooms);
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const hostSnapshot = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "start_room", roomId, hostToken: "host-token" }));
+    await expect(hostSnapshot).resolves.toMatchObject({
+      type: "room_snapshot",
+      payload: { roomId, hostControls: true }
+    });
+
+    const roomTwoSnapshot = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "join_room", roomId: "room-2", participantToken: null, displayName: "Spectator" }));
+
+    await expect(roomTwoSnapshot).resolves.toMatchObject({
+      type: "room_snapshot",
+      payload: { roomId: "room-2", hostControls: false, hand: null }
+    });
+  });
+
   it("rejects forged participant tokens before revealing private cards", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createReadyHeadsUpRoomState());
@@ -219,10 +244,10 @@ describe("createGameServer", () => {
   });
 });
 
-function createReadyHeadsUpRoomState(): RoomState {
+function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
   const state = createInitialRoomState(
     { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
-    roomId
+    targetRoomId
   );
 
   return {

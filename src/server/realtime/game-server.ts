@@ -53,13 +53,23 @@ async function handleIncomingMessage(
   let updatedRoom: RoomState | null = null;
 
   try {
-    session.roomId = message.roomId;
-
     const room = await liveRooms.getRoom(message.roomId);
     if (!room) {
       sendMessage(session.socket, { type: "error", payload: { message: "Room not found" } });
       return;
     }
+
+    if (!isSupportedMessage(message)) {
+      sendMessage(session.socket, { type: "error", payload: { message: `Unsupported message type: ${message.type}` } });
+      return;
+    }
+
+    const switchingRooms = session.roomId !== "" && session.roomId !== message.roomId;
+    const nextSession = {
+      roomId: message.roomId,
+      participantId: switchingRooms ? null : session.participantId,
+      host: switchingRooms ? false : session.host
+    };
 
     const participantToken = getParticipantToken(message);
     if (participantToken) {
@@ -69,12 +79,12 @@ async function handleIncomingMessage(
         return;
       }
 
-      if (session.participantId && session.participantId !== participantId) {
+      if (nextSession.participantId && nextSession.participantId !== participantId) {
         sendMessage(session.socket, { type: "error", payload: { message: "Participant token mismatch" } });
         return;
       }
 
-      session.participantId = participantId;
+      nextSession.participantId = participantId;
     }
 
     if (hasHostToken(message)) {
@@ -84,8 +94,12 @@ async function handleIncomingMessage(
         return;
       }
 
-      session.host = true;
+      nextSession.host = true;
     }
+
+    session.roomId = nextSession.roomId;
+    session.participantId = nextSession.participantId;
+    session.host = nextSession.host;
 
     if (message.type === "quick_phrase") {
       sessions.broadcast(message.roomId, () => ({
@@ -109,9 +123,6 @@ async function handleIncomingMessage(
         updatedRoom = applyPlayerAction(room, message.action);
         await liveRooms.saveRoom(updatedRoom);
         break;
-      default:
-        sendMessage(session.socket, { type: "error", payload: { message: `Unsupported message type: ${message.type}` } });
-        return;
     }
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Unable to process message";
@@ -140,6 +151,12 @@ function getParticipantToken(message: ClientMessage): string | null {
 
 function hasHostToken(message: ClientMessage): message is ClientMessage & { hostToken: string } {
   return "hostToken" in message;
+}
+
+function isSupportedMessage(
+  message: ClientMessage
+): message is Extract<ClientMessage, { type: "join_room" | "start_room" | "player_action" | "quick_phrase" }> {
+  return message.type === "join_room" || message.type === "start_room" || message.type === "player_action" || message.type === "quick_phrase";
 }
 
 function validatePlayerAction(message: Extract<ClientMessage, { type: "player_action" }>, room: RoomState, session: Session): void {
