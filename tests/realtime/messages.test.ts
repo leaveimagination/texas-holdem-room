@@ -40,4 +40,19 @@ describe("realtime messages", () => {
       })
     ).toThrow();
   });
+
+  it("rejects extra fields inside player_action.action", () => {
+    expect(() =>
+      ClientMessageSchema.parse({
+        type: "player_action",
+        roomId: "room1",
+        participantToken: "token",
+        action: {
+          type: "fold",
+          playerId: "p1",
+          unsupported: "oops"
+        }
+      })
+    ).toThrow();
+  });
 });

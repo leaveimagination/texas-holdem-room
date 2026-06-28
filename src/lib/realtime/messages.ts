@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 const BettingActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("fold"), playerId: z.string() }),
-  z.object({ type: z.literal("check"), playerId: z.string() }),
-  z.object({ type: z.literal("call"), playerId: z.string() }),
-  z.object({ type: z.literal("bet"), playerId: z.string(), amountTo: z.number().int().positive() }),
-  z.object({ type: z.literal("raise"), playerId: z.string(), amountTo: z.number().int().positive() }),
-  z.object({ type: z.literal("all-in"), playerId: z.string() })
+  z.object({ type: z.literal("fold"), playerId: z.string() }).strict(),
+  z.object({ type: z.literal("check"), playerId: z.string() }).strict(),
+  z.object({ type: z.literal("call"), playerId: z.string() }).strict(),
+  z.object({ type: z.literal("bet"), playerId: z.string(), amountTo: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("raise"), playerId: z.string(), amountTo: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("all-in"), playerId: z.string() }).strict()
 ]);
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
