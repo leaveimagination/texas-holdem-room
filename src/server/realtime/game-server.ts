@@ -140,7 +140,7 @@ async function handleIncomingMessage(
         if (!session.participantId) {
           throw new Error("Participant token mismatch");
         }
-        updatedRoom = claimSeat(room, session.participantId, session.participantId, message.seatNumber);
+        updatedRoom = claimSeat(room, session.participantId, message.displayName, message.seatNumber);
         await liveRooms.saveRoom(updatedRoom);
         break;
       case "start_room":

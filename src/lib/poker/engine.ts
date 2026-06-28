@@ -109,6 +109,15 @@ export function rebuy(state: RoomState, participantId: string, amount: number): 
     throw new Error("Participant is not seated");
   }
 
+  if (seat.chips > 0) {
+    throw new Error("Rebuy is only available after busting");
+  }
+
+  const activeHandPlayer = state.hand?.finished === false ? state.hand.betting.players.find((player) => player.id === participantId) : null;
+  if (activeHandPlayer && !activeHandPlayer.folded) {
+    throw new Error("Rebuy is only available after the current hand");
+  }
+
   return {
     ...state,
     seats: state.seats.map((candidate) =>
@@ -133,7 +142,7 @@ export function markDisconnected(state: RoomState, participantId: string): RoomS
   const disconnectedIsInActiveHand =
     state.hand !== null &&
     !state.hand.finished &&
-    state.hand.betting.players.some((player) => player.id === participantId);
+    state.hand.betting.players.some((player) => player.id === participantId && !player.folded && !player.allIn);
 
   return {
     ...state,

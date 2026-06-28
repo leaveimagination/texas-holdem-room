@@ -65,7 +65,7 @@ describe("spectator and disconnect realtime rules", () => {
 
   it("allows authenticated cash players to rebuy without revealing cards to spectators", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
-    await liveRooms.saveRoom(startHand(createReadyCashRoom()));
+    await liveRooms.saveRoom(createBustedCashRoom());
     const { url } = await startTestServer(liveRooms);
     const playerSocket = connect(url);
     const spectatorSocket = connect(url);
@@ -86,9 +86,26 @@ describe("spectator and disconnect realtime rules", () => {
 
     const [playerSnapshot, spectatorSnapshot] = await Promise.all([playerRebuy, spectatorRebuy]);
 
-    expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 1490, cumulativeBuyIn: 1500 });
-    expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 1490, cumulativeBuyIn: 1500 });
+    expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
+    expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
     expect(getHandSeat(spectatorSnapshot, "p1")?.holeCards).toBeUndefined();
+  });
+
+  it("keeps the requested display name when a player claims a seat", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createInitialRoomState(
+      { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+      roomId
+    ));
+    const { url } = await startTestServer(liveRooms);
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const claimed = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "claim_seat", roomId, participantToken: "p1-token", displayName: "Alice", seatNumber: 1 }));
+
+    const snapshot = await claimed;
+    expect(getSeat(snapshot, 1)).toMatchObject({ displayName: "Alice", chips: 1000, cumulativeBuyIn: 1000 });
   });
 
   it("rejects forged rebuy participant tokens", async () => {
@@ -143,6 +160,14 @@ function createReadyCashRoom(): RoomState {
       cumulativeBuyIn: 1000,
       status: "ready" as const
     }))
+  };
+}
+
+function createBustedCashRoom(): RoomState {
+  const state = createReadyCashRoom();
+  return {
+    ...state,
+    seats: state.seats.map((seat) => (seat.participantId === "p1" ? { ...seat, chips: 0, status: "seated" as const } : seat))
   };
 }
 
@@ -230,7 +255,7 @@ function nextMessage(socket: WebSocket): Promise<unknown> {
   });
 }
 
-function getSeat(snapshot: unknown, seatNumber: number): { chips?: number; cumulativeBuyIn?: number; status?: string } | undefined {
+function getSeat(snapshot: unknown, seatNumber: number): { chips?: number; cumulativeBuyIn?: number; status?: string; displayName?: string } | undefined {
   if (
     !snapshot ||
     typeof snapshot !== "object" ||
@@ -244,7 +269,7 @@ function getSeat(snapshot: unknown, seatNumber: number): { chips?: number; cumul
   }
 
   return snapshot.payload.seats.find(
-    (seat): seat is { seatNumber: number; chips?: number; cumulativeBuyIn?: number; status?: string } =>
+    (seat): seat is { seatNumber: number; chips?: number; cumulativeBuyIn?: number; status?: string; displayName?: string } =>
       Boolean(seat) && typeof seat === "object" && "seatNumber" in seat && seat.seatNumber === seatNumber
   );
 }

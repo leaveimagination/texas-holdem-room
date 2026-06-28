@@ -12,7 +12,13 @@ const BettingActionSchema = z.discriminatedUnion("type", [
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("join_room"), roomId: z.string(), participantToken: z.string().nullable(), displayName: z.string().min(1).max(24) }).strict(),
   z
-    .object({ type: z.literal("claim_seat"), roomId: z.string(), participantToken: z.string(), seatNumber: z.number().int().min(1).max(6) })
+    .object({
+      type: z.literal("claim_seat"),
+      roomId: z.string(),
+      participantToken: z.string(),
+      displayName: z.string().min(1).max(24),
+      seatNumber: z.number().int().min(1).max(6)
+    })
     .strict(),
   z.object({ type: z.literal("leave_seat"), roomId: z.string(), participantToken: z.string() }).strict(),
   z.object({ type: z.literal("set_ready"), roomId: z.string(), participantToken: z.string() }).strict(),

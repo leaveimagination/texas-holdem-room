@@ -55,4 +55,16 @@ describe("realtime messages", () => {
       })
     ).toThrow();
   });
+
+  it("requires display names when claiming seats", () => {
+    const parsed = ClientMessageSchema.parse({
+      type: "claim_seat",
+      roomId: "room1",
+      participantToken: "token",
+      displayName: "dealer",
+      seatNumber: 1
+    });
+
+    expect(parsed.type).toBe("claim_seat");
+  });
 });
