@@ -1,0 +1,34 @@
+:root {
+  color-scheme: dark;
+  --felt: #0f6f55;
+  --felt-dark: #094839;
+  --ink: #f7f5ef;
+  --muted: #b8c6c0;
+  --line: rgba(255, 255, 255, 0.16);
+  --accent: #f3c14b;
+  --danger: #e05a47;
+  --panel: #17221f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--felt-dark);
+  color: var(--ink);
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
