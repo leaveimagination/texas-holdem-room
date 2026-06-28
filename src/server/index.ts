@@ -24,6 +24,9 @@ const server = createServer((req, res) => {
 });
 const app = next({ dev: isDev, hostname: host, port, httpServer: server });
 
+const redisClient = createRedisClient();
+redisClient.on("error", () => undefined);
+
 void (async () => {
   try {
     await app.prepare();
@@ -34,7 +37,7 @@ void (async () => {
 
     const gameServer = createGameServer({
       server,
-      liveRooms: new LiveRoomStore(createKeyValueStore(createRedisClient())),
+      liveRooms: new LiveRoomStore(createKeyValueStore(redisClient)),
       auth: {
         verifyParticipantToken: (roomId, token) => roomRepository.verifyParticipantToken(roomId, token),
         verifyHostToken: (roomId, token) => roomRepository.verifyHostToken(roomId, token)

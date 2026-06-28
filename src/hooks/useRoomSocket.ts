@@ -15,24 +15,33 @@ export function useRoomSocket(roomId: string) {
 
     socket.current = ws;
     setConnected(false);
+    setMessages([]);
     setError(null);
 
     ws.addEventListener("open", () => {
-      setConnected(true);
+      if (socket.current === ws) {
+        setConnected(true);
+      }
     });
 
     ws.addEventListener("close", () => {
-      setConnected(false);
       if (socket.current === ws) {
+        setConnected(false);
         socket.current = null;
       }
     });
 
     ws.addEventListener("error", () => {
-      setError("Connection interrupted");
+      if (socket.current === ws) {
+        setError("Connection interrupted");
+      }
     });
 
     ws.addEventListener("message", (event) => {
+      if (socket.current !== ws) {
+        return;
+      }
+
       try {
         const parsed = JSON.parse(String(event.data)) as ServerMessage;
         setMessages((previous) => [...previous, parsed]);

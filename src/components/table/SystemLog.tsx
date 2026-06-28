@@ -1,15 +1,26 @@
 import type { ServerMessage } from "@/lib/realtime/messages";
 
-const QUICK_PHRASES = ["Think", "Nice hand", "Well played", "Another hand"];
+const QUICK_PHRASES = [
+  { label: "Think", value: "think" },
+  { label: "Nice hand", value: "nice_hand" },
+  { label: "Well played", value: "well_played" },
+  { label: "Another hand", value: "another_hand" }
+] as const;
 
-export function SystemLog({ messages }: { messages: ServerMessage[] }) {
+export function SystemLog({
+  messages,
+  onQuickPhrase
+}: {
+  messages: ServerMessage[];
+  onQuickPhrase?: (phrase: (typeof QUICK_PHRASES)[number]["value"]) => void;
+}) {
   const entries = messages.slice(-8).map(formatMessage);
 
   return (
     <aside className="system-log" aria-label="System log">
       <div className="quick-phrases" aria-label="Quick phrases">
         {QUICK_PHRASES.map((phrase) => (
-          <button type="button" key={phrase}>{phrase}</button>
+          <button type="button" key={phrase.value} onClick={() => onQuickPhrase?.(phrase.value)}>{phrase.label}</button>
         ))}
       </div>
       <div className="log-entries">
