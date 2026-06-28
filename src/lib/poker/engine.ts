@@ -1,6 +1,7 @@
 import type { RoomSettings } from "@/lib/room/settings";
 import { applyBettingAction, buildPots } from "./betting";
 import { type Card, shuffledDeck } from "./cards";
+import { compareHands, evaluateSeven } from "./hand-evaluator";
 import type { BettingAction, BettingState, RoomMode, Seat, Street } from "./types";
 
 type ActiveSeat = Seat & { participantId: string };
@@ -278,6 +279,10 @@ export function applyPlayerAction(state: RoomState, action: BettingAction): Room
     return finishedState;
   }
 
+  if (finishedState.hand.street !== state.hand.street) {
+    return finishedState;
+  }
+
   const actorId = nextActorId(seats, state.hand.actorId, betting);
   if (!actorId) {
     return finishedState;
@@ -304,25 +309,15 @@ export function finishHandIfReady(state: RoomState): RoomState {
   const remainingPlayers = state.hand.betting.players.filter((player) => !player.folded);
   const hasAllInPlayer = remainingPlayers.some((player) => player.allIn);
   if (remainingPlayers.length !== 1) {
-    const playersWithPendingResponse = remainingPlayers.filter(
-      (player) => !player.allIn && player.streetCommitted < state.hand!.betting.currentBet
-    );
-    if (playersWithPendingResponse.length > 0) {
+    if (!isBettingRoundComplete(state.hand)) {
       return state;
     }
 
-    const actionablePlayers = remainingPlayers.filter((player) => !player.allIn);
-    if (actionablePlayers.length > 1 && !hasAllInPlayer) {
-      return state;
+    if (hasAllInPlayer || state.hand.street === "river") {
+      return showdown(runOutBoard(state));
     }
 
-    return applyPostHandRules({
-      ...state,
-      hand: {
-        ...state.hand,
-        finished: true
-      }
-    });
+    return advanceStreet(state);
   }
 
   const winnerId = remainingPlayers[0].id;
@@ -349,6 +344,201 @@ export function finishHandIfReady(state: RoomState): RoomState {
       ...state.hand,
       finished: true,
       winners: [winnerId]
+    }
+  });
+}
+
+function isBettingRoundComplete(hand: HandState): boolean {
+  const remainingPlayers = hand.betting.players.filter((player) => !player.folded);
+  const playersWithPendingResponse = remainingPlayers.filter(
+    (player) => !player.allIn && player.streetCommitted < hand.betting.currentBet
+  );
+  if (playersWithPendingResponse.length > 0) {
+    return false;
+  }
+
+  const actionablePlayers = remainingPlayers.filter((player) => !player.allIn);
+  if (actionablePlayers.length === 0) {
+    return true;
+  }
+
+  const streetActions = hand.actions.filter((action) => action.street === hand.street);
+  return actionablePlayers.every(
+    (player) =>
+      player.streetCommitted === hand.betting.currentBet &&
+      streetActions.some((action) => action.playerId === player.id)
+  );
+}
+
+function advanceStreet(state: RoomState): RoomState {
+  if (!state.hand) {
+    return state;
+  }
+
+  const street = nextStreet(state.hand.street);
+  if (!street) {
+    return showdown(state);
+  }
+
+  const deck = [...state.hand.deck];
+  const board = [...state.hand.board];
+  const cardsToDeal = street === "flop" ? 3 : 1;
+  for (let index = 0; index < cardsToDeal; index += 1) {
+    board.push(drawCard(deck));
+  }
+
+  const players = state.hand.betting.players.map((player) => ({
+    ...player,
+    streetCommitted: 0
+  }));
+  const actorId = firstActorForStreet(state.seats, players, state.buttonSeat);
+  const betting: BettingState = {
+    street,
+    currentBet: 0,
+    minRaise: state.settings.bigBlind,
+    actorId: actorId ?? state.hand.actorId,
+    players
+  };
+  const advancedState: RoomState = {
+    ...state,
+    hand: {
+      ...state.hand,
+      street,
+      board,
+      deck,
+      actorId: betting.actorId,
+      betting
+    }
+  };
+
+  return actorId ? advancedState : showdown(runOutBoard(advancedState));
+}
+
+function nextStreet(street: Street): Street | null {
+  if (street === "preflop") {
+    return "flop";
+  }
+
+  if (street === "flop") {
+    return "turn";
+  }
+
+  if (street === "turn") {
+    return "river";
+  }
+
+  return null;
+}
+
+function firstActorForStreet(seats: Seat[], players: BettingState["players"], buttonSeat: number | null): string | null {
+  const eligibleSeats = seats.filter((seat) => {
+    const player = players.find((candidate) => candidate.id === seat.participantId);
+    return player && !player.folded && !player.allIn;
+  });
+  if (eligibleSeats.length === 0) {
+    return null;
+  }
+
+  const startingSeat = buttonSeat === null ? eligibleSeats[0].seatNumber : nextSeatAfter(buttonSeat, seats);
+  const actorSeatNumber = nextSeatOnOrAfter(startingSeat, eligibleSeats);
+  return seats.find((seat) => seat.seatNumber === actorSeatNumber)?.participantId ?? null;
+}
+
+function runOutBoard(state: RoomState): RoomState {
+  if (!state.hand || state.hand.board.length >= 5) {
+    return state;
+  }
+
+  const deck = [...state.hand.deck];
+  const board = [...state.hand.board];
+  while (board.length < 5) {
+    board.push(drawCard(deck));
+  }
+
+  return {
+    ...state,
+    hand: {
+      ...state.hand,
+      board,
+      deck,
+      street: "river",
+      betting: {
+        ...state.hand.betting,
+        street: "river"
+      }
+    }
+  };
+}
+
+function showdown(state: RoomState): RoomState {
+  if (!state.hand) {
+    return state;
+  }
+
+  const handValues = new Map<string, ReturnType<typeof evaluateSeven>>();
+  const remainingPlayers = state.hand.betting.players.filter((player) => !player.folded);
+  for (const player of remainingPlayers) {
+    const holeCards = state.hand.holeCardsByParticipantId[player.id];
+    if (!holeCards || holeCards.length !== 2) {
+      throw new Error(`Missing hole cards for ${player.id}`);
+    }
+
+    handValues.set(player.id, evaluateSeven([...holeCards, ...state.hand.board]));
+  }
+
+  const seatOrder = state.seats
+    .filter((seat): seat is Seat & { participantId: string } => seat.participantId !== null)
+    .map((seat) => seat.participantId);
+  const winningsByPlayerId = new Map<string, number>();
+  const winners = new Set<string>();
+
+  for (const pot of buildPots(state.hand.betting.players)) {
+    const eligible = pot.eligiblePlayerIds.filter((playerId) => handValues.has(playerId));
+    if (eligible.length === 0) {
+      continue;
+    }
+
+    const best = eligible.reduce((currentBest, playerId) => {
+      const comparison = compareHands(handValues.get(playerId)!, handValues.get(currentBest)!)
+      return comparison > 0 ? playerId : currentBest;
+    });
+    const potWinners = eligible.filter((playerId) => compareHands(handValues.get(playerId)!, handValues.get(best)!) === 0);
+    const share = Math.floor(pot.amount / potWinners.length);
+    let remainder = pot.amount % potWinners.length;
+    const orderedWinners = [...potWinners].sort((left, right) => seatOrder.indexOf(left) - seatOrder.indexOf(right));
+
+    for (const playerId of orderedWinners) {
+      const extraChip = remainder > 0 ? 1 : 0;
+      winningsByPlayerId.set(playerId, (winningsByPlayerId.get(playerId) ?? 0) + share + extraChip);
+      winners.add(playerId);
+      remainder -= extraChip;
+    }
+  }
+
+  const seats = state.seats.map((seat) => {
+    if (!seat.participantId) {
+      return seat;
+    }
+
+    const chips = seat.chips + (winningsByPlayerId.get(seat.participantId) ?? 0);
+    const player = state.hand!.betting.players.find((candidate) => candidate.id === seat.participantId);
+    const status: Seat["status"] = player?.folded ? "folded" : chips === 0 ? "all-in" : "active";
+    return {
+      ...seat,
+      chips,
+      status
+    };
+  });
+
+  const orderedWinners = [...winners].sort((left, right) => seatOrder.indexOf(left) - seatOrder.indexOf(right));
+
+  return applyPostHandRules({
+    ...state,
+    seats,
+    hand: {
+      ...state.hand,
+      finished: true,
+      winners: orderedWinners
     }
   });
 }

@@ -116,9 +116,10 @@ describe("engine", () => {
     expect(started.hand?.betting.currentBet).toBe(15);
     expect(started.hand?.actorId).toBe("p1");
     expect(called.hand?.finished).toBe(true);
-    expect(called.hand?.winners).toEqual([]);
-    expect(called.seats[0].chips).toBe(85);
-    expect(called.seats[1].chips).toBe(0);
+    expect(called.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd", "Jh", "Tc"]);
+    expect(called.hand?.winners).toEqual(["p1", "p2"]);
+    expect(called.seats[0].chips).toBe(100);
+    expect(called.seats[1].chips).toBe(15);
   });
 
   it("allows the opener to complete a short all-in big blind to the full configured blind", () => {
@@ -127,8 +128,10 @@ describe("engine", () => {
 
     expect(completed.hand?.betting.currentBet).toBe(20);
     expect(completed.hand?.finished).toBe(true);
-    expect(completed.seats[0].chips).toBe(80);
-    expect(completed.seats[1].chips).toBe(0);
+    expect(completed.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd", "Jh", "Tc"]);
+    expect(completed.hand?.winners).toEqual(["p1", "p2"]);
+    expect(completed.seats[0].chips).toBe(100);
+    expect(completed.seats[1].chips).toBe(15);
   });
 
   it("keeps the full blind as the future raise unit after completing a short big blind", () => {
@@ -168,7 +171,8 @@ describe("engine", () => {
     expect(completed.hand?.finished).toBe(false);
     expect(completed.hand?.actorId).toBe("p2");
     expect(called.hand?.finished).toBe(true);
-    expect(called.hand?.winners).toEqual([]);
+    expect(called.hand?.board.map(serializeCard)).toEqual(["Jd", "Jh", "Tc", "Td", "9s"]);
+    expect(called.hand?.winners).not.toEqual([]);
     expect(called.hand?.betting.players).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "p1", allIn: false, streetCommitted: 20 }),
@@ -176,6 +180,55 @@ describe("engine", () => {
         expect.objectContaining({ id: "p3", allIn: true, streetCommitted: 15 })
       ])
     );
+  });
+
+  it("advances through flop, turn, and river before showdown after checked betting rounds", () => {
+    const preflop = startHand(createReadyHeadsUpState(), fixedDeck);
+    const called = applyPlayerAction(preflop, { type: "call", playerId: preflop.hand!.actorId });
+    const flop = applyPlayerAction(called, { type: "check", playerId: called.hand!.actorId });
+
+    expect(flop.hand?.finished).toBe(false);
+    expect(flop.hand?.street).toBe("flop");
+    expect(flop.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd"]);
+    expect(flop.hand?.actorId).toBe("p2");
+    expect(flop.hand?.betting).toMatchObject({ street: "flop", currentBet: 0, minRaise: 20 });
+
+    const turn = applyPlayerAction(
+      applyPlayerAction(flop, { type: "check", playerId: "p2" }),
+      { type: "check", playerId: "p1" }
+    );
+    expect(turn.hand?.street).toBe("turn");
+    expect(turn.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd", "Jh"]);
+
+    const river = applyPlayerAction(
+      applyPlayerAction(turn, { type: "check", playerId: "p2" }),
+      { type: "check", playerId: "p1" }
+    );
+    expect(river.hand?.street).toBe("river");
+    expect(river.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd", "Jh", "Tc"]);
+
+    const showdown = applyPlayerAction(
+      applyPlayerAction(river, { type: "check", playerId: "p2" }),
+      { type: "check", playerId: "p1" }
+    );
+    expect(showdown.hand?.finished).toBe(true);
+    expect(showdown.hand?.winners).toEqual(["p1", "p2"]);
+    expect(showdown.seats.map((seat) => seat.chips)).toEqual([1000, 1000]);
+  });
+
+  it("awards main and side pots to each pot's best eligible hand at showdown", () => {
+    const deck = "Kh Qs 9c Kd Jd 9d 9h 2c 3d 4s 7c 8d 8h Tc Td Jh Qh Ks Ac 2d 3h 4c 5s 6c 7d 8s 9s Ts Jc Qc Kc Ad Ah As 2h 2s 3c 3s 4d 4h 5c 5d"
+      .split(" ")
+      .map(parseCard);
+    const started = startHand(createReadyThreeHandedState([50, 100, 100]), deck);
+    const p1AllIn = applyPlayerAction(started, { type: "all-in", playerId: "p1" });
+    const p2AllIn = applyPlayerAction(p1AllIn, { type: "all-in", playerId: "p2" });
+    const showdown = applyPlayerAction(p2AllIn, { type: "call", playerId: "p3" });
+
+    expect(showdown.hand?.finished).toBe(true);
+    expect(showdown.hand?.board).toHaveLength(5);
+    expect(showdown.hand?.winners).toEqual(["p1", "p2"]);
+    expect(showdown.seats.map((seat) => seat.chips)).toEqual([150, 100, 0]);
   });
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {

@@ -8,6 +8,7 @@ import {
   markDisconnected,
   rebuy
 } from "@/lib/poker/engine";
+import { parseCard } from "@/lib/poker/cards";
 
 describe("room mode rules", () => {
   it("adds cash rebuys to chips and cumulative buy-in", () => {
@@ -136,11 +137,16 @@ describe("room mode rules", () => {
     expect(finished.settings.bigBlind).toBe(40);
   });
 
-  it("does not eliminate all-in tournament players before a winner is known", () => {
+  it("eliminates busted tournament players after an all-in showdown winner is known", () => {
     const state = {
       ...createPlayingHeadsUpTournamentRoom(),
       hand: {
         ...createPlayingHeadsUpTournamentRoom().hand!,
+        deck: "2c 3d 4h 5s 7c".split(" ").map(parseCard),
+        holeCardsByParticipantId: {
+          p1: "Ah Ad".split(" ").map(parseCard),
+          p2: "Kc Kd".split(" ").map(parseCard)
+        },
         betting: {
           ...createPlayingHeadsUpTournamentRoom().hand!.betting,
           currentBet: 1000,
@@ -160,9 +166,9 @@ describe("room mode rules", () => {
     const finished = finishHandIfReady(state);
 
     expect(finished.hand?.finished).toBe(true);
-    expect(finished.hand?.winners).toEqual([]);
-    expect(finished.status).toBe("playing");
-    expect(finished.seats.map((seat) => seat.status)).toEqual(["all-in", "all-in"]);
+    expect(finished.hand?.winners).toEqual(["p1"]);
+    expect(finished.status).toBe("finished");
+    expect(finished.seats.map((seat) => seat.status)).toEqual(["active", "eliminated"]);
   });
 });
 
