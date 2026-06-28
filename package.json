@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx src/server/index.ts",
     "build": "next build",
-    "start": "tsx src/server/index.ts",
+    "start": "set NODE_ENV=production&&tsx src/server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --pass-with-no-tests",
