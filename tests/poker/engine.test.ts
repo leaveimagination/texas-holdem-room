@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCard } from "@/lib/poker/cards";
+import { parseCard, serializeCard } from "@/lib/poker/cards";
 import { applyPlayerAction, createInitialRoomState, startHand } from "@/lib/poker/engine";
 
 const fixedDeck = "As Ah Kd Kh Qs Qh Jd Jh Tc Td 9s 9h 8d 8h 7s 7h 6d 6h 5s 5h 4d 4h 3s 3h 2d 2h Ac Ad Kc Ks Qc Qd Jc Js Ts Th 9c 9d 8c 8s 7c 7d 6c 6s 5c 5d 4c 4s 3c 3d 2c 2s"
@@ -48,6 +48,32 @@ function createReadyThreeHandedState(chips: [number, number, number] = [1000, 10
   return state;
 }
 
+function createSparseFourSeatState() {
+  const state = createInitialRoomState(
+    { mode: "cash", seats: 4, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+    "room1"
+  );
+
+  return {
+    ...state,
+    buttonSeat: 1,
+    seats: state.seats.map((seat) => {
+      if (seat.seatNumber === 2) {
+        return seat;
+      }
+
+      return {
+        ...seat,
+        participantId: `p${seat.seatNumber}`,
+        displayName: `P${seat.seatNumber}`,
+        chips: 1000,
+        cumulativeBuyIn: 1000,
+        status: "ready" as const
+      };
+    })
+  };
+}
+
 describe("engine", () => {
   it("posts normal blinds, deals hole cards, and assigns the opening actor heads up", () => {
     const started = startHand(createReadyHeadsUpState(), fixedDeck);
@@ -94,6 +120,16 @@ describe("engine", () => {
     expect(called.seats[1].chips).toBe(0);
   });
 
+  it("allows the opener to complete a short all-in big blind to the full configured blind", () => {
+    const started = startHand(createReadyHeadsUpState([100, 15]), fixedDeck);
+    const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
+
+    expect(completed.hand?.betting.currentBet).toBe(20);
+    expect(completed.hand?.finished).toBe(true);
+    expect(completed.seats[0].chips).toBe(80);
+    expect(completed.seats[1].chips).toBe(0);
+  });
+
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
     expect(() => startHand(createReadyHeadsUpState([5, 15]), fixedDeck)).toThrow("No player can act after blinds");
   });
@@ -115,5 +151,14 @@ describe("engine", () => {
         expect.objectContaining({ id: "p3", allIn: false, streetCommitted: 20 })
       ])
     );
+  });
+
+  it("deals hole cards starting from the seat left of the button", () => {
+    const started = startHand(createSparseFourSeatState(), fixedDeck);
+
+    expect(started.buttonSeat).toBe(3);
+    expect(started.hand?.holeCardsByParticipantId.p4.map(serializeCard)).toEqual(["As", "Kh"]);
+    expect(started.hand?.holeCardsByParticipantId.p1.map(serializeCard)).toEqual(["Ah", "Qs"]);
+    expect(started.hand?.holeCardsByParticipantId.p3.map(serializeCard)).toEqual(["Kd", "Qh"]);
   });
 });

@@ -69,6 +69,7 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
   const buttonSeat = nextButtonSeat(state.buttonSeat, activeSeats);
   const smallBlindSeat = activeSeats.length === 2 ? buttonSeat : nextSeatAfter(buttonSeat, activeSeats);
   const bigBlindSeat = nextSeatAfter(smallBlindSeat, activeSeats);
+  const firstDealtSeat = nextSeatAfter(buttonSeat, activeSeats);
   const deck = [...(providedDeck ?? shuffledDeck())];
   const seats = state.seats.map((seat) => ({ ...seat }));
   const holeCardsByParticipantId: Record<string, Card[]> = {};
@@ -78,8 +79,10 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
     updatedSeat.status = updatedSeat.chips === 0 ? "all-in" : "active";
   }
 
+  const dealOrder = orderSeatsFrom(firstDealtSeat, activeSeats);
+
   for (let round = 0; round < 2; round += 1) {
-    for (const seat of activeSeats) {
+    for (const seat of dealOrder) {
       holeCardsByParticipantId[seat.participantId!] ??= [];
       holeCardsByParticipantId[seat.participantId!].push(drawCard(deck));
     }
@@ -103,6 +106,7 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
   });
 
   const currentBet = bettingPlayers.reduce((max, player) => Math.max(max, player.streetCommitted), 0);
+  const minRaise = currentBet > 0 && currentBet < state.settings.bigBlind ? state.settings.bigBlind - currentBet : state.settings.bigBlind;
   const preferredActorSeat = activeSeats.length === 2 ? smallBlindSeat : nextSeatAfter(bigBlindSeat, activeSeats);
   const actorId = findNextEligibleActorId(seats, bettingPlayers, preferredActorSeat);
 
@@ -122,7 +126,7 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
       betting: {
         street: "preflop",
         currentBet,
-        minRaise: state.settings.bigBlind,
+        minRaise,
         actorId,
         players: bettingPlayers
       },
@@ -331,6 +335,16 @@ function nextActorId(seats: Seat[], previousActorId: string, betting: BettingSta
 function nextSeatOnOrAfter(currentSeat: number, seats: ReadonlyArray<Seat>): number {
   const orderedSeats = [...seats].sort((left, right) => left.seatNumber - right.seatNumber);
   return orderedSeats.find((seat) => seat.seatNumber >= currentSeat)?.seatNumber ?? orderedSeats[0].seatNumber;
+}
+
+function orderSeatsFrom(startingSeat: number, seats: ReadonlyArray<Seat>): Seat[] {
+  const orderedSeats = [...seats].sort((left, right) => left.seatNumber - right.seatNumber);
+  const startingIndex = orderedSeats.findIndex((seat) => seat.seatNumber === startingSeat);
+  if (startingIndex === -1) {
+    throw new Error(`Seat ${startingSeat} not found in deal order`);
+  }
+
+  return [...orderedSeats.slice(startingIndex), ...orderedSeats.slice(0, startingIndex)];
 }
 
 function toActionRecord(action: BettingAction): HandActionRecord {
