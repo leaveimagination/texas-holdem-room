@@ -74,4 +74,28 @@ describe("visibility", () => {
     expect(view.hand?.seats[1].holeCards).toBeUndefined();
     expect(view.hostControls).toBe(true);
   });
+
+  it("never shows hole cards to spectators, even with a participantId", () => {
+    const view = toParticipantView(state, { participantId: "p1", role: "spectator", host: false });
+
+    expect(view.hand?.seats[0].holeCards).toBeUndefined();
+    expect(view.hand?.seats[1].holeCards).toBeUndefined();
+  });
+
+  it("does not leak winner cards on finished fold-win hands", () => {
+    const foldWinState: RoomState = {
+      ...state,
+      hand: {
+        ...state.hand!,
+        finished: true,
+        winners: ["p2"]
+      }
+    };
+
+    const viewer = toParticipantView(foldWinState, { participantId: "p1", role: "player", host: false });
+    const winner = toParticipantView(foldWinState, { participantId: "p2", role: "player", host: false });
+
+    expect(viewer.hand?.seats[1].holeCards).toBeUndefined();
+    expect(winner.hand?.seats[1].holeCards).toEqual(["Kd", "Kh"]);
+  });
 });

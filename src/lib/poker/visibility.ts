@@ -61,8 +61,7 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
           seats: state.seats.map((seat) => ({
             seatNumber: seat.seatNumber,
             participantId: seat.participantId,
-              ...(seat.participantId &&
-            shouldRevealHoleCards(hand.finished, seat.participantId, hand.winners, viewer.participantId)
+            ...(seat.participantId && shouldRevealHoleCards(hand, seat.participantId, viewer)
               ? { holeCards: hand.holeCardsByParticipantId[seat.participantId]?.map(serializeCard) }
               : {})
           })),
@@ -75,14 +74,13 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
 }
 
 function shouldRevealHoleCards(
-  handFinished: boolean,
+  hand: RoomState["hand"],
   ownerId: string,
-  winners: string[],
-  viewerId: string | null
+  viewer: Viewer
 ): boolean {
-  if (viewerId === ownerId) {
-    return true;
+  if (viewer.role !== "player") {
+    return false;
   }
 
-  return Boolean(handFinished && winners.includes(ownerId));
+  return viewer.participantId === ownerId;
 }
