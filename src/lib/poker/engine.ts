@@ -19,6 +19,7 @@ export interface RoomState {
 export interface HandActionRecord {
   playerId: string;
   type: BettingAction["type"];
+  street: Street;
   amount?: number;
 }
 
@@ -267,7 +268,7 @@ export function applyPlayerAction(state: RoomState, action: BettingAction): Room
     hand: {
       ...state.hand,
       betting,
-      actions: [...state.hand.actions, toActionRecord(action)],
+      actions: [...state.hand.actions, toActionRecord(action, state.hand.street)],
       actorId: state.hand.actorId
     }
   };
@@ -450,10 +451,11 @@ function orderSeatsFrom(startingSeat: number, seats: ReadonlyArray<Seat>): Seat[
   return [...orderedSeats.slice(startingIndex), ...orderedSeats.slice(0, startingIndex)];
 }
 
-function toActionRecord(action: BettingAction): HandActionRecord {
+function toActionRecord(action: BettingAction, street: Street): HandActionRecord {
   return {
     playerId: action.playerId,
     type: action.type,
+    street,
     amount: "amountTo" in action ? action.amountTo : undefined
   };
 }

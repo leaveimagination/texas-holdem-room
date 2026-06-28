@@ -43,6 +43,7 @@ const SeatSchema = z
 const HandActionRecordSchema = z.object({
   playerId: z.string(),
   type: z.enum(["fold", "check", "call", "bet", "raise", "all-in"]),
+  street: z.enum(["preflop", "flop", "turn", "river"]),
   amount: z.number().optional()
 });
 const HandStateSchema = z

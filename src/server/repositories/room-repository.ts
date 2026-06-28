@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { nanoid } from "nanoid";
 import type { RoomState } from "@/lib/poker/engine";
 import { buildPots } from "@/lib/poker/betting";
+import { serializeCard, type Card } from "@/lib/poker/cards";
 import { prisma } from "@/server/db";
 
 export class RoomRepository {
@@ -132,7 +133,7 @@ export function hashToken(token: string): string {
 
 export interface PublicHandReview {
   handNumber: number;
-  board: unknown;
+  board: string[];
   winners: PublicHandWinner[];
   potSize: number;
   actions: PublicHandAction[];
@@ -185,7 +186,7 @@ export function mapHandToPublicReview(hand: HandReviewRow): PublicHandReview {
 
   return {
     handNumber: hand.handNumber,
-    board: hand.board,
+    board: serializeBoard(hand.board),
     winners: [...new Set(winnerIds)].map((participantId) => {
       const participant = participantsById.get(participantId);
 
@@ -237,7 +238,7 @@ export function createHandPersistenceDetails(room: RoomState): HandPersistenceDe
       id: `${hand.id}-action-${index + 1}`,
       handId: hand.id,
       sequenceNumber: index + 1,
-      street: hand.street,
+      street: action.street,
       participantId: action.playerId,
       actionType: action.type,
       amount: action.amount ?? null,
@@ -260,6 +261,35 @@ export function createHandPersistenceDetails(room: RoomState): HandPersistenceDe
 
 function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function serializeBoard(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((card) => {
+    if (typeof card === "string") {
+      return [card];
+    }
+
+    if (isCard(card)) {
+      return [serializeCard(card)];
+    }
+
+    return [];
+  });
+}
+
+function isCard(value: unknown): value is Card {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "rank" in value &&
+    "suit" in value &&
+    typeof value.rank === "string" &&
+    typeof value.suit === "string"
+  );
 }
 
 function compareToken(token: string, expectedHash: string): boolean {

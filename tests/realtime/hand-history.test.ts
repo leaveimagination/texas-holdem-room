@@ -13,7 +13,13 @@ describe("hand history review shape", () => {
   it("maps durable hand rows to public review fields without hole cards", () => {
     const publicHand = mapHandToPublicReview({
       handNumber: 3,
-      board: ["As", "Kd", "Qc", "2h", "9s"],
+      board: [
+        { rank: "A", suit: "s" },
+        { rank: "K", suit: "d" },
+        { rank: "Q", suit: "c" },
+        { rank: "2", suit: "h" },
+        { rank: "9", suit: "s" }
+      ],
       players: [
         {
           holeCards: ["Ah", "Ad"],
@@ -178,7 +184,7 @@ function finishedRoom(): RoomState {
         ]
       },
       holeCardsByParticipantId: {},
-      actions: [{ playerId: "p2", type: "fold" }],
+      actions: [{ playerId: "p2", type: "fold", street: "preflop" }],
       finished: true,
       winners: ["p1"]
     }
