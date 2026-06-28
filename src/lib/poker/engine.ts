@@ -56,6 +56,99 @@ export function createInitialRoomState(settings: RoomSettings, roomId: string): 
   };
 }
 
+export function canClaimSeat(state: RoomState, participantId: string, seatNumber: number): boolean {
+  const seat = state.seats.find((candidate) => candidate.seatNumber === seatNumber);
+  if (!seat || seat.participantId !== null || seat.status !== "empty") {
+    return false;
+  }
+
+  if (state.seats.some((candidate) => candidate.participantId === participantId)) {
+    return false;
+  }
+
+  if (state.mode === "tournament") {
+    return state.status === "lobby" && state.handCounter === 0 && state.hand === null;
+  }
+
+  return state.status !== "finished";
+}
+
+export function claimSeat(state: RoomState, participantId: string, displayName: string, seatNumber: number): RoomState {
+  if (!canClaimSeat(state, participantId, seatNumber)) {
+    throw new Error("Seat cannot be claimed now");
+  }
+
+  return {
+    ...state,
+    seats: state.seats.map((seat) =>
+      seat.seatNumber === seatNumber
+        ? {
+            ...seat,
+            participantId,
+            displayName,
+            chips: state.settings.initialChips,
+            cumulativeBuyIn: state.settings.initialChips,
+            status: "seated"
+          }
+        : seat
+    )
+  };
+}
+
+export function rebuy(state: RoomState, participantId: string, amount: number): RoomState {
+  if (state.mode !== "cash") {
+    throw new Error("Rebuys are only allowed in cash games");
+  }
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error("Rebuy amount must be positive");
+  }
+
+  const seat = state.seats.find((candidate) => candidate.participantId === participantId);
+  if (!seat) {
+    throw new Error("Participant is not seated");
+  }
+
+  return {
+    ...state,
+    seats: state.seats.map((candidate) =>
+      candidate.participantId === participantId
+        ? {
+            ...candidate,
+            chips: candidate.chips + amount,
+            cumulativeBuyIn: candidate.cumulativeBuyIn + amount,
+            status: candidate.status === "eliminated" ? "seated" : candidate.status
+          }
+        : candidate
+    )
+  };
+}
+
+export function markDisconnected(state: RoomState, participantId: string): RoomState {
+  const seat = state.seats.find((candidate) => candidate.participantId === participantId);
+  if (!seat) {
+    throw new Error("Participant is not seated");
+  }
+
+  const disconnectedIsInActiveHand =
+    state.hand !== null &&
+    !state.hand.finished &&
+    state.hand.betting.players.some((player) => player.id === participantId);
+
+  return {
+    ...state,
+    status: state.status === "playing" && disconnectedIsInActiveHand ? "paused" : state.status,
+    seats: state.seats.map((candidate) =>
+      candidate.participantId === participantId
+        ? {
+            ...candidate,
+            status: "disconnected"
+          }
+        : candidate
+    )
+  };
+}
+
 export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
   if (state.hand && !state.hand.finished) {
     throw new Error("Hand already in progress");

@@ -4,7 +4,7 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData } from "ws";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 import { ClientMessageSchema } from "@/lib/realtime/messages";
-import { applyPlayerAction, startHand, type RoomState } from "@/lib/poker/engine";
+import { applyPlayerAction, claimSeat, markDisconnected, rebuy, startHand, type RoomState } from "@/lib/poker/engine";
 import { toParticipantView } from "@/lib/poker/visibility";
 import type { LiveRoomStore } from "@/server/live-room-store";
 import { SessionRegistry, type Session } from "./session-registry";
@@ -136,6 +136,13 @@ async function handleIncomingMessage(
     switch (message.type) {
       case "join_room":
         break;
+      case "claim_seat":
+        if (!session.participantId) {
+          throw new Error("Participant token mismatch");
+        }
+        updatedRoom = claimSeat(room, session.participantId, session.participantId, message.seatNumber);
+        await liveRooms.saveRoom(updatedRoom);
+        break;
       case "start_room":
         updatedRoom = startHand(room);
         await liveRooms.saveRoom(updatedRoom);
@@ -143,6 +150,23 @@ async function handleIncomingMessage(
       case "player_action":
         validatePlayerAction(message, room, session);
         updatedRoom = applyPlayerAction(room, message.action);
+        await liveRooms.saveRoom(updatedRoom);
+        break;
+      case "rebuy":
+        if (!session.participantId) {
+          throw new Error("Participant token mismatch");
+        }
+        updatedRoom = rebuy(room, session.participantId, message.amount);
+        await liveRooms.saveRoom(updatedRoom);
+        break;
+      case "handle_disconnect":
+        if (!session.host) {
+          throw new Error("Host token required");
+        }
+        if (message.handling !== "pause") {
+          throw new Error(`Unsupported disconnect handling: ${message.handling}`);
+        }
+        updatedRoom = markDisconnected(room, message.participantId);
         await liveRooms.saveRoom(updatedRoom);
         break;
     }
@@ -177,8 +201,19 @@ function hasHostToken(message: ClientMessage): message is ClientMessage & { host
 
 function isSupportedMessage(
   message: ClientMessage
-): message is Extract<ClientMessage, { type: "join_room" | "start_room" | "player_action" | "quick_phrase" }> {
-  return message.type === "join_room" || message.type === "start_room" || message.type === "player_action" || message.type === "quick_phrase";
+): message is Extract<
+  ClientMessage,
+  { type: "join_room" | "claim_seat" | "start_room" | "player_action" | "rebuy" | "quick_phrase" | "handle_disconnect" }
+> {
+  return (
+    message.type === "join_room" ||
+    message.type === "claim_seat" ||
+    message.type === "start_room" ||
+    message.type === "player_action" ||
+    message.type === "rebuy" ||
+    message.type === "quick_phrase" ||
+    message.type === "handle_disconnect"
+  );
 }
 
 function validatePlayerAction(message: Extract<ClientMessage, { type: "player_action" }>, room: RoomState, session: Session): void {
