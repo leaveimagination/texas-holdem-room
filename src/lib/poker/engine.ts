@@ -196,6 +196,13 @@ export function finishHandIfReady(state: RoomState): RoomState {
 
   const remainingPlayers = state.hand.betting.players.filter((player) => !player.folded);
   if (remainingPlayers.length !== 1) {
+    const playersWithPendingResponse = remainingPlayers.filter(
+      (player) => !player.allIn && player.streetCommitted < state.hand!.betting.currentBet
+    );
+    if (playersWithPendingResponse.length > 0) {
+      return state;
+    }
+
     const actionablePlayers = remainingPlayers.filter((player) => !player.allIn);
     if (actionablePlayers.length > 1) {
       return state;

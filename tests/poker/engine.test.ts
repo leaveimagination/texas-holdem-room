@@ -27,6 +27,27 @@ function createReadyHeadsUpState(chips: [number, number] = [1000, 1000]) {
   return state;
 }
 
+function createReadyThreeHandedState(chips: [number, number, number] = [1000, 1000, 1000]) {
+  let state = createInitialRoomState(
+    { mode: "cash", seats: 3, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+    "room1"
+  );
+
+  state = {
+    ...state,
+    seats: state.seats.map((seat, index) => ({
+      ...seat,
+      participantId: `p${index + 1}`,
+      displayName: `P${index + 1}`,
+      chips: chips[index],
+      cumulativeBuyIn: chips[index],
+      status: "ready"
+    }))
+  };
+
+  return state;
+}
+
 describe("engine", () => {
   it("posts normal blinds, deals hole cards, and assigns the opening actor heads up", () => {
     const started = startHand(createReadyHeadsUpState(), fixedDeck);
@@ -75,5 +96,24 @@ describe("engine", () => {
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
     expect(() => startHand(createReadyHeadsUpState([5, 15]), fixedDeck)).toThrow("No player can act after blinds");
+  });
+
+  it("keeps the hand live when a remaining player still owes chips after an all-in and a fold", () => {
+    const started = startHand(createReadyThreeHandedState([200, 200, 200]), fixedDeck);
+    const jammed = applyPlayerAction(started, { type: "all-in", playerId: started.hand!.actorId });
+    const afterFold = applyPlayerAction(jammed, { type: "fold", playerId: jammed.hand!.actorId });
+
+    expect(started.hand?.actorId).toBe("p1");
+    expect(jammed.hand?.betting.currentBet).toBe(200);
+    expect(afterFold.hand?.finished).toBe(false);
+    expect(afterFold.hand?.actorId).toBe("p3");
+    expect(afterFold.hand?.betting.actorId).toBe("p3");
+    expect(afterFold.hand?.betting.players).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "p1", allIn: true, streetCommitted: 200 }),
+        expect.objectContaining({ id: "p2", folded: true }),
+        expect.objectContaining({ id: "p3", allIn: false, streetCommitted: 20 })
+      ])
+    );
   });
 });
