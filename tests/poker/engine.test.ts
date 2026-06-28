@@ -60,14 +60,17 @@ describe("engine", () => {
     expect(started.hand?.betting.actorId).toBe("p2");
   });
 
-  it("uses the actual posted big blind when the big blind posts short", () => {
+  it("closes the action after the small blind calls a short all-in big blind", () => {
     const started = startHand(createReadyHeadsUpState([100, 15]), fixedDeck);
     const called = applyPlayerAction(started, { type: "call", playerId: started.hand!.actorId });
 
     expect(started.seats[1].status).toBe("all-in");
     expect(started.hand?.betting.currentBet).toBe(15);
     expect(started.hand?.actorId).toBe("p1");
+    expect(called.hand?.finished).toBe(true);
+    expect(called.hand?.winners).toEqual([]);
     expect(called.seats[0].chips).toBe(85);
+    expect(called.seats[1].chips).toBe(0);
   });
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {

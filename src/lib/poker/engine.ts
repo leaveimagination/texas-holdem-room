@@ -196,7 +196,18 @@ export function finishHandIfReady(state: RoomState): RoomState {
 
   const remainingPlayers = state.hand.betting.players.filter((player) => !player.folded);
   if (remainingPlayers.length !== 1) {
-    return state;
+    const actionablePlayers = remainingPlayers.filter((player) => !player.allIn);
+    if (actionablePlayers.length > 1) {
+      return state;
+    }
+
+    return {
+      ...state,
+      hand: {
+        ...state.hand,
+        finished: true
+      }
+    };
   }
 
   const winnerId = remainingPlayers[0].id;
