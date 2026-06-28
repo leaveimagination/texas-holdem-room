@@ -11,18 +11,33 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const { connected, error, messages, send } = useRoomSocket(roomId);
   const [displayName, setDisplayName] = useState("Player");
   const [hasParticipantToken, setHasParticipantToken] = useState(false);
+  const [participantId, setParticipantId] = useState<string | null>(null);
   const [hostToken, setHostToken] = useState<string | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
 
   useEffect(() => {
     setHasParticipantToken(Boolean(getParticipantToken(roomId)));
+    setParticipantId(getParticipantId(roomId));
     setHostToken(readHostToken());
   }, [roomId]);
 
-  function joinRoom(displayName: string, participantToken: string | null) {
+  useEffect(() => {
+    const visibleParticipantId = readVisibleParticipantId(roomView);
+    if (!visibleParticipantId || participantId === visibleParticipantId) {
+      return;
+    }
+
+    setParticipantId(visibleParticipantId);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`holdem:${roomId}:participantId`, visibleParticipantId);
+    }
+  }, [participantId, roomId, roomView]);
+
+  function joinRoom(displayName: string, participantToken: string | null, joinedParticipantId?: string | null) {
     setDisplayName(displayName);
     setHasParticipantToken(Boolean(participantToken));
+    setParticipantId(joinedParticipantId ?? getParticipantId(roomId));
     send({ type: "join_room", roomId, participantToken, displayName });
   }
 
@@ -98,6 +113,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         legalActions={legalActions}
         hostControls={Boolean(hostToken)}
         playerControls={hasParticipantToken}
+        localParticipantId={participantId}
         onClaimSeat={claimSeat}
         onStartRoom={startRoom}
         onPlayerAction={sendPlayerAction}
@@ -126,6 +142,41 @@ function getParticipantToken(roomId: string): string | null {
   }
 
   return window.localStorage.getItem(`holdem:${roomId}:participantToken`);
+}
+
+function getParticipantId(roomId: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(`holdem:${roomId}:participantId`);
+}
+
+function readVisibleParticipantId(view: unknown): string | null {
+  if (typeof view !== "object" || view === null || !("hand" in view)) {
+    return null;
+  }
+
+  const hand = (view as { hand?: unknown }).hand;
+  if (typeof hand !== "object" || hand === null || !("seats" in hand) || !Array.isArray((hand as { seats: unknown }).seats)) {
+    return null;
+  }
+
+  const visibleSeat = (hand as { seats: unknown[] }).seats.find((seat) => {
+    return (
+      typeof seat === "object" &&
+      seat !== null &&
+      "participantId" in seat &&
+      "holeCards" in seat &&
+      Array.isArray((seat as { holeCards?: unknown }).holeCards)
+    );
+  });
+
+  if (typeof visibleSeat !== "object" || visibleSeat === null || !("participantId" in visibleSeat)) {
+    return null;
+  }
+
+  return typeof visibleSeat.participantId === "string" ? visibleSeat.participantId : null;
 }
 
 function readHostToken(): string | null {

@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useState } from "react";
 import type { ClientMessage } from "@/lib/realtime/messages";
 
@@ -11,6 +12,8 @@ const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-i
 export function ActionControls({
   legalActions,
   actorId,
+  localParticipantId,
+  canStartRoom = true,
   hostControls = false,
   playerControls = false,
   onStartRoom,
@@ -20,6 +23,8 @@ export function ActionControls({
 }: {
   legalActions?: unknown;
   actorId?: string | null;
+  localParticipantId?: string | null;
+  canStartRoom?: boolean;
   hostControls?: boolean;
   playerControls?: boolean;
   onStartRoom?: () => void;
@@ -33,6 +38,9 @@ export function ActionControls({
   const actions = readActions(legalActions);
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : FALLBACK_ACTIONS;
   const activeActorId = actorId ?? "pending-player";
+  const hasActiveTurn = Boolean(actorId);
+  const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
+  const canUsePlayerActions = playerControls && (!hasActiveTurn || isPlayerTurn);
 
   function sendAction(type: ActionType) {
     if (type === "bet" || type === "raise") {
@@ -64,9 +72,13 @@ export function ActionControls({
 
   return (
     <section className="action-dock" aria-label="Actions">
+      <div className={isPlayerTurn ? "turn-banner is-your-turn" : "turn-banner"} role="status">
+        {isPlayerTurn ? "Your turn" : hasActiveTurn ? "Waiting for another player" : "Waiting for the next hand"}
+      </div>
+
       {hostControls ? (
         <div className="host-controls" aria-label="Host controls">
-          <button type="button" onClick={onStartRoom}>Start room</button>
+          <button type="button" onClick={onStartRoom} disabled={!canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
           <label>
             Disconnected participant
             <input
@@ -82,7 +94,7 @@ export function ActionControls({
 
       <div className="action-grid">
         {visibleActions.map((type) => (
-          <button type="button" key={type} onClick={() => sendAction(type)} disabled={!playerControls}>
+          <button type="button" key={type} onClick={() => sendAction(type)} disabled={!canUsePlayerActions}>
             {formatAction(type)}
           </button>
         ))}
@@ -97,7 +109,7 @@ export function ActionControls({
             min={1}
             type="number"
             value={raiseAmount}
-            disabled={!playerControls}
+            disabled={!canUsePlayerActions}
             onChange={(event) => setRaiseAmount(event.target.value)}
           />
         </label>

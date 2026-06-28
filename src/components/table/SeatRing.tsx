@@ -7,6 +7,7 @@ interface SeatView {
   status: string;
   occupied: boolean;
   holeCards: string[];
+  isActing: boolean;
 }
 
 export function SeatRing({
@@ -26,14 +27,14 @@ export function SeatRing({
       {displaySeats.map((seat) => (
         <button
           type="button"
-          className={seat.occupied ? "seat is-occupied" : "seat"}
+          className={["seat", seat.occupied ? "is-occupied" : "", seat.isActing ? "is-acting" : ""].filter(Boolean).join(" ")}
           key={seat.seatNumber}
           onClick={() => {
             if (!seat.occupied && canClaimSeat) {
               onClaimSeat?.(seat.seatNumber);
             }
           }}
-          aria-label={seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
+          aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
           disabled={seat.occupied || !canClaimSeat}
         >
           <span className="seat-number">Seat {seat.seatNumber}</span>
@@ -56,6 +57,7 @@ export function SeatRing({
 function readSeats(view: unknown): SeatView[] {
   const value = typeof view === "object" && view !== null && "seats" in view ? (view as { seats: unknown }).seats : null;
   const holeCardsBySeat = readHoleCardsBySeat(view);
+  const actingSeatNumber = readActingSeatNumber(view);
   if (!Array.isArray(value)) {
     return [];
   }
@@ -76,9 +78,28 @@ function readSeats(view: unknown): SeatView[] {
       chips: typeof seat.chips === "number" ? seat.chips : 0,
       status: typeof seat.status === "string" ? seat.status : "empty",
       occupied: typeof seat.occupied === "boolean" ? seat.occupied : seat.displayName !== null,
-      holeCards: holeCardsBySeat.get(seat.seatNumber) ?? []
+      holeCards: holeCardsBySeat.get(seat.seatNumber) ?? [],
+      isActing: actingSeatNumber === seat.seatNumber
     }];
   });
+}
+
+function readActingSeatNumber(view: unknown): number | null {
+  const hand = readObject(readObject(view)?.hand);
+  const actorId = typeof hand?.actorId === "string" ? hand.actorId : null;
+  const handSeats = hand?.seats;
+  if (!actorId || !Array.isArray(handSeats)) {
+    return null;
+  }
+
+  for (const candidate of handSeats) {
+    const seat = readObject(candidate);
+    if (seat?.participantId === actorId && typeof seat.seatNumber === "number") {
+      return seat.seatNumber;
+    }
+  }
+
+  return null;
 }
 
 function readHoleCardsBySeat(view: unknown): Map<number, string[]> {
@@ -115,6 +136,7 @@ function emptySeats(count: number): SeatView[] {
     chips: 0,
     status: "empty",
     occupied: false,
-    holeCards: []
+    holeCards: [],
+    isActing: false
   }));
 }

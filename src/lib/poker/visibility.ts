@@ -1,4 +1,5 @@
 import { serializeCard } from "./cards";
+import { getLegalActions } from "./betting";
 import type { RoomState } from "./engine";
 
 export interface Viewer {
@@ -24,6 +25,7 @@ export interface ParticipantRoomView {
     number: number;
     street: string;
     board: string[];
+    pot: number;
     actorId: string;
     seats: Array<{
       seatNumber: number;
@@ -31,6 +33,7 @@ export interface ParticipantRoomView {
       holeCards?: string[];
     }>;
     actions: Array<{ playerId: string; type: string; amount?: number }>;
+    legalActions: Array<{ type: string; amount?: number; minAmountTo?: number; maxAmountTo?: number }>;
     finished: boolean;
     winners: string[];
   };
@@ -57,6 +60,7 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
           number: hand.number,
           street: hand.street,
           board: hand.board.map(serializeCard),
+          pot: hand.betting.players.reduce((sum, player) => sum + player.committed, 0),
           actorId: hand.actorId,
           seats: state.seats.map((seat) => ({
             seatNumber: seat.seatNumber,
@@ -66,6 +70,7 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
               : {})
           })),
           actions: hand.actions,
+          legalActions: hand.finished ? [] : getLegalActions(hand.betting, hand.actorId),
           finished: hand.finished,
           winners: hand.winners
         }

@@ -47,7 +47,10 @@ const state: RoomState = {
       currentBet: 20,
       minRaise: 20,
       actorId: "p1",
-      players: []
+      players: [
+        { id: "p1", stack: 990, committed: 10, streetCommitted: 10, folded: false, allIn: false },
+        { id: "p2", stack: 980, committed: 20, streetCommitted: 20, folded: false, allIn: false }
+      ]
     },
     holeCardsByParticipantId: {
       p1: [parseCard("As"), parseCard("Ah")],
@@ -80,6 +83,12 @@ describe("visibility", () => {
 
     expect(view.hand?.seats[0].holeCards).toBeUndefined();
     expect(view.hand?.seats[1].holeCards).toBeUndefined();
+  });
+
+  it("includes only legal betting actions for the current actor", () => {
+    const view = toParticipantView(state, { participantId: "p1", role: "player", host: false });
+
+    expect(view.hand?.legalActions.map((action) => action.type)).toEqual(["fold", "call", "raise", "all-in"]);
   });
 
   it("does not leak winner cards on finished fold-win hands", () => {

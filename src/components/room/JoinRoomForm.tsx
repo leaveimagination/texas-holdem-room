@@ -8,7 +8,7 @@ export function JoinRoomForm({
   onJoin
 }: {
   roomId: string;
-  onJoin?: (displayName: string, participantToken: string | null) => void;
+  onJoin?: (displayName: string, participantToken: string | null, participantId?: string | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
@@ -26,11 +26,18 @@ export function JoinRoomForm({
 
     try {
       const storageKey = `holdem:${roomId}:participantToken`;
+      const participantStorageKey = `holdem:${roomId}:participantId`;
       const existingToken = window.localStorage.getItem(storageKey);
-      const participantToken = existingToken ?? await createParticipantToken(roomId, displayName);
+      const existingParticipantId = window.localStorage.getItem(participantStorageKey);
+      const participant = existingToken
+        ? { participantToken: existingToken, participantId: existingParticipantId }
+        : await createParticipant(roomId, displayName);
 
-      window.localStorage.setItem(storageKey, participantToken);
-      onJoin?.(displayName, participantToken);
+      window.localStorage.setItem(storageKey, participant.participantToken);
+      if (participant.participantId) {
+        window.localStorage.setItem(participantStorageKey, participant.participantId);
+      }
+      onJoin?.(displayName, participant.participantToken, participant.participantId);
     } catch (joinError) {
       const message = joinError instanceof Error ? joinError.message : "Unable to join room";
       setError(message);
@@ -59,14 +66,14 @@ export function JoinRoomForm({
   );
 }
 
-async function createParticipantToken(roomId: string, displayName: string): Promise<string> {
+async function createParticipant(roomId: string, displayName: string): Promise<{ participantId: string; participantToken: string }> {
   const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/participants`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ displayName })
   });
 
-  const body = await response.json() as { participantToken?: unknown; error?: unknown };
+  const body = await response.json() as { participantId?: unknown; participantToken?: unknown; error?: unknown };
   if (!response.ok) {
     throw new Error(typeof body.error === "string" ? body.error : "Unable to join room");
   }
@@ -75,5 +82,9 @@ async function createParticipantToken(roomId: string, displayName: string): Prom
     throw new Error("Join response did not include a participant token");
   }
 
-  return body.participantToken;
+  if (typeof body.participantId !== "string") {
+    throw new Error("Join response did not include a participant id");
+  }
+
+  return { participantId: body.participantId, participantToken: body.participantToken };
 }

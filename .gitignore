@@ -5,4 +5,5 @@ tsconfig.tsbuildinfo
 .next/
 test-results/
 playwright-report/
+output/
 tmp-dev*.log
