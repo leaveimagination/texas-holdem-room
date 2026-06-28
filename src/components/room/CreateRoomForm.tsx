@@ -64,7 +64,7 @@ export function CreateRoomForm() {
       <label style={fieldStyle}>
         Mode
         <select name="mode" value={mode} onChange={(event) => setMode(event.currentTarget.value as "cash" | "tournament")}>
-          <option value="cash">Cash game</option>
+          <option value="cash">Flexible table</option>
           <option value="tournament">Tournament</option>
         </select>
       </label>

@@ -38,7 +38,7 @@ npm run build
 Also run the unsafe-copy search:
 
 ```bash
-rg -n "money|cash out|withdraw|recharge|prize|reward|settlement|gambl|赢钱|提现|充值|奖金" src docs README.md
+rg -n "money|cash|cash out|withdraw|recharge|prize|reward|settlement|gambl|public lobby|public matchmaking|casino|wallet|payment|exchange|redeem|redemption|bonus|payout|赢钱|提现|充值|奖金|赌博|现金|真钱|兑换|奖品|公开大厅" src docs README.md
 ```
 
 Expected matches are allowed only when they are guardrails saying the product does not support those concepts.

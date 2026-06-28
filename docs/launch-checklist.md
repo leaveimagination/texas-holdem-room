@@ -21,7 +21,7 @@ Use this checklist before any preview, demo, or public share of the private frie
 Run the unsafe-copy search before launch:
 
 ```bash
-rg -n "money|cash out|withdraw|recharge|prize|reward|settlement|gambl|赢钱|提现|充值|奖金" src docs README.md
+rg -n "money|cash|cash out|withdraw|recharge|prize|reward|settlement|gambl|public lobby|public matchmaking|casino|wallet|payment|exchange|redeem|redemption|bonus|payout|赢钱|提现|充值|奖金|赌博|现金|真钱|兑换|奖品|公开大厅" src docs README.md
 ```
 
 Expected hits should be limited to guardrail-only documentation that explicitly says those concepts are not supported.
