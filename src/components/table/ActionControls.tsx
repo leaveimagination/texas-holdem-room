@@ -7,6 +7,7 @@ import { PlayingCard } from "./PlayingCard";
 
 type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
 type ActionType = PlayerAction["type"];
+type ActionItem = { type: ActionType; amount?: number; amountTo?: number; minAmountTo?: number; maxAmountTo?: number };
 
 const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-in"];
 const PRIMARY_ACTIONS = new Set<ActionType>(["call", "check", "bet", "raise", "all-in"]);
@@ -110,12 +111,12 @@ export function ActionControls({
           </div>
         </div>
 
-        <div className="bet-console">
+        <div className="action-console">
           <div className={isPlayerTurn ? "turn-banner is-your-turn" : "turn-banner"} role="status">
             {statusText}
           </div>
           {showBettingControls ? (
-            <>
+            <div className="bet-console">
               <div className="quick-bet-row" aria-label="Quick bet controls">
                 {quickBets.map((bet) => (
                   <button type="button" key={bet.label} onClick={() => setRaiseAmount(String(bet.amount))} disabled={!canUsePlayerActions}>
@@ -123,12 +124,9 @@ export function ActionControls({
                     <strong>{formatBb(bet.amount, bigBlind)}</strong>
                   </button>
                 ))}
-                <button type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions || !visibleActions.includes("all-in")}>
-                  All in
-                </button>
               </div>
               <label className="amount-control">
-                <span>Bet amount</span>
+                <span>Raise to</span>
                 <input
                   aria-label="Raise amount"
                   inputMode="numeric"
@@ -139,32 +137,34 @@ export function ActionControls({
                   onChange={(event) => setRaiseAmount(event.target.value)}
                 />
               </label>
-            </>
+              <button className="all-in-chip" type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions || !visibleActions.includes("all-in")}>
+                All in
+              </button>
+              <div className={`action-grid action-count-${actionButtons.length}`}>
+                {actionButtons.map((type) => {
+                  const label = formatActionLabel(type, actions, bigBlind);
+                  return (
+                    <button
+                      type="button"
+                      className={PRIMARY_ACTIONS.has(type) ? "is-primary-action" : "is-secondary-action"}
+                      key={type}
+                      onClick={() => sendAction(type)}
+                      disabled={!canUsePlayerActions}
+                    >
+                      <span>{label.title}</span>
+                      {label.detail ? <strong>{label.detail}</strong> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
-            <div className="hud-waiting-note">Actions appear here when a hand is live.</div>
+            <div className="action-placeholder">
+              <strong>{canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
+              <span>{playerControls ? "Take a seat and wait for the next hand." : "Join the room to play."}</span>
+            </div>
           )}
         </div>
-
-        {showBettingControls ? (
-          <div className={`action-grid action-count-${actionButtons.length}`}>
-            {actionButtons.map((type) => (
-              <button
-                type="button"
-                className={PRIMARY_ACTIONS.has(type) ? "is-primary-action" : "is-secondary-action"}
-                key={type}
-                onClick={() => sendAction(type)}
-                disabled={!canUsePlayerActions}
-              >
-                {formatAction(type)}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="action-placeholder">
-            <strong>{canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
-            <span>{playerControls ? "Take a seat and wait for the next hand." : "Join the room to play."}</span>
-          </div>
-        )}
       </div>
 
       <div className="table-tools" aria-label="Table tools">
@@ -210,7 +210,7 @@ export function ActionControls({
   );
 }
 
-function readActions(legalActions: unknown): Array<{ type: ActionType }> {
+function readActions(legalActions: unknown): ActionItem[] {
   const actions = Array.isArray(legalActions)
     ? legalActions
     : typeof legalActions === "object" && legalActions !== null && "actions" in legalActions
@@ -227,7 +227,18 @@ function readActions(legalActions: unknown): Array<{ type: ActionType }> {
     }
 
     const type = (action as { type: unknown }).type;
-    return isActionType(type) ? [{ ...(action as Record<string, unknown>), type } as { type: ActionType }] : [];
+    if (!isActionType(type)) {
+      return [];
+    }
+
+    const record = action as Record<string, unknown>;
+    return [{
+      type,
+      amount: typeof record.amount === "number" ? record.amount : undefined,
+      amountTo: typeof record.amountTo === "number" ? record.amountTo : undefined,
+      minAmountTo: typeof record.minAmountTo === "number" ? record.minAmountTo : undefined,
+      maxAmountTo: typeof record.maxAmountTo === "number" ? record.maxAmountTo : undefined
+    }];
   });
 }
 
@@ -257,8 +268,25 @@ function formatAction(type: ActionType): string {
   }
 }
 
-function readRaiseLimits(actions: Array<{ type: ActionType }>): { min: number; max: number | null } | null {
-  const raiseAction = actions.find((action) => action.type === "raise" || action.type === "bet") as { minAmountTo?: unknown; maxAmountTo?: unknown } | undefined;
+function formatActionLabel(type: ActionType, actions: ActionItem[], bigBlind?: number | null): { title: string; detail: string | null } {
+  const action = actions.find((candidate) => candidate.type === type);
+  if (type === "call" && typeof action?.amount === "number") {
+    return { title: "Call", detail: formatBb(action.amount, bigBlind) };
+  }
+
+  if ((type === "raise" || type === "bet") && typeof action?.minAmountTo === "number") {
+    return { title: type === "bet" ? "Bet" : "Raise to", detail: formatBb(action.minAmountTo, bigBlind) };
+  }
+
+  if (type === "all-in" && typeof action?.amountTo === "number") {
+    return { title: "All in", detail: formatBb(action.amountTo, bigBlind) };
+  }
+
+  return { title: formatAction(type), detail: null };
+}
+
+function readRaiseLimits(actions: ActionItem[]): { min: number; max: number | null } | null {
+  const raiseAction = actions.find((action) => action.type === "raise" || action.type === "bet");
   if (!raiseAction || typeof raiseAction.minAmountTo !== "number") {
     return null;
   }

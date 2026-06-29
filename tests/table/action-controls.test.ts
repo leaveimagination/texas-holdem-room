@@ -44,17 +44,19 @@ describe("ActionControls", () => {
         playerControls: true,
         bigBlind: 20,
         pot: 80,
-        legalActions: { actions: [{ type: "fold" }, { type: "call" }, { type: "raise" }] }
+        legalActions: { actions: [{ type: "fold" }, { type: "call", amount: 30 }, { type: "raise", minAmountTo: 80, maxAmountTo: 2000 }] }
       })
     );
 
+    expect(html).toContain("action-console");
     expect(html).toContain("33%");
-    expect(html).toContain("1.3 BB");
     expect(html).toContain("50%");
-    expect(html).toContain("2 BB");
     expect(html).toContain("75%");
-    expect(html).toContain("3 BB");
     expect(html).toContain("100%");
+    expect(html).toContain("4 BB");
+    expect(html).toContain("Call");
+    expect(html).toContain("1.5 BB");
+    expect(html).toContain("Raise to");
     expect(html).toContain("4 BB");
     expect(html).toContain("Add chips");
     expect(html).toContain("<details class=\"rebuy-popover\"");

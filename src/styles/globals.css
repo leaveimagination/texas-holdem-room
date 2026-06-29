@@ -87,6 +87,125 @@ main {
   align-content: start;
 }
 
+.game-room-page {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.game-room-page .room-header {
+  position: fixed;
+  left: 12px;
+  top: 8px;
+  z-index: 20;
+  width: auto;
+  min-width: 210px;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  pointer-events: none;
+}
+
+.game-room-page .room-header h1 {
+  font-size: 1.02rem;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+
+.game-room-page .status-pill {
+  pointer-events: none;
+  margin-left: 16px;
+}
+
+.game-room-page .join-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.7) 62%),
+    rgba(0, 0, 0, 0.22);
+  padding: 20px;
+  backdrop-filter: blur(2px);
+}
+
+.game-room-page .join-panel {
+  position: relative;
+  width: min(560px, calc(100vw - 28px));
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 24%),
+    rgba(7, 9, 13, 0.92);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.56);
+}
+
+.game-room-page.is-joined .join-modal-backdrop {
+  display: none;
+}
+
+.game-room-page .system-log {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  z-index: 12;
+  width: min(360px, calc(100vw - 24px));
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.game-room-page .quick-phrases {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.game-room-page .quick-phrases button {
+  width: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  border-radius: 999px;
+  padding: 0;
+  overflow: hidden;
+  color: transparent;
+  position: relative;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.25), transparent 26%),
+    linear-gradient(180deg, #323841, #11151b);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.42);
+}
+
+.game-room-page .quick-phrases button::before {
+  content: "...";
+  color: rgba(255, 247, 232, 0.78);
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.game-room-page .quick-phrases button:nth-child(1)::before {
+  content: "T";
+}
+
+.game-room-page .quick-phrases button:nth-child(2)::before {
+  content: "N";
+}
+
+.game-room-page .quick-phrases button:nth-child(3)::before {
+  content: "W";
+}
+
+.game-room-page .quick-phrases button:nth-child(4)::before {
+  content: "A";
+}
+
+.game-room-page .log-entries {
+  display: none;
+}
+
 .room-header,
 .table-topline,
 .hand-result {
@@ -227,7 +346,7 @@ main {
 
 .poker-client-shell {
   position: relative;
-  min-height: calc(100dvh - 20px);
+  min-height: 100dvh;
   border: 0;
   border-radius: 0;
   background:
@@ -236,7 +355,7 @@ main {
     linear-gradient(180deg, #241c1b 0%, #161313 48%, #0b0a0b 100%);
   box-shadow: none;
   overflow: hidden;
-  padding: 6px 12px 10px;
+  padding: 0 12px 10px;
 }
 
 .poker-client-shell .table-topline {
@@ -254,8 +373,8 @@ main {
 }
 
 .poker-client-shell .felt-stage {
-  min-height: clamp(500px, 72dvh, 760px);
-  margin: 52px auto 0;
+  min-height: clamp(520px, 76dvh, 790px);
+  margin: 34px auto 0;
   width: min(96vw, 1220px);
   border-width: 24px;
   border-color: #9a6348;
@@ -465,7 +584,7 @@ main {
 }
 
 .poker-client-shell .hud-main {
-  grid-template-columns: minmax(210px, 0.9fr) minmax(270px, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: minmax(170px, 0.72fr) minmax(120px, 1fr) minmax(470px, 0.98fr);
   align-items: end;
   gap: 10px;
 }
@@ -475,15 +594,15 @@ main {
   grid-row: 2;
 }
 
-.poker-client-shell .bet-console {
+.poker-client-shell .action-console {
   grid-column: 3;
-  grid-row: 1;
-}
-
-.poker-client-shell .action-grid,
-.poker-client-shell .action-placeholder {
-  grid-column: 3;
-  grid-row: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  justify-self: end;
+  width: min(560px, 100%);
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 7px;
 }
 
 .poker-client-shell .hero-pocket {
@@ -498,7 +617,7 @@ main {
 }
 
 .poker-client-shell .hero-meta {
-  width: min(260px, 100%);
+  width: min(230px, 100%);
   border-radius: 9px;
   background: rgba(0, 0, 0, 0.5);
   padding: 12px;
@@ -509,45 +628,122 @@ main {
   font-size: 1.18rem;
 }
 
-.poker-client-shell .turn-banner {
-  min-height: 32px;
-  padding: 7px 10px;
-  background: rgba(0, 0, 0, 0.42);
+.poker-client-shell .action-console .turn-banner {
+  min-height: 28px;
+  justify-self: end;
+  width: min(300px, 100%);
+  border: 0;
+  background: rgba(0, 0, 0, 0.58);
+  padding: 5px 10px;
+  color: rgba(255, 247, 232, 0.76);
+  font-size: 0.82rem;
+}
+
+.poker-client-shell .bet-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px 42px;
+  grid-template-rows: 42px 78px;
+  gap: 7px;
+  align-items: stretch;
 }
 
 .poker-client-shell .quick-bet-row {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
 }
 
 .poker-client-shell .quick-bet-row button {
   min-height: 42px;
   border: 0;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #50565d, #262a30);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4d535a, #282d33 55%, #1d2025);
   color: #f3f4f6;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 14px rgba(0, 0, 0, 0.38);
 }
 
-.poker-client-shell .quick-bet-row button:last-child {
+.poker-client-shell .quick-bet-row button span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+}
+
+.poker-client-shell .quick-bet-row button strong {
   display: none;
 }
 
 .poker-client-shell .amount-control {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  min-width: 0;
+  gap: 0;
+  align-content: stretch;
+  text-transform: none;
+  color: rgba(255, 247, 232, 0.55);
+  font-size: 0.62rem;
+}
+
+.poker-client-shell .amount-control span {
   display: none;
 }
 
+.poker-client-shell .amount-control input {
+  min-height: 42px;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #0a0b0d, #020203);
+  color: #fff7e8;
+  text-align: center;
+  font-size: 1.18rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 14px rgba(0, 0, 0, 0.42);
+}
+
+.poker-client-shell .all-in-chip {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.3), transparent 24%),
+    linear-gradient(180deg, #45494f, #17191d);
+  color: transparent;
+  position: relative;
+}
+
+.poker-client-shell .all-in-chip::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 3px dashed rgba(255, 255, 255, 0.78);
+  border-radius: inherit;
+}
+
 .poker-client-shell .action-grid {
+  grid-column: 1 / 4;
+  grid-row: 2;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .poker-client-shell .action-grid button {
-  min-height: 84px;
+  min-height: 78px;
   border: 0;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #f2535b, #9e1924);
+  border-radius: 5px;
+  background: linear-gradient(180deg, #f85861 0%, #c92531 54%, #8c141f 100%);
   color: #fff4e5;
-  font-size: 1.2rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 14px 26px rgba(0, 0, 0, 0.48);
+  font-size: 1.26rem;
+  display: grid;
+  gap: 3px;
+  place-items: center;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(60, 0, 5, 0.2), 0 14px 26px rgba(0, 0, 0, 0.52);
+}
+
+.poker-client-shell .action-grid button strong {
+  color: #fff7e8;
+  font-size: 1.05rem;
 }
 
 .poker-client-shell .action-grid .is-secondary-action {

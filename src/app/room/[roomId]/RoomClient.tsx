@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useEffect, useState } from "react";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
 import { PokerTable } from "@/components/table/PokerTable";
@@ -96,7 +97,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }
 
   return (
-    <main className="room-page">
+    <main className={hasJoinedRoom ? "room-page game-room-page is-joined" : "room-page game-room-page"}>
       <header className="room-header">
         <div>
           <p className="eyebrow">Private room</p>
@@ -106,10 +107,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
       </header>
 
       {!hasJoinedRoom ? (
-        <section className="join-panel" aria-label="Join flow">
-          <JoinRoomForm roomId={roomId} onJoin={joinRoom} />
-          {error ? <p className="inline-alert" role="status">{error}</p> : null}
-        </section>
+        <div className="join-modal-backdrop">
+          <section className="join-panel" aria-label="Join flow" role="dialog" aria-modal="true">
+            <JoinRoomForm roomId={roomId} onJoin={joinRoom} />
+            {error ? <p className="inline-alert" role="status">{error}</p> : null}
+          </section>
+        </div>
       ) : error ? (
         <p className="inline-alert" role="status">{error}</p>
       ) : null}

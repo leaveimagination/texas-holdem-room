@@ -1,3 +1,4 @@
+import React from "react";
 import type { ServerMessage } from "@/lib/realtime/messages";
 
 const QUICK_PHRASES = [
