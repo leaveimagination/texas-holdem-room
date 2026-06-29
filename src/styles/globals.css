@@ -315,11 +315,17 @@ main {
 
 .seat.is-occupied {
   border-color: transparent;
+  filter: saturate(0.9) brightness(0.92);
 }
 
 .seat.is-acting {
-  filter: drop-shadow(0 0 14px rgba(241, 196, 95, 0.7));
+  filter: drop-shadow(0 0 14px rgba(241, 196, 95, 0.7)) saturate(1.08);
   transform: translateY(-2px);
+}
+
+.seat.is-local-seat {
+  z-index: 2;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.48)) saturate(1.12) brightness(1.08);
 }
 
 .seat-avatar {
@@ -351,6 +357,20 @@ main {
 
 .seat.is-acting .seat-panel {
   border-color: rgba(241, 196, 95, 0.86);
+}
+
+.seat.is-local-seat .seat-avatar {
+  border-color: rgba(241, 196, 95, 0.94);
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.28), transparent 24%),
+    linear-gradient(145deg, #5b3d18, #151922 72%);
+}
+
+.seat.is-local-seat .seat-panel {
+  border-color: rgba(241, 196, 95, 0.66);
+  background:
+    linear-gradient(180deg, rgba(58, 40, 18, 0.98), rgba(12, 14, 20, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 16px 34px rgba(0, 0, 0, 0.34);
 }
 
 .seat strong,
@@ -434,34 +454,46 @@ main {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
 }
 
-.seat:nth-child(1) {
+.seat-slot-1 {
   left: 8%;
   top: 7%;
+  right: auto;
+  bottom: auto;
 }
 
-.seat:nth-child(2) {
+.seat-slot-2 {
   left: 36%;
   top: -3%;
+  right: auto;
+  bottom: auto;
 }
 
-.seat:nth-child(3) {
+.seat-slot-3 {
   right: 8%;
   top: 7%;
+  left: auto;
+  bottom: auto;
 }
 
-.seat:nth-child(4) {
+.seat-slot-4 {
   right: 8%;
   bottom: 7%;
+  left: auto;
+  top: auto;
 }
 
-.seat:nth-child(5) {
+.seat-slot-5 {
   left: 36%;
   bottom: -3%;
+  right: auto;
+  top: auto;
 }
 
-.seat:nth-child(6) {
+.seat-slot-6 {
   left: 8%;
   bottom: 7%;
+  right: auto;
+  top: auto;
 }
 
 .board {
@@ -797,12 +829,18 @@ main {
   filter: grayscale(0.65) brightness(0.7);
 }
 
+.turn-banner.is-your-turn + .quick-bet-row button:not(:disabled),
+.turn-banner.is-your-turn ~ .amount-control input:not(:disabled) {
+  border-color: rgba(241, 196, 95, 0.5);
+}
+
 .table-tools {
   margin-top: 6px;
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+  opacity: 0.82;
 }
 
 .table-tools details {
@@ -933,7 +971,7 @@ main {
 @media (max-width: 760px) {
   .home,
   main {
-    padding: 8px 8px 168px;
+    padding: 8px;
   }
 
   .room-header {
@@ -952,7 +990,7 @@ main {
   }
 
   .felt-stage {
-    min-height: min(520px, 54dvh);
+    min-height: min(600px, 64dvh);
     border-radius: 36px;
     border-width: 12px;
   }
@@ -962,13 +1000,27 @@ main {
   }
 
   .seat {
-    width: 47%;
-    grid-template-columns: 42px minmax(0, 1fr);
+    width: 42%;
+    min-height: 72px;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 6px;
   }
 
   .seat-avatar {
-    width: 42px;
-    font-size: 1rem;
+    width: 38px;
+    font-size: 0.92rem;
+  }
+
+  .seat-panel {
+    padding: 6px 7px;
+  }
+
+  .seat strong {
+    font-size: 0.92rem;
+  }
+
+  .seat-stack {
+    font-size: 0.72rem;
   }
 
   .seat-cards {
@@ -981,34 +1033,51 @@ main {
     font-size: 0.62rem;
   }
 
-  .seat:nth-child(1),
-  .seat:nth-child(3),
-  .seat:nth-child(5) {
+  .seat-slot-1 {
     left: 2%;
     right: auto;
+    top: 3%;
+    bottom: auto;
   }
 
-  .seat:nth-child(2),
-  .seat:nth-child(4),
-  .seat:nth-child(6) {
+  .seat-slot-2 {
     right: 2%;
     left: auto;
-  }
-
-  .seat:nth-child(1),
-  .seat:nth-child(2) {
     top: 3%;
+    bottom: auto;
   }
 
-  .seat:nth-child(3),
-  .seat:nth-child(4) {
-    top: 40%;
+  .seat-slot-3 {
+    right: 2%;
+    left: auto;
+    top: 39%;
+    bottom: auto;
   }
 
-  .seat:nth-child(5),
-  .seat:nth-child(6) {
+  .seat-slot-4 {
+    right: 2%;
+    left: auto;
+    bottom: 20%;
+    top: auto;
+  }
+
+  .seat-slot-5 {
+    left: 50%;
+    right: auto;
     bottom: 3%;
     top: auto;
+    transform: translateX(-50%);
+  }
+
+  .seat-slot-5.is-acting {
+    transform: translateX(-50%) translateY(-2px);
+  }
+
+  .seat-slot-6 {
+    left: 2%;
+    right: auto;
+    top: 39%;
+    bottom: auto;
   }
 
   .hud-main {
@@ -1016,12 +1085,10 @@ main {
   }
 
   .action-dock {
-    position: fixed;
-    left: 8px;
-    right: 8px;
+    position: sticky;
     bottom: 8px;
     z-index: 5;
-    max-height: 56dvh;
+    max-height: 62dvh;
     overflow: auto;
     backdrop-filter: blur(12px);
   }

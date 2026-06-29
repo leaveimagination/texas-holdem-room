@@ -54,7 +54,13 @@ export function PokerTable({
       </div>
 
       <div className="felt-stage">
-        <SeatRing view={view} canClaimSeat={playerControls} onClaimSeat={onClaimSeat} />
+        <SeatRing
+          view={view}
+          localParticipantId={localParticipantId}
+          localDisplayName={localDisplayName}
+          canClaimSeat={playerControls}
+          onClaimSeat={onClaimSeat}
+        />
 
         <div className="table-center">
           <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Pot ${pot}` : "No pot yet"}</div>

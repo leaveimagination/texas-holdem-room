@@ -170,7 +170,7 @@ export function ActionControls({
       <div className="table-tools" aria-label="Table tools">
         {hostControls ? (
           <details className="host-popover">
-            <summary>{canStartRoom ? "Start room" : "Host tools"}</summary>
+            <summary>Host tools</summary>
             <div className="popover-body host-controls" aria-label="Host controls">
               <button type="button" onClick={onStartRoom} disabled={!canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
               <label>

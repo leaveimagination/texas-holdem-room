@@ -3,6 +3,7 @@ import { PlayingCard } from "./PlayingCard";
 
 interface SeatView {
   seatNumber: number;
+  participantId: string | null;
   displayName: string | null;
   chips: number;
   status: string;
@@ -16,22 +17,32 @@ interface SeatView {
 
 export function SeatRing({
   view,
+  localParticipantId,
+  localDisplayName,
   canClaimSeat = false,
   onClaimSeat
 }: {
   view: unknown;
+  localParticipantId?: string | null;
+  localDisplayName?: string | null;
   canClaimSeat?: boolean;
   onClaimSeat?: (seatNumber: number) => void;
 }) {
   const seats = readSeats(view);
-  const displaySeats = seats.length > 0 ? seats : emptySeats(6);
+  const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(6), localParticipantId, localDisplayName);
 
   return (
     <div className="seat-ring" aria-label="Seats">
-      {displaySeats.map((seat) => (
+      {displaySeats.map(({ seat, slot, local }) => (
         <button
           type="button"
-          className={["seat", seat.occupied ? "is-occupied" : "", seat.isActing ? "is-acting" : ""].filter(Boolean).join(" ")}
+          className={[
+            "seat",
+            `seat-slot-${slot}`,
+            seat.occupied ? "is-occupied" : "",
+            seat.isActing ? "is-acting" : "",
+            local ? "is-local-seat" : ""
+          ].filter(Boolean).join(" ")}
           key={seat.seatNumber}
           onClick={() => {
             if (!seat.occupied && canClaimSeat) {
@@ -97,6 +108,7 @@ function readSeats(view: unknown): SeatView[] {
 
     return [{
       seatNumber: seat.seatNumber,
+      participantId: handMetaBySeat.get(seat.seatNumber)?.participantId ?? null,
       displayName: typeof seat.displayName === "string" ? seat.displayName : null,
       chips: typeof seat.chips === "number" ? seat.chips : 0,
       status: typeof seat.status === "string" ? seat.status : "empty",
@@ -151,8 +163,8 @@ function readHoleCardsBySeat(view: unknown): Map<number, string[]> {
   return result;
 }
 
-function readHandMetaBySeat(view: unknown): Map<number, { role: string | null; committed: number; streetCommitted: number }> {
-  const result = new Map<number, { role: string | null; committed: number; streetCommitted: number }>();
+function readHandMetaBySeat(view: unknown): Map<number, { participantId: string | null; role: string | null; committed: number; streetCommitted: number }> {
+  const result = new Map<number, { participantId: string | null; role: string | null; committed: number; streetCommitted: number }>();
   const hand = readObject(readObject(view)?.hand);
   const handSeats = hand?.seats;
   if (!Array.isArray(handSeats)) {
@@ -166,6 +178,7 @@ function readHandMetaBySeat(view: unknown): Map<number, { role: string | null; c
     }
 
     result.set(seat.seatNumber, {
+      participantId: typeof seat.participantId === "string" ? seat.participantId : null,
       role: typeof seat.role === "string" ? seat.role : null,
       committed: typeof seat.committed === "number" ? seat.committed : 0,
       streetCommitted: typeof seat.streetCommitted === "number" ? seat.streetCommitted : 0
@@ -175,6 +188,61 @@ function readHandMetaBySeat(view: unknown): Map<number, { role: string | null; c
   return result;
 }
 
+function arrangeSeatsForViewer(
+  seats: SeatView[],
+  localParticipantId?: string | null,
+  localDisplayName?: string | null
+): Array<{ seat: SeatView; slot: number; local: boolean }> {
+  const orderedSeats = [...seats].sort((left, right) => left.seatNumber - right.seatNumber);
+  const localIndex = findLocalSeatIndex(orderedSeats, localParticipantId, localDisplayName);
+  if (localIndex === -1) {
+    return orderedSeats.map((seat, index) => ({ seat, slot: defaultSlotForIndex(index, orderedSeats.length), local: false }));
+  }
+
+  const rotated = [...orderedSeats.slice(localIndex), ...orderedSeats.slice(0, localIndex)];
+  return rotated.map((seat, index) => ({
+    seat,
+    slot: playerSlotForIndex(index, rotated.length),
+    local: index === 0
+  }));
+}
+
+function findLocalSeatIndex(seats: SeatView[], localParticipantId?: string | null, localDisplayName?: string | null): number {
+  if (localParticipantId) {
+    const byParticipant = seats.findIndex((seat) => seat.participantId === localParticipantId);
+    if (byParticipant !== -1) {
+      return byParticipant;
+    }
+  }
+
+  const trimmedName = localDisplayName?.trim();
+  return trimmedName ? seats.findIndex((seat) => seat.displayName === trimmedName) : -1;
+}
+
+function playerSlotForIndex(index: number, count: number): number {
+  const slotsByCount: Record<number, number[]> = {
+    2: [5, 2],
+    3: [5, 1, 3],
+    4: [5, 6, 2, 4],
+    5: [5, 6, 1, 3, 4],
+    6: [5, 6, 1, 2, 3, 4]
+  };
+
+  return (slotsByCount[count] ?? slotsByCount[6])[index] ?? index + 1;
+}
+
+function defaultSlotForIndex(index: number, count: number): number {
+  const slotsByCount: Record<number, number[]> = {
+    2: [5, 2],
+    3: [5, 1, 3],
+    4: [5, 6, 2, 4],
+    5: [5, 6, 1, 3, 4],
+    6: [1, 2, 3, 4, 5, 6]
+  };
+
+  return (slotsByCount[count] ?? slotsByCount[6])[index] ?? index + 1;
+}
+
 function readObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
 }
@@ -182,6 +250,7 @@ function readObject(value: unknown): Record<string, unknown> | null {
 function emptySeats(count: number): SeatView[] {
   return Array.from({ length: count }, (_, index) => ({
     seatNumber: index + 1,
+    participantId: null,
     displayName: null,
     chips: 0,
     status: "empty",

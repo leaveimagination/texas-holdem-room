@@ -71,4 +71,19 @@ describe("ActionControls", () => {
     expect(html).not.toContain(">Call<");
     expect(html).not.toContain(">Raise<");
   });
+
+  it("keeps room management behind a host tools menu", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: null,
+        hostControls: true,
+        playerControls: true,
+        localParticipantId: "p1",
+        tableStatus: "lobby"
+      })
+    );
+
+    expect(html).toContain("<summary>Host tools</summary>");
+    expect(html).toContain(">Start room<");
+  });
 });

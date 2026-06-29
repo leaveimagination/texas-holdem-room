@@ -74,4 +74,36 @@ describe("SeatRing", () => {
     expect(html).toContain("Bet 10");
     expect(html).toContain("Bet 20");
   });
+
+  it("places the local player in the bottom-center seat slot", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        localParticipantId: "p3",
+        view: {
+          seats: [
+            { seatNumber: 1, displayName: "A", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "B", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 3, displayName: "Hero", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 4, displayName: "D", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 5, displayName: "E", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 6, displayName: "F", chips: 1000, status: "active", occupied: true }
+          ],
+          hand: {
+            seats: [
+              { seatNumber: 1, participantId: "p1" },
+              { seatNumber: 2, participantId: "p2" },
+              { seatNumber: 3, participantId: "p3", holeCards: ["As", "Ah"] },
+              { seatNumber: 4, participantId: "p4" },
+              { seatNumber: 5, participantId: "p5" },
+              { seatNumber: 6, participantId: "p6" }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("Seat 3 occupied by Hero");
+    expect(html).toContain("seat-slot-5");
+    expect(html).toContain("is-local-seat");
+  });
 });
