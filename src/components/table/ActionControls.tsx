@@ -101,7 +101,7 @@ export function ActionControls({
           <div className="hero-meta">
             <span className="hud-label">Your hand</span>
             <strong>{heroName ?? "Take a seat"}</strong>
-            <small>{typeof heroStack === "number" ? `${heroStack.toLocaleString()} chips` : "Join to play"}</small>
+            <small>{typeof heroStack === "number" ? formatBb(heroStack, bigBlind) : "Join to play"}</small>
           </div>
           <div className="hero-cards">
             {heroCards.length > 0
@@ -120,7 +120,7 @@ export function ActionControls({
                 {quickBets.map((bet) => (
                   <button type="button" key={bet.label} onClick={() => setRaiseAmount(String(bet.amount))} disabled={!canUsePlayerActions}>
                     <span>{bet.label}</span>
-                    <strong>{bet.amount.toLocaleString()}</strong>
+                    <strong>{formatBb(bet.amount, bigBlind)}</strong>
                   </button>
                 ))}
                 <button type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions || !visibleActions.includes("all-in")}>
@@ -280,17 +280,22 @@ function buildQuickBets({
 }): Array<{ label: string; amount: number }> {
   const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
   const potSize = typeof pot === "number" && pot > 0 ? pot : blind * 5;
-  const rawBets = [
-    { label: "2BB", amount: blind * 2 },
-    { label: "3BB", amount: blind * 3 },
-    { label: "1/2 Pot", amount: Math.max(blind, Math.round(potSize / 2)) },
-    { label: "Pot", amount: Math.max(blind, potSize) }
-  ];
+  const rawBets = [0.33, 0.5, 0.75, 1].map((ratio) => ({
+    label: `${Math.round(ratio * 100)}%`,
+    amount: Math.max(blind, Math.round(potSize * ratio))
+  }));
 
   return rawBets.map((bet) => ({
     ...bet,
     amount: clampBetAmount(bet.amount, raiseLimits)
   }));
+}
+
+function formatBb(amount: number, bigBlind?: number | null): string {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  const value = amount / blind;
+  const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+  return `${rounded} BB`;
 }
 
 function clampBetAmount(amount: number, raiseLimits: { min: number; max: number | null } | null): number {

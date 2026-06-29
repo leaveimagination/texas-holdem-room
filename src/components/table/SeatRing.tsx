@@ -19,12 +19,14 @@ export function SeatRing({
   view,
   localParticipantId,
   localDisplayName,
+  bigBlind,
   canClaimSeat = false,
   onClaimSeat
 }: {
   view: unknown;
   localParticipantId?: string | null;
   localDisplayName?: string | null;
+  bigBlind?: number | null;
   canClaimSeat?: boolean;
   onClaimSeat?: (seatNumber: number) => void;
 }) {
@@ -57,10 +59,10 @@ export function SeatRing({
             <span className="seat-number">Seat {seat.seatNumber}</span>
             {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
             <strong>{seat.displayName ?? "Open"}</strong>
-            <span className="seat-stack">{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
+            <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
             <small>{seat.status}</small>
           </span>
-          {seat.streetCommitted > 0 ? <span className="seat-bet">Bet {seat.streetCommitted}</span> : null}
+          {seat.streetCommitted > 0 ? <span className="seat-bet">{formatBb(seat.streetCommitted, bigBlind)}</span> : null}
           <span className="seat-cards">
             {seat.holeCards.length > 0 ? (
               <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
@@ -85,6 +87,13 @@ export function SeatRing({
 function avatarInitial(displayName: string | null, seatNumber: number): string {
   const trimmed = displayName?.trim();
   return trimmed ? trimmed.slice(0, 1).toUpperCase() : String(seatNumber);
+}
+
+function formatBb(amount: number, bigBlind?: number | null): string {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  const value = amount / blind;
+  const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+  return `${rounded} BB`;
 }
 
 function readSeats(view: unknown): SeatView[] {

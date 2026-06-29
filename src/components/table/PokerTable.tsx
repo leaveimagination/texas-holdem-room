@@ -1,3 +1,4 @@
+import React from "react";
 import { ActionControls } from "./ActionControls";
 import { HandResultPanel } from "./HandResultPanel";
 import { PlayingCard } from "./PlayingCard";
@@ -44,13 +45,13 @@ export function PokerTable({
   const resolvedLegalActions = legalActions ?? readLegalActions(view);
 
   return (
-    <section className="table-surface" aria-label="Table">
+    <section className="table-surface poker-client-shell" aria-label="Table">
       <div className="table-topline">
         <div>
           <p className="eyebrow">Live felt</p>
           <h2>Table</h2>
         </div>
-        <span>{pot > 0 ? `Pot ${pot}` : "Virtual chips"}</span>
+        <span>{settings.bigBlind ? "BB view" : "Virtual chips"}</span>
       </div>
 
       <div className="felt-stage">
@@ -58,12 +59,13 @@ export function PokerTable({
           view={view}
           localParticipantId={localParticipantId}
           localDisplayName={localDisplayName}
+          bigBlind={settings.bigBlind}
           canClaimSeat={playerControls}
           onClaimSeat={onClaimSeat}
         />
 
         <div className="table-center">
-          <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Pot ${pot}` : "No pot yet"}</div>
+          <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Total Pot : ${formatBb(pot, settings.bigBlind)}` : "No pot yet"}</div>
           <div className="board" aria-label="Board">
             {board.length > 0 ? (
               board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)
@@ -97,6 +99,13 @@ export function PokerTable({
       <HandResultPanel view={view} />
     </section>
   );
+}
+
+function formatBb(amount: number, bigBlind?: number | null): string {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  const value = amount / blind;
+  const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+  return `${rounded} BB`;
 }
 
 function readActorName(view: unknown): string | null {

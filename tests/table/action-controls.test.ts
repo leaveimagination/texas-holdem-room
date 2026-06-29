@@ -31,7 +31,7 @@ describe("ActionControls", () => {
 
     expect(html).toContain("YOUR TURN");
     expect(html).toContain("home");
-    expect(html).toContain("1,980");
+    expect(html).toContain("99 BB");
     expect(html).toContain("A");
     expect(html).toContain("K");
   });
@@ -42,16 +42,20 @@ describe("ActionControls", () => {
         actorId: "p1",
         localParticipantId: "p1",
         playerControls: true,
+        bigBlind: 20,
+        pot: 80,
         legalActions: { actions: [{ type: "fold" }, { type: "call" }, { type: "raise" }] }
       })
     );
 
-    expect(html).toContain("2BB");
-    expect(html).toContain("40");
-    expect(html).toContain("3BB");
-    expect(html).toContain("60");
-    expect(html).toContain("1/2 Pot");
-    expect(html).toContain("Pot");
+    expect(html).toContain("33%");
+    expect(html).toContain("1.3 BB");
+    expect(html).toContain("50%");
+    expect(html).toContain("2 BB");
+    expect(html).toContain("75%");
+    expect(html).toContain("3 BB");
+    expect(html).toContain("100%");
+    expect(html).toContain("4 BB");
     expect(html).toContain("Add chips");
     expect(html).toContain("<details class=\"rebuy-popover\"");
   });

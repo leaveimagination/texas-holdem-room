@@ -53,6 +53,7 @@ describe("SeatRing", () => {
   it("renders dealer blind badges and committed chip markers", () => {
     const html = renderToStaticMarkup(
       createElement(SeatRing, {
+        bigBlind: 20,
         view: {
           seats: [
             { seatNumber: 1, displayName: "Alice", chips: 990, status: "active", occupied: true },
@@ -71,8 +72,10 @@ describe("SeatRing", () => {
 
     expect(html).toContain("BTN/SB");
     expect(html).toContain("BB");
-    expect(html).toContain("Bet 10");
-    expect(html).toContain("Bet 20");
+    expect(html).toContain("49.5 BB");
+    expect(html).toContain("49 BB");
+    expect(html).toContain("0.5 BB");
+    expect(html).toContain("1 BB");
   });
 
   it("places the local player in the bottom-center seat slot", () => {
