@@ -49,6 +49,7 @@ describe("ActionControls", () => {
     );
 
     expect(html).toContain("action-console");
+    expect(html).toContain("quick-bet-row");
     expect(html).toContain("33%");
     expect(html).toContain("50%");
     expect(html).toContain("75%");
@@ -60,6 +61,64 @@ describe("ActionControls", () => {
     expect(html).toContain("4 BB");
     expect(html).toContain("Add chips");
     expect(html).toContain("<details class=\"rebuy-popover\"");
+  });
+
+  it("renders all live action buttons as primary red peers, including fold", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        legalActions: {
+          actions: [
+            { type: "fold" },
+            { type: "call", amount: 40 },
+            { type: "raise", minAmountTo: 120, maxAmountTo: 1000 }
+          ]
+        }
+      })
+    );
+
+    expect(html).toContain("primary-action-row");
+    expect(html).toContain(">Fold<");
+    expect(html).toContain(">Call<");
+    expect(html).toContain(">Raise to<");
+    expect(html).toContain("class=\"is-primary-action\"");
+    expect(html).not.toContain("is-secondary-action");
+  });
+
+  it("initializes the raise amount input from the legal minimum when available", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        legalActions: {
+          actions: [{ type: "raise", minAmountTo: 240, maxAmountTo: 2000 }]
+        }
+      })
+    );
+
+    expect(html).toContain("value=\"240\"");
+    expect(html).not.toContain("value=\"100\"");
+  });
+
+  it("does not invent fallback legal actions during a live hand when actions are absent", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        tableStatus: "playing"
+      })
+    );
+
+    expect(html).toContain("action-console");
+    expect(html).not.toContain(">Fold<");
+    expect(html).not.toContain(">Check<");
+    expect(html).not.toContain(">Call<");
+    expect(html).not.toContain(">Raise<");
+    expect(html).not.toContain(">All in<");
   });
 
   it("hides betting buttons while waiting for the host to start", () => {

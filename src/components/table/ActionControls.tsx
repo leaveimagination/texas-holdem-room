@@ -1,24 +1,22 @@
 "use client";
 
 import React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ClientMessage } from "@/lib/realtime/messages";
-import { PlayingCard } from "./PlayingCard";
 
 type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
 type ActionType = PlayerAction["type"];
 type ActionItem = { type: ActionType; amount?: number; amountTo?: number; minAmountTo?: number; maxAmountTo?: number };
 
 const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-in"];
-const PRIMARY_ACTIONS = new Set<ActionType>(["call", "check", "bet", "raise", "all-in"]);
 export function ActionControls({
   legalActions,
   actorId,
   localParticipantId,
   actorName,
-  heroCards = [],
-  heroName,
-  heroStack,
+  heroCards: _heroCards = [],
+  heroName: _heroName,
+  heroStack: _heroStack,
   tableStatus,
   bigBlind = 20,
   pot = 0,
@@ -48,24 +46,35 @@ export function ActionControls({
   onRebuy?: (amount: number) => void;
   onHandleDisconnect?: (participantId: string) => void;
 }) {
-  const [raiseAmount, setRaiseAmount] = useState("100");
+  const actions = readActions(legalActions);
+  const raiseLimits = readRaiseLimits(actions);
+  const [raiseAmount, setRaiseAmount] = useState(() => String(raiseLimits?.min ?? 100));
   const [rebuyAmount, setRebuyAmount] = useState("500");
   const [disconnectedParticipantId, setDisconnectedParticipantId] = useState("");
-  const actions = readActions(legalActions);
-  const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : FALLBACK_ACTIONS;
-  const actionButtons = visibleActions.filter((type) => type !== "all-in");
-  const raiseLimits = readRaiseLimits(actions);
   const quickBets = buildQuickBets({ bigBlind, pot, raiseLimits });
   const activeActorId = actorId ?? "pending-player";
   const hasActiveTurn = Boolean(actorId);
+  const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
+  const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
+  const actionButtons = visibleActions.filter((type) => type !== "all-in");
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = playerControls && (!hasActiveTurn || isPlayerTurn);
-  const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
   const statusText = isPlayerTurn
     ? "YOUR TURN"
     : hasActiveTurn
       ? `Waiting for ${actorName ?? "another player"}`
       : "Waiting for host to deal";
+
+  useEffect(() => {
+    setRaiseAmount((currentAmount) => {
+      if (typeof raiseLimits?.min !== "number") {
+        return currentAmount === "100" ? currentAmount : "100";
+      }
+
+      const parsedAmount = readPositiveAmount(currentAmount);
+      return parsedAmount === null || parsedAmount < raiseLimits.min ? String(raiseLimits.min) : currentAmount;
+    });
+  }, [raiseLimits?.min]);
 
   function sendAction(type: ActionType) {
     if (type === "bet" || type === "raise") {
@@ -98,19 +107,6 @@ export function ActionControls({
   return (
     <section className="action-dock" aria-label="Actions">
       <div className="hud-main">
-        <div className="hero-pocket" aria-label="Your hand">
-          <div className="hero-meta">
-            <span className="hud-label">Your hand</span>
-            <strong>{heroName ?? "Take a seat"}</strong>
-            <small>{typeof heroStack === "number" ? formatBb(heroStack, bigBlind) : "Join to play"}</small>
-          </div>
-          <div className="hero-cards">
-            {heroCards.length > 0
-              ? heroCards.map((card, index) => <PlayingCard card={card} variant="hero" dealIndex={index} key={card} />)
-              : <span className="board-empty">No cards</span>}
-          </div>
-        </div>
-
         <div className="action-console">
           <div className={isPlayerTurn ? "turn-banner is-your-turn" : "turn-banner"} role="status">
             {statusText}
@@ -137,16 +133,18 @@ export function ActionControls({
                   onChange={(event) => setRaiseAmount(event.target.value)}
                 />
               </label>
-              <button className="all-in-chip" type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions || !visibleActions.includes("all-in")}>
-                All in
-              </button>
-              <div className={`action-grid action-count-${actionButtons.length}`}>
+              {visibleActions.includes("all-in") ? (
+                <button className="all-in-chip" type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions}>
+                  All in
+                </button>
+              ) : null}
+              <div className={`primary-action-row action-grid action-count-${actionButtons.length}`}>
                 {actionButtons.map((type) => {
                   const label = formatActionLabel(type, actions, bigBlind);
                   return (
                     <button
                       type="button"
-                      className={PRIMARY_ACTIONS.has(type) ? "is-primary-action" : "is-secondary-action"}
+                      className="is-primary-action"
                       key={type}
                       onClick={() => sendAction(type)}
                       disabled={!canUsePlayerActions}
