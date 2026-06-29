@@ -146,12 +146,16 @@ main {
   display: none;
 }
 
+.game-room-page:not(.is-joined) .poker-client-shell .action-dock {
+  display: none;
+}
+
 .game-room-page .system-log {
   position: fixed;
-  left: 12px;
-  bottom: 10px;
+  left: clamp(22px, 4vw, 54px);
+  bottom: 76px;
   z-index: 12;
-  width: min(360px, calc(100vw - 24px));
+  width: auto;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -569,7 +573,7 @@ main {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 12px;
+  bottom: 16px;
   z-index: 8;
   border: 0;
   background: transparent;
@@ -584,14 +588,16 @@ main {
 }
 
 .poker-client-shell .hud-main {
-  grid-template-columns: minmax(170px, 0.72fr) minmax(120px, 1fr) minmax(470px, 0.98fr);
+  grid-template-columns: minmax(190px, 1fr) minmax(260px, 280px) minmax(500px, 1.25fr);
   align-items: end;
-  gap: 10px;
+  gap: clamp(12px, 2.2vw, 30px);
 }
 
 .poker-client-shell .hero-pocket {
-  grid-column: 1;
-  grid-row: 2;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: center;
+  align-self: end;
 }
 
 .poker-client-shell .action-console {
@@ -608,7 +614,7 @@ main {
 .poker-client-shell .hero-pocket {
   min-height: 82px;
   border: 0;
-  background: rgba(0, 0, 0, 0.12);
+  background: transparent;
   padding: 0;
 }
 
@@ -617,10 +623,19 @@ main {
 }
 
 .poker-client-shell .hero-meta {
-  width: min(230px, 100%);
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 12px;
+  width: min(270px, 100%);
+  min-height: 86px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px 10px 16px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 20%),
+    linear-gradient(180deg, rgba(18, 20, 25, 0.96), rgba(0, 0, 0, 0.84));
+  padding: 12px 16px 14px;
+  text-align: center;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.04),
+    0 -10px 30px rgba(255, 255, 255, 0.06),
+    0 18px 34px rgba(0, 0, 0, 0.5);
 }
 
 .poker-client-shell .hero-meta small {
@@ -1507,6 +1522,10 @@ main {
 }
 
 @media (max-width: 760px) {
+  .game-room-page .system-log {
+    display: none;
+  }
+
   .home,
   main {
     padding: 8px;
@@ -1786,6 +1805,15 @@ main {
 
   .poker-client-shell .hud-main {
     grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .poker-client-shell .hero-pocket,
+  .poker-client-shell .action-console {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: stretch;
+    width: 100%;
   }
 
   .poker-client-shell .hero-meta {

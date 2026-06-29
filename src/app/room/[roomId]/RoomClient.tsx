@@ -130,7 +130,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onRebuy={rebuy}
         onHandleDisconnect={handleDisconnect}
       />
-      <SystemLog messages={messages} onQuickPhrase={sendQuickPhrase} />
+      {hasJoinedRoom ? <SystemLog messages={messages} onQuickPhrase={sendQuickPhrase} /> : null}
     </main>
   );
 }

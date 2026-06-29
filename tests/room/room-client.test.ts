@@ -10,5 +10,7 @@ describe("RoomClient", () => {
     expect(html).toContain("join-modal-backdrop");
     expect(html).toContain("role=\"dialog\"");
     expect(html).toContain("aria-modal=\"true\"");
+    expect(html).not.toContain("System log");
+    expect(html).not.toContain("Quick phrases");
   });
 });
