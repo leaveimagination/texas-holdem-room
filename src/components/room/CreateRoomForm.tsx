@@ -14,6 +14,7 @@ export function CreateRoomForm() {
   const [result, setResult] = useState<CreateRoomResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [copied, setCopied] = useState<"invite" | "host" | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +58,12 @@ export function CreateRoomForm() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function copyLink(kind: "invite" | "host", value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopied(kind);
+    window.setTimeout(() => setCopied(null), 1600);
   }
 
   return (
@@ -116,13 +123,70 @@ export function CreateRoomForm() {
       </button>
       {error ? <p role="alert" style={{ margin: 0, color: "var(--danger)" }}>{error}</p> : null}
       {result ? (
-        <section aria-label="Room links" style={{ display: "grid", gap: 8 }}>
-          <a href={result.inviteUrl}>Invite link</a>
-          <a href={result.hostUrl}>Host link</a>
-          <p style={{ margin: 0, color: "var(--muted)" }}>Keep the host link private.</p>
+        <section aria-label="Room links" className="room-links">
+          <LinkRow
+            label="Invite link"
+            hint={linkHint(result.inviteUrl, "invite")}
+            value={result.inviteUrl}
+            copied={copied === "invite"}
+            onCopy={() => void copyLink("invite", result.inviteUrl)}
+          />
+          <LinkRow
+            label="Host link"
+            hint={linkHint(result.hostUrl, "host")}
+            value={result.hostUrl}
+            copied={copied === "host"}
+            onCopy={() => void copyLink("host", result.hostUrl)}
+          />
         </section>
       ) : null}
     </form>
+  );
+}
+
+function linkHint(value: string, kind: "invite" | "host"): string {
+  if (isLoopbackUrl(value)) {
+    return kind === "invite"
+      ? "Local preview only. Do not send this to friends. Create the room from your Railway domain to get a shareable invite."
+      : "Local preview only. A shareable host link is available on the Railway site.";
+  }
+
+  return kind === "invite"
+    ? "Send this to friends."
+    : "Share with trusted co-hosts. This link can start and manage the room.";
+}
+
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function LinkRow({
+  label,
+  hint,
+  value,
+  copied,
+  onCopy
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="room-link-row">
+      <div>
+        <strong>{label}</strong>
+        <p>{hint}</p>
+        <a href={value} aria-label={label}>{value}</a>
+      </div>
+      <button type="button" onClick={onCopy}>{copied ? "Copied" : "Copy"}</button>
+    </div>
   );
 }
 

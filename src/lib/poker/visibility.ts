@@ -12,6 +12,12 @@ export interface ParticipantRoomView {
   roomId: string;
   mode: string;
   status: string;
+  settings: {
+    smallBlind: number;
+    bigBlind: number;
+    actionTimerSeconds: number | null;
+  };
+  buttonSeat: number | null;
   hostControls: boolean;
   seats: Array<{
     seatNumber: number;
@@ -26,10 +32,15 @@ export interface ParticipantRoomView {
     street: string;
     board: string[];
     pot: number;
+    currentBet: number;
+    minRaise: number;
     actorId: string;
     seats: Array<{
       seatNumber: number;
       participantId: string | null;
+      role: string | null;
+      committed: number;
+      streetCommitted: number;
       holeCards?: string[];
     }>;
     actions: Array<{ playerId: string; type: string; amount?: number }>;
@@ -46,6 +57,12 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
     roomId: state.roomId,
     mode: state.mode,
     status: state.status,
+    settings: {
+      smallBlind: state.settings.smallBlind,
+      bigBlind: state.settings.bigBlind,
+      actionTimerSeconds: state.settings.actionTimerSeconds
+    },
+    buttonSeat: state.buttonSeat,
     hostControls: viewer.host,
     seats: state.seats.map((seat) => ({
       seatNumber: seat.seatNumber,
@@ -61,14 +78,22 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
           street: hand.street,
           board: hand.board.map(serializeCard),
           pot: hand.betting.players.reduce((sum, player) => sum + player.committed, 0),
+          currentBet: hand.betting.currentBet,
+          minRaise: hand.betting.minRaise,
           actorId: hand.actorId,
-          seats: state.seats.map((seat) => ({
-            seatNumber: seat.seatNumber,
-            participantId: seat.participantId,
-            ...(seat.participantId && shouldRevealHoleCards(hand, seat.participantId, viewer)
-              ? { holeCards: hand.holeCardsByParticipantId[seat.participantId]?.map(serializeCard) }
-              : {})
-          })),
+          seats: state.seats.map((seat) => {
+            const player = hand.betting.players.find((candidate) => candidate.id === seat.participantId);
+            return {
+              seatNumber: seat.seatNumber,
+              participantId: seat.participantId,
+              role: seatRole(state, seat.seatNumber),
+              committed: player?.committed ?? 0,
+              streetCommitted: player?.streetCommitted ?? 0,
+              ...(seat.participantId && shouldRevealHoleCards(hand, seat.participantId, viewer)
+                ? { holeCards: hand.holeCardsByParticipantId[seat.participantId]?.map(serializeCard) }
+                : {})
+            };
+          }),
           actions: hand.actions,
           legalActions: hand.finished ? [] : getLegalActions(hand.betting, hand.actorId),
           finished: hand.finished,
@@ -76,6 +101,44 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
         }
       : null
   };
+}
+
+function seatRole(state: RoomState, seatNumber: number): string | null {
+  if (!state.hand || state.buttonSeat === null) {
+    return null;
+  }
+
+  const activeSeats = state.seats.filter((seat) => state.hand?.betting.players.some((player) => player.id === seat.participantId));
+  if (activeSeats.length < 2) {
+    return null;
+  }
+
+  const buttonSeat = state.buttonSeat;
+  const smallBlindSeat = activeSeats.length === 2 ? buttonSeat : nextSeatAfter(buttonSeat, activeSeats);
+  const bigBlindSeat = nextSeatAfter(smallBlindSeat, activeSeats);
+
+  if (seatNumber === buttonSeat && seatNumber === smallBlindSeat) {
+    return "BTN/SB";
+  }
+
+  if (seatNumber === buttonSeat) {
+    return "BTN";
+  }
+
+  if (seatNumber === smallBlindSeat) {
+    return "SB";
+  }
+
+  if (seatNumber === bigBlindSeat) {
+    return "BB";
+  }
+
+  return null;
+}
+
+function nextSeatAfter(currentSeat: number, seats: ReadonlyArray<{ seatNumber: number }>): number {
+  const orderedSeats = [...seats].sort((left, right) => left.seatNumber - right.seatNumber);
+  return orderedSeats.find((seat) => seat.seatNumber > currentSeat)?.seatNumber ?? orderedSeats[0].seatNumber;
 }
 
 function shouldRevealHoleCards(

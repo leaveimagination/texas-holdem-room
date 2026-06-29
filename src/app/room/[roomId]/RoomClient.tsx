@@ -120,6 +120,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         hostControls={Boolean(hostToken)}
         playerControls={hasParticipantToken}
         localParticipantId={participantId}
+        localDisplayName={displayName}
         onClaimSeat={claimSeat}
         onStartRoom={startRoom}
         onPlayerAction={sendPlayerAction}

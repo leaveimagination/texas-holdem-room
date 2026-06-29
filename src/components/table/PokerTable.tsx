@@ -12,6 +12,7 @@ export function PokerTable({
   hostControls = false,
   playerControls = false,
   localParticipantId,
+  localDisplayName,
   onClaimSeat,
   onStartRoom,
   onPlayerAction,
@@ -23,6 +24,7 @@ export function PokerTable({
   hostControls?: boolean;
   playerControls?: boolean;
   localParticipantId?: string | null;
+  localDisplayName?: string | null;
   onClaimSeat?: (seatNumber: number) => void;
   onStartRoom?: () => void;
   onPlayerAction?: (action: PlayerAction) => void;
@@ -31,9 +33,12 @@ export function PokerTable({
 }) {
   const board = readBoard(view);
   const pot = readPot(view);
+  const settings = readSettings(view);
+  const tableStatus = readTableStatus(view);
   const actorId = readActorId(view);
   const actorName = readActorName(view);
   const heroCards = readHeroCards(view, localParticipantId);
+  const heroSeat = readLocalSeat(view, localParticipantId, localDisplayName);
   const canStartRoom = readCanStartRoom(view);
   const showHostControls = hostControls || readHostControls(view);
   const resolvedLegalActions = legalActions ?? readLegalActions(view);
@@ -64,17 +69,17 @@ export function PokerTable({
         </div>
       </div>
 
-      <div className="hero-hand" aria-label="Your hand">
-        <span>Your hand</span>
-        <div className="hero-cards">
-          {heroCards.length > 0 ? heroCards.map((card, index) => <PlayingCard card={card} variant="hero" dealIndex={index} key={card} />) : <span className="board-empty">Join and start a hand</span>}
-        </div>
-      </div>
-
       <ActionControls
         legalActions={resolvedLegalActions}
         actorId={actorId}
+        actorName={actorName}
         localParticipantId={localParticipantId}
+        heroCards={heroCards}
+        heroName={readSeatName(heroSeat)}
+        heroStack={readSeatStack(heroSeat)}
+        tableStatus={tableStatus}
+        bigBlind={settings.bigBlind}
+        pot={pot}
         canStartRoom={canStartRoom}
         hostControls={showHostControls}
         playerControls={playerControls}
@@ -129,6 +134,18 @@ function readPot(view: unknown): number {
   return typeof pot === "number" ? pot : typeof potSize === "number" ? potSize : 0;
 }
 
+function readSettings(view: unknown): { bigBlind: number | null } {
+  const settings = readObject(readObject(view)?.settings);
+  return {
+    bigBlind: typeof settings?.bigBlind === "number" ? settings.bigBlind : null
+  };
+}
+
+function readTableStatus(view: unknown): string | null {
+  const status = readObject(view)?.status;
+  return typeof status === "string" ? status : null;
+}
+
 function readActorId(view: unknown): string | null {
   const hand = readObject(readObject(view)?.hand);
   return typeof hand?.actorId === "string" ? hand.actorId : null;
@@ -160,6 +177,36 @@ function readActingSeat(view: unknown): Record<string, unknown> | null {
   }
 
   return seats.map(readObject).find((seat) => seat?.seatNumber === seatNumber) ?? null;
+}
+
+function readLocalSeat(view: unknown, localParticipantId?: string | null, localDisplayName?: string | null): Record<string, unknown> | null {
+  const seats = readObject(view)?.seats;
+  if (!Array.isArray(seats)) {
+    return null;
+  }
+
+  const readableSeats = seats.map(readObject);
+  const byId = localParticipantId
+    ? readableSeats.find((seat) => seat?.participantId === localParticipantId || seat?.id === localParticipantId)
+    : null;
+  if (byId) {
+    return byId;
+  }
+
+  const trimmedName = localDisplayName?.trim();
+  return trimmedName ? readableSeats.find((seat) => seat?.displayName === trimmedName) ?? null : null;
+}
+
+function readSeatName(seat: Record<string, unknown> | null): string | null {
+  return typeof seat?.displayName === "string" ? seat.displayName : null;
+}
+
+function readSeatStack(seat: Record<string, unknown> | null): number | null {
+  if (typeof seat?.stack === "number") {
+    return seat.stack;
+  }
+
+  return typeof seat?.chips === "number" ? seat.chips : null;
 }
 
 function readHostControls(view: unknown): boolean {

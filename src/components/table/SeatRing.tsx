@@ -9,6 +9,9 @@ interface SeatView {
   occupied: boolean;
   holeCards: string[];
   isActing: boolean;
+  role: string | null;
+  committed: number;
+  streetCommitted: number;
 }
 
 export function SeatRing({
@@ -41,10 +44,12 @@ export function SeatRing({
           <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
           <span className="seat-panel">
             <span className="seat-number">Seat {seat.seatNumber}</span>
+            {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
             <strong>{seat.displayName ?? "Open"}</strong>
             <span className="seat-stack">{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
             <small>{seat.status}</small>
           </span>
+          {seat.streetCommitted > 0 ? <span className="seat-bet">Bet {seat.streetCommitted}</span> : null}
           <span className="seat-cards">
             {seat.holeCards.length > 0 ? (
               <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
@@ -74,6 +79,7 @@ function avatarInitial(displayName: string | null, seatNumber: number): string {
 function readSeats(view: unknown): SeatView[] {
   const value = typeof view === "object" && view !== null && "seats" in view ? (view as { seats: unknown }).seats : null;
   const holeCardsBySeat = readHoleCardsBySeat(view);
+  const handMetaBySeat = readHandMetaBySeat(view);
   const actingSeatNumber = readActingSeatNumber(view);
   if (!Array.isArray(value)) {
     return [];
@@ -96,7 +102,10 @@ function readSeats(view: unknown): SeatView[] {
       status: typeof seat.status === "string" ? seat.status : "empty",
       occupied: typeof seat.occupied === "boolean" ? seat.occupied : seat.displayName !== null,
       holeCards: holeCardsBySeat.get(seat.seatNumber) ?? [],
-      isActing: actingSeatNumber === seat.seatNumber
+      isActing: actingSeatNumber === seat.seatNumber,
+      role: handMetaBySeat.get(seat.seatNumber)?.role ?? null,
+      committed: handMetaBySeat.get(seat.seatNumber)?.committed ?? 0,
+      streetCommitted: handMetaBySeat.get(seat.seatNumber)?.streetCommitted ?? 0
     }];
   });
 }
@@ -142,6 +151,30 @@ function readHoleCardsBySeat(view: unknown): Map<number, string[]> {
   return result;
 }
 
+function readHandMetaBySeat(view: unknown): Map<number, { role: string | null; committed: number; streetCommitted: number }> {
+  const result = new Map<number, { role: string | null; committed: number; streetCommitted: number }>();
+  const hand = readObject(readObject(view)?.hand);
+  const handSeats = hand?.seats;
+  if (!Array.isArray(handSeats)) {
+    return result;
+  }
+
+  for (const candidate of handSeats) {
+    const seat = readObject(candidate);
+    if (!seat || typeof seat.seatNumber !== "number") {
+      continue;
+    }
+
+    result.set(seat.seatNumber, {
+      role: typeof seat.role === "string" ? seat.role : null,
+      committed: typeof seat.committed === "number" ? seat.committed : 0,
+      streetCommitted: typeof seat.streetCommitted === "number" ? seat.streetCommitted : 0
+    });
+  }
+
+  return result;
+}
+
 function readObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
 }
@@ -154,6 +187,9 @@ function emptySeats(count: number): SeatView[] {
     status: "empty",
     occupied: false,
     holeCards: [],
-    isActing: false
+    isActing: false,
+    role: null,
+    committed: 0,
+    streetCommitted: 0
   }));
 }

@@ -6,6 +6,7 @@ import { prisma } from "@/server/db";
 import { LiveRoomStore, type KeyValueStore } from "@/server/live-room-store";
 import { createRedisClient } from "@/server/redis";
 import { RoomRepository } from "@/server/repositories/room-repository";
+import { publicBaseUrl } from "@/server/room-links";
 
 export const runtime = "nodejs";
 
@@ -56,20 +57,6 @@ export async function POST(request: Request) {
   const hostUrl = `${inviteUrl}?host=${encodeURIComponent(hostToken)}`;
 
   return NextResponse.json({ roomId, inviteUrl, hostUrl }, { status: 201 });
-}
-
-function publicBaseUrl(request: Request): string {
-  if (process.env.APP_ORIGIN) {
-    return process.env.APP_ORIGIN.replace(/\/$/, "");
-  }
-
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
-  }
-
-  return new URL(request.url).origin;
 }
 
 function createKeyValueStore(client: ReturnType<typeof createRedisClient>): KeyValueStore {

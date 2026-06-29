@@ -91,6 +91,21 @@ describe("visibility", () => {
     expect(view.hand?.legalActions.map((action) => action.type)).toEqual(["fold", "call", "raise", "all-in"]);
   });
 
+  it("includes public table metadata for frontend seat and betting indicators", () => {
+    const view = toParticipantView(state, { participantId: "p1", role: "player", host: true });
+
+    expect(view.settings).toMatchObject({ smallBlind: 10, bigBlind: 20, actionTimerSeconds: null });
+    expect(view.buttonSeat).toBe(1);
+    expect(view.hand).toMatchObject({
+      currentBet: 20,
+      minRaise: 20
+    });
+    expect(view.hand?.seats).toEqual([
+      expect.objectContaining({ seatNumber: 1, role: "BTN/SB", committed: 10, streetCommitted: 10 }),
+      expect.objectContaining({ seatNumber: 2, role: "BB", committed: 20, streetCommitted: 20 })
+    ]);
+  });
+
   it("does not leak winner cards on finished fold-win hands", () => {
     const foldWinState: RoomState = {
       ...state,

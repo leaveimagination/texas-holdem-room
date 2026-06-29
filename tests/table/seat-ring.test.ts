@@ -49,4 +49,29 @@ describe("SeatRing", () => {
     expect(html).toContain("is-acting");
     expect(html).toContain("Seat 2 is acting");
   });
+
+  it("renders dealer blind badges and committed chip markers", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        view: {
+          seats: [
+            { seatNumber: 1, displayName: "Alice", chips: 990, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Bob", chips: 980, status: "active", occupied: true }
+          ],
+          hand: {
+            actorId: "p1",
+            seats: [
+              { seatNumber: 1, participantId: "p1", role: "BTN/SB", committed: 10, streetCommitted: 10 },
+              { seatNumber: 2, participantId: "p2", role: "BB", committed: 20, streetCommitted: 20 }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("BTN/SB");
+    expect(html).toContain("BB");
+    expect(html).toContain("Bet 10");
+    expect(html).toContain("Bet 20");
+  });
 });
