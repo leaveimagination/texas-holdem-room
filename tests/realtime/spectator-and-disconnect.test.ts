@@ -84,14 +84,16 @@ describe("spectator and disconnect realtime rules", () => {
     spectatorSocket.send(JSON.stringify({ type: "join_room", roomId, participantToken: null, displayName: "Rail" }));
     await Promise.all([playerAfterSpectatorJoin, spectatorJoin]);
 
-    const playerRebuy = nextMessage(playerSocket);
-    const spectatorRebuy = nextMessage(spectatorSocket);
+    const playerRebuy = nextMessages(playerSocket, 2);
+    const spectatorRebuy = nextMessages(spectatorSocket, 2);
     playerSocket.send(JSON.stringify({ type: "rebuy", roomId, participantToken: "p1-token", amount: 500 }));
 
-    const [playerSnapshot, spectatorSnapshot] = await Promise.all([playerRebuy, spectatorRebuy]);
+    const [[playerSnapshot, playerNotice], [spectatorSnapshot, spectatorNotice]] = await Promise.all([playerRebuy, spectatorRebuy]);
 
     expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
     expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
+    expect(playerNotice).toMatchObject({ type: "system_message", payload: { message: "Player 1 added 500 chips" } });
+    expect(spectatorNotice).toMatchObject({ type: "system_message", payload: { message: "Player 1 added 500 chips" } });
     expect(recordBuyIn).toHaveBeenCalledWith(roomId, "p1", 500);
     expect(getHandSeat(spectatorSnapshot, "p1")?.holeCards).toBeUndefined();
   });
@@ -255,6 +257,45 @@ function nextMessage(socket: WebSocket): Promise<unknown> {
     const onClose = () => {
       cleanup();
       reject(new Error("Socket closed before receiving a message"));
+    };
+
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+    socket.on("close", onClose);
+  });
+}
+
+function nextMessages(socket: WebSocket, count: number): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const messages: unknown[] = [];
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for ${count} websocket messages`));
+    }, 2000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    };
+
+    const onMessage = (data: WebSocket.RawData) => {
+      messages.push(JSON.parse(data.toString()));
+      if (messages.length === count) {
+        cleanup();
+        resolve(messages);
+      }
+    };
+
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Socket closed before receiving websocket messages"));
     };
 
     socket.on("message", onMessage);

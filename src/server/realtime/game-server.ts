@@ -77,6 +77,7 @@ async function handleIncomingMessage(
   }
 
   let updatedRoom: RoomState | null = null;
+  let systemNotice: string | null = null;
 
   try {
     const room = await liveRooms.getRoom(message.roomId);
@@ -164,6 +165,7 @@ async function handleIncomingMessage(
         updatedRoom = rebuy(room, session.participantId, message.amount);
         await liveRooms.saveRoom(updatedRoom);
         await roomRepository.recordBuyIn(room.roomId, session.participantId, message.amount);
+        systemNotice = `${displayNameForParticipant(updatedRoom, session.participantId)} added ${message.amount} chips`;
         break;
       case "handle_disconnect":
         if (!session.host) {
@@ -184,6 +186,13 @@ async function handleIncomingMessage(
 
   if (updatedRoom) {
     broadcastSnapshot(sessions, updatedRoom);
+  }
+
+  if (updatedRoom && systemNotice) {
+    sessions.broadcast(updatedRoom.roomId, () => ({
+      type: "system_message",
+      payload: { message: systemNotice }
+    }));
   }
 }
 
@@ -252,6 +261,10 @@ function broadcastSnapshot(sessions: SessionRegistry, room: RoomState): void {
       host: target.host
     })
   }));
+}
+
+function displayNameForParticipant(room: RoomState, participantId: string): string {
+  return room.seats.find((seat) => seat.participantId === participantId)?.displayName ?? "A player";
 }
 
 function sendMessage(socket: { send(data: string): void }, message: ServerMessage): void {
