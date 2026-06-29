@@ -54,29 +54,60 @@ export function SeatRing({
           aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
           disabled={seat.occupied || !canClaimSeat}
         >
-          <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
-          <span className="seat-panel">
-            <span className="seat-number">Seat {seat.seatNumber}</span>
-            {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
-            <strong>{seat.displayName ?? "Open"}</strong>
-            <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
-            <small>{seat.status}</small>
-          </span>
+          {local ? (
+            <span className="hero-seat-cluster">
+              <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
+              <span className="seat-panel">
+                <span className="seat-number">Seat {seat.seatNumber}</span>
+                {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
+                <strong>{seat.displayName ?? "Open"}</strong>
+                <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
+                <small>{seat.status}</small>
+              </span>
+              <span className="hero-hole-cards">
+                {seat.holeCards.length > 0 ? (
+                  <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
+                    {seat.holeCards.map((card, index) => (
+                      <PlayingCard card={card} variant="hero" dealIndex={index} key={card} />
+                    ))}
+                  </span>
+                ) : seat.occupied ? (
+                  <span className="card-back-row" aria-hidden="true">
+                    <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
+                    <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
+                  </span>
+                ) : null}
+              </span>
+            </span>
+          ) : (
+            <>
+              <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
+              <span className="seat-panel">
+                <span className="seat-number">Seat {seat.seatNumber}</span>
+                {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
+                <strong>{seat.displayName ?? "Open"}</strong>
+                <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
+                <small>{seat.status}</small>
+              </span>
+            </>
+          )}
           {seat.streetCommitted > 0 ? <span className="seat-bet">{formatBb(seat.streetCommitted, bigBlind)}</span> : null}
-          <span className="seat-cards">
-            {seat.holeCards.length > 0 ? (
-              <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
-                {seat.holeCards.map((card, index) => (
-                  <PlayingCard card={card} variant="mini" dealIndex={index} key={card} />
-                ))}
-              </span>
-            ) : seat.occupied ? (
-              <span className="card-back-row" aria-hidden="true">
-                <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
-                <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
-              </span>
-            ) : null}
-          </span>
+          {local ? null : (
+            <span className="seat-cards">
+              {seat.holeCards.length > 0 ? (
+                <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
+                  {seat.holeCards.map((card, index) => (
+                    <PlayingCard card={card} variant="mini" dealIndex={index} key={card} />
+                  ))}
+                </span>
+              ) : seat.occupied ? (
+                <span className="card-back-row" aria-hidden="true">
+                  <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
+                  <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
+                </span>
+              ) : null}
+            </span>
+          )}
           {seat.isActing ? <span className="seat-timer" aria-hidden="true" /> : null}
         </button>
       ))}

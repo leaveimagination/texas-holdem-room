@@ -109,4 +109,36 @@ describe("SeatRing", () => {
     expect(html).toContain("seat-slot-5");
     expect(html).toContain("is-local-seat");
   });
+
+  it("renders the local seat as a hero seat cluster with visible hero cards", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        localParticipantId: "p3",
+        localDisplayName: "Hero",
+        view: {
+          seats: [
+            { seatNumber: 1, displayName: "A", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "B", chips: 1000, status: "active", occupied: true },
+            { seatNumber: 3, displayName: "Hero", chips: 1000, status: "active", occupied: true }
+          ],
+          hand: {
+            seats: [
+              { seatNumber: 1, participantId: "p1" },
+              { seatNumber: 2, participantId: "p2" },
+              { seatNumber: 3, participantId: "p3", holeCards: ["As", "Ah"] }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("hero-seat-cluster");
+    expect(html).toContain("hero-hole-cards");
+    expect(html).toMatch(/hero-seat-cluster[\s\S]*seat-avatar/);
+    expect(html).toMatch(/hero-seat-cluster[\s\S]*seat-panel/);
+    expect(html).toMatch(/hero-seat-cluster[\s\S]*hero-hole-cards/);
+    expect(html).toContain("Seat 3 hole cards");
+    expect(html).toContain("As");
+    expect(html).toContain("Ah");
+  });
 });

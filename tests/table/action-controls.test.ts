@@ -30,10 +30,13 @@ describe("ActionControls", () => {
     );
 
     expect(html).toContain("YOUR TURN");
-    expect(html).toContain("home");
-    expect(html).toContain("99 BB");
-    expect(html).toContain("A");
-    expect(html).toContain("K");
+    expect(html).not.toContain("Your hand");
+    expect(html).not.toContain("hero-pocket");
+    expect(html).not.toContain("hero-cards");
+    expect(html).not.toContain("home");
+    expect(html).not.toContain("99 BB");
+    expect(html).not.toContain("As");
+    expect(html).not.toContain("Kh");
   });
 
   it("renders quick bet controls and keeps add chips as a secondary panel", () => {
