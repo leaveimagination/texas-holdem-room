@@ -1,5 +1,6 @@
 import { ActionControls } from "./ActionControls";
 import { HandResultPanel } from "./HandResultPanel";
+import { PlayingCard } from "./PlayingCard";
 import { SeatRing } from "./SeatRing";
 import type { ClientMessage } from "@/lib/realtime/messages";
 
@@ -54,7 +55,7 @@ export function PokerTable({
           <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Pot ${pot}` : "No pot yet"}</div>
           <div className="board" aria-label="Board">
             {board.length > 0 ? (
-              board.map((card, index) => <span className="card" key={`${card}-${index}`}>{card}</span>)
+              board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)
             ) : (
               <span className="board-empty">Board waiting</span>
             )}
@@ -66,7 +67,7 @@ export function PokerTable({
       <div className="hero-hand" aria-label="Your hand">
         <span>Your hand</span>
         <div className="hero-cards">
-          {heroCards.length > 0 ? heroCards.map((card) => <span className="card hero-card" key={card}>{card}</span>) : <span className="board-empty">Join and start a hand</span>}
+          {heroCards.length > 0 ? heroCards.map((card, index) => <PlayingCard card={card} variant="hero" dealIndex={index} key={card} />) : <span className="board-empty">Join and start a hand</span>}
         </div>
       </div>
 

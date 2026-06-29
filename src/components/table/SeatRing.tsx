@@ -1,4 +1,5 @@
 import React from "react";
+import { PlayingCard } from "./PlayingCard";
 
 interface SeatView {
   seatNumber: number;
@@ -47,14 +48,14 @@ export function SeatRing({
           <span className="seat-cards">
             {seat.holeCards.length > 0 ? (
               <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
-                {seat.holeCards.map((card) => (
-                  <span className="mini-card" key={card}>{card}</span>
+                {seat.holeCards.map((card, index) => (
+                  <PlayingCard card={card} variant="mini" dealIndex={index} key={card} />
                 ))}
               </span>
             ) : seat.occupied ? (
               <span className="card-back-row" aria-hidden="true">
-                <span className="card-back" />
-                <span className="card-back" />
+                <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
+                <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
               </span>
             ) : null}
           </span>
