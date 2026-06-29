@@ -37,21 +37,37 @@ export function SeatRing({
           aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
           disabled={seat.occupied || !canClaimSeat}
         >
-          <span className="seat-number">Seat {seat.seatNumber}</span>
-          <strong>{seat.displayName ?? "Open"}</strong>
-          <span>{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
-          {seat.holeCards.length > 0 ? (
-            <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
-              {seat.holeCards.map((card) => (
-                <span className="mini-card" key={card}>{card}</span>
-              ))}
-            </span>
-          ) : null}
-          <small>{seat.status}</small>
+          <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
+          <span className="seat-panel">
+            <span className="seat-number">Seat {seat.seatNumber}</span>
+            <strong>{seat.displayName ?? "Open"}</strong>
+            <span className="seat-stack">{seat.occupied ? `${seat.chips} chips` : "Available"}</span>
+            <small>{seat.status}</small>
+          </span>
+          <span className="seat-cards">
+            {seat.holeCards.length > 0 ? (
+              <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
+                {seat.holeCards.map((card) => (
+                  <span className="mini-card" key={card}>{card}</span>
+                ))}
+              </span>
+            ) : seat.occupied ? (
+              <span className="card-back-row" aria-hidden="true">
+                <span className="card-back" />
+                <span className="card-back" />
+              </span>
+            ) : null}
+          </span>
+          {seat.isActing ? <span className="seat-timer" aria-hidden="true" /> : null}
         </button>
       ))}
     </div>
   );
+}
+
+function avatarInitial(displayName: string | null, seatNumber: number): string {
+  const trimmed = displayName?.trim();
+  return trimmed ? trimmed.slice(0, 1).toUpperCase() : String(seatNumber);
 }
 
 function readSeats(view: unknown): SeatView[] {

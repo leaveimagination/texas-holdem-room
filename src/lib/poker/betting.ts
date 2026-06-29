@@ -11,7 +11,12 @@ export function getLegalActions(state: BettingState, playerId: string): LegalAct
   if (toCall === 0) {
     const actions: LegalAction[] = [{ type: "check" }];
     const maxAmountTo = player.streetCommitted + player.stack;
-    if (maxAmountTo >= state.minRaise) {
+    if (state.currentBet > 0) {
+      const minAmountTo = state.currentBet + state.minRaise;
+      if (maxAmountTo >= minAmountTo) {
+        actions.push({ type: "raise", minAmountTo, maxAmountTo });
+      }
+    } else if (maxAmountTo >= state.minRaise) {
       actions.push({ type: "bet", minAmountTo: state.minRaise, maxAmountTo: player.streetCommitted + player.stack });
     }
     actions.push({ type: "all-in", amountTo: player.streetCommitted + player.stack });

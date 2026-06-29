@@ -45,6 +45,25 @@ describe("betting", () => {
     expect(actions).toEqual(["fold", "call", "raise", "all-in"]);
   });
 
+  it("offers raise instead of bet when the big blind has option after a call", () => {
+    const actions = getLegalActions(
+      {
+        ...state(),
+        actorId: "p2",
+        currentBet: 20,
+        minRaise: 20,
+        players: [
+          { id: "p1", stack: 980, committed: 20, streetCommitted: 20, folded: false, allIn: false },
+          { id: "p2", stack: 980, committed: 20, streetCommitted: 20, folded: false, allIn: false }
+        ]
+      },
+      "p2"
+    );
+
+    expect(actions).toContainEqual({ type: "raise", minAmountTo: 40, maxAmountTo: 1000 });
+    expect(actions).not.toContainEqual(expect.objectContaining({ type: "bet" }));
+  });
+
   it("does not offer a regular bet when actor is short-stacked", () => {
     const actions = getLegalActions(
       {

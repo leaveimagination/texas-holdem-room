@@ -12,6 +12,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [displayName, setDisplayName] = useState("Player");
   const [hasParticipantToken, setHasParticipantToken] = useState(false);
   const [participantId, setParticipantId] = useState<string | null>(null);
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [hostToken, setHostToken] = useState<string | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
@@ -38,6 +39,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     setDisplayName(displayName);
     setHasParticipantToken(Boolean(participantToken));
     setParticipantId(joinedParticipantId ?? getParticipantId(roomId));
+    setHasJoinedRoom(true);
     send({ type: "join_room", roomId, participantToken, displayName });
   }
 
@@ -103,10 +105,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         <span className={connected ? "status-pill is-connected" : "status-pill"}>{connected ? "Connected" : "Connecting"}</span>
       </header>
 
-      <section className="join-panel" aria-label="Join flow">
-        <JoinRoomForm roomId={roomId} onJoin={joinRoom} />
-        {error ? <p className="inline-alert" role="status">{error}</p> : null}
-      </section>
+      {!hasJoinedRoom ? (
+        <section className="join-panel" aria-label="Join flow">
+          <JoinRoomForm roomId={roomId} onJoin={joinRoom} />
+          {error ? <p className="inline-alert" role="status">{error}</p> : null}
+        </section>
+      ) : error ? (
+        <p className="inline-alert" role="status">{error}</p>
+      ) : null}
 
       <PokerTable
         view={roomView}

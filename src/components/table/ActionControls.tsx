@@ -8,6 +8,7 @@ type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
 type ActionType = PlayerAction["type"];
 
 const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-in"];
+const PRIMARY_ACTIONS = new Set<ActionType>(["call", "check", "bet", "raise", "all-in"]);
 
 export function ActionControls({
   legalActions,
@@ -94,7 +95,13 @@ export function ActionControls({
 
       <div className="action-grid">
         {visibleActions.map((type) => (
-          <button type="button" key={type} onClick={() => sendAction(type)} disabled={!canUsePlayerActions}>
+          <button
+            type="button"
+            className={PRIMARY_ACTIONS.has(type) ? "is-primary-action" : "is-secondary-action"}
+            key={type}
+            onClick={() => sendAction(type)}
+            disabled={!canUsePlayerActions}
+          >
             {formatAction(type)}
           </button>
         ))}
