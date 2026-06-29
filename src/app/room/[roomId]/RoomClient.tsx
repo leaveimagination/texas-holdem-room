@@ -130,9 +130,39 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onRebuy={rebuy}
         onHandleDisconnect={handleDisconnect}
       />
+      <TableEventToast messages={messages} />
       {hasJoinedRoom ? <SystemLog messages={messages} onQuickPhrase={sendQuickPhrase} /> : null}
     </main>
   );
+}
+
+export function TableEventToast({ messages }: { messages: ServerMessage[] }) {
+  const event = findLatestTableEvent(messages);
+  if (!event) {
+    return null;
+  }
+
+  return (
+    <aside className="table-event-toast" role="status" aria-live="polite">
+      <span className="table-event-icon" aria-hidden="true">+</span>
+      <strong>{event}</strong>
+    </aside>
+  );
+}
+
+function findLatestTableEvent(messages: ServerMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type !== "system_message") {
+      continue;
+    }
+
+    if (/\badded \d+ chips\b/i.test(message.payload.message)) {
+      return message.payload.message;
+    }
+  }
+
+  return null;
 }
 
 function findLatestPayload(messages: ServerMessage[], types: ServerMessage["type"][]): unknown {

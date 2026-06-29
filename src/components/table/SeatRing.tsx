@@ -148,7 +148,11 @@ function readSeats(view: unknown): SeatView[] {
 
     return [{
       seatNumber: seat.seatNumber,
-      participantId: handMetaBySeat.get(seat.seatNumber)?.participantId ?? null,
+      participantId: typeof seat.participantId === "string"
+        ? seat.participantId
+        : typeof seat.id === "string"
+          ? seat.id
+          : handMetaBySeat.get(seat.seatNumber)?.participantId ?? null,
       displayName: typeof seat.displayName === "string" ? seat.displayName : null,
       chips: typeof seat.chips === "number" ? seat.chips : 0,
       status: typeof seat.status === "string" ? seat.status : "empty",

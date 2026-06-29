@@ -141,4 +141,25 @@ describe("SeatRing", () => {
     expect(html).toContain("As");
     expect(html).toContain("Ah");
   });
+
+  it("recognizes the local seat before a hand starts", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        localParticipantId: "p3",
+        view: {
+          seats: [
+            { seatNumber: 1, participantId: "p1", displayName: "A", chips: 1000, status: "seated", occupied: true },
+            { seatNumber: 2, participantId: "p2", displayName: "B", chips: 1000, status: "seated", occupied: true },
+            { seatNumber: 3, participantId: "p3", displayName: "Hero", chips: 1000, status: "seated", occupied: true }
+          ],
+          hand: null
+        }
+      })
+    );
+
+    expect(html).toContain("Seat 3 occupied by Hero");
+    expect(html).toContain("seat-slot-5");
+    expect(html).toContain("is-local-seat");
+    expect(html).toContain("hero-seat-cluster");
+  });
 });
