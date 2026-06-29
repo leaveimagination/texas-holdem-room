@@ -242,6 +242,53 @@ describe("createGameServer", () => {
     const room = await liveRooms.getRoom(roomId);
     expect(room?.hand).toBeNull();
   });
+
+  it("automatically starts the next hand after a hand finishes when enough players remain", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+
+    const recordHand = vi.fn().mockResolvedValue(undefined);
+    const { url } = await startTestServer(liveRooms, validAuth, { recordHand, recordBuyIn: vi.fn() });
+    const playerSocket = connect(url);
+
+    await waitForOpen(playerSocket);
+
+    const joined = nextMessage(playerSocket);
+    playerSocket.send(
+      JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "Player 1" })
+    );
+    await joined;
+
+    const started = nextMessage(playerSocket);
+    playerSocket.send(JSON.stringify({ type: "start_room", roomId, hostToken: "host-token" }));
+    await started;
+
+    const nextHandSnapshot = nextMessage(playerSocket);
+    playerSocket.send(
+      JSON.stringify({
+        type: "player_action",
+        roomId,
+        participantToken: "p1-token",
+        action: { type: "fold", playerId: "p1" }
+      })
+    );
+
+    await expect(nextHandSnapshot).resolves.toMatchObject({
+      type: "room_snapshot",
+      payload: {
+        status: "playing",
+        hand: {
+          number: 2,
+          finished: false
+        }
+      }
+    });
+    expect(recordHand).toHaveBeenCalledOnce();
+
+    const room = await liveRooms.getRoom(roomId);
+    expect(room?.hand?.number).toBe(2);
+    expect(room?.hand?.finished).toBe(false);
+  });
 });
 
 function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
@@ -263,9 +310,13 @@ function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
   };
 }
 
-async function startTestServer(liveRooms: LiveRoomStore, auth: RealtimeAuth = validAuth): Promise<{ server: HttpServer; url: string }> {
+async function startTestServer(
+  liveRooms: LiveRoomStore,
+  auth: RealtimeAuth = validAuth,
+  roomRepository?: Parameters<typeof createGameServer>[0]["roomRepository"]
+): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
-  const gameServer = createGameServer({ server, liveRooms, auth });
+  const gameServer = createGameServer({ server, liveRooms, auth, roomRepository });
   server.on("upgrade", (request, socket, head) => {
     if (!handleGameServerUpgrade(gameServer, request, socket, head)) {
       socket.destroy();

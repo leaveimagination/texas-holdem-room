@@ -146,24 +146,21 @@ async function handleIncomingMessage(
           throw new Error("Participant token mismatch");
         }
         updatedRoom = claimSeat(room, session.participantId, message.displayName, message.seatNumber);
-        await liveRooms.saveRoom(updatedRoom);
         break;
       case "start_room":
         updatedRoom = startHand(room);
-        await liveRooms.saveRoom(updatedRoom);
         break;
       case "player_action":
         validatePlayerAction(message, room, session);
         updatedRoom = applyPlayerAction(room, message.action);
-        await liveRooms.saveRoom(updatedRoom);
         await recordFinishedHand(roomRepository, updatedRoom);
+        updatedRoom = startNextHandIfReady(updatedRoom);
         break;
       case "rebuy":
         if (!session.participantId) {
           throw new Error("Participant token mismatch");
         }
         updatedRoom = rebuy(room, session.participantId, message.amount);
-        await liveRooms.saveRoom(updatedRoom);
         await roomRepository.recordBuyIn(room.roomId, session.participantId, message.amount);
         systemNotice = `${displayNameForParticipant(updatedRoom, session.participantId)} added ${message.amount} chips`;
         break;
@@ -175,7 +172,6 @@ async function handleIncomingMessage(
           throw new Error(`Unsupported disconnect handling: ${message.handling}`);
         }
         updatedRoom = markDisconnected(room, message.participantId);
-        await liveRooms.saveRoom(updatedRoom);
         break;
     }
   } catch (error) {
@@ -185,6 +181,7 @@ async function handleIncomingMessage(
   }
 
   if (updatedRoom) {
+    await liveRooms.saveRoom(updatedRoom);
     broadcastSnapshot(sessions, updatedRoom);
   }
 
@@ -200,6 +197,27 @@ async function recordFinishedHand(roomRepository: Pick<RoomRepository, "recordHa
   if (room.hand?.finished) {
     await roomRepository.recordHand(room);
   }
+}
+
+function startNextHandIfReady(room: RoomState): RoomState {
+  if (!room.hand?.finished || room.status === "finished" || room.status === "paused") {
+    return room;
+  }
+
+  const activeSeats = room.seats.filter((seat) => {
+    return (
+      seat.participantId !== null &&
+      seat.chips > 0 &&
+      seat.status !== "empty" &&
+      seat.status !== "eliminated" &&
+      seat.status !== "disconnected"
+    );
+  });
+  if (activeSeats.length < 2) {
+    return room;
+  }
+
+  return startHand(room);
 }
 
 function parseClientMessage(data: RawData): ClientMessage | null {
