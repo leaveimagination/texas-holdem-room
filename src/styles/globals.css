@@ -153,8 +153,8 @@ main {
 .game-room-page .system-log {
   position: fixed;
   left: clamp(22px, 4vw, 54px);
-  bottom: 76px;
-  z-index: 12;
+  bottom: 130px;
+  z-index: 9;
   width: auto;
   border: 0;
   background: transparent;
@@ -763,6 +763,35 @@ main {
   gap: 8px;
 }
 
+.poker-client-shell .bet-console.is-waiting {
+  grid-template-rows: 42px 78px auto;
+}
+
+.poker-client-shell .bet-console.is-waiting .quick-bet-row button,
+.poker-client-shell .bet-console.is-waiting .amount-control input {
+  opacity: 0.58;
+}
+
+.poker-client-shell .bet-console.is-waiting .action-placeholder {
+  grid-column: 1 / 4;
+  grid-row: 3;
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.54);
+  padding: 5px 12px;
+  justify-self: end;
+  width: min(330px, 100%);
+}
+
+.poker-client-shell .bet-console.is-waiting .action-placeholder strong {
+  font-size: 0.88rem;
+}
+
+.poker-client-shell .bet-console.is-waiting .action-placeholder span {
+  display: none;
+}
+
 .poker-client-shell .primary-action-row.action-count-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -802,8 +831,8 @@ main {
 .poker-client-shell .table-tools {
   position: fixed;
   left: 18px;
-  bottom: 66px;
-  z-index: 10;
+  bottom: 58px;
+  z-index: 13;
   justify-content: flex-start;
 }
 

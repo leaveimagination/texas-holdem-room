@@ -157,9 +157,33 @@ export function ActionControls({
               </div>
             </div>
           ) : (
-            <div className="action-placeholder">
-              <strong>{canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
-              <span>{playerControls ? "Take a seat and wait for the next hand." : "Join the room to play."}</span>
+            <div className="bet-console is-waiting">
+              <div className="quick-bet-row" aria-label="Quick bet controls">
+                {["33%", "50%", "75%", "100%"].map((label) => (
+                  <button type="button" key={label} disabled>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="amount-control">
+                <span>Raise to</span>
+                <input aria-label="Raise amount" value="--" disabled readOnly />
+              </label>
+              <div className="primary-action-row action-grid action-count-3">
+                <button type="button" className="is-primary-action" disabled>
+                  <span>Fold</span>
+                </button>
+                <button type="button" className="is-primary-action" disabled>
+                  <span>Call</span>
+                </button>
+                <button type="button" className="is-primary-action" disabled>
+                  <span>Raise to</span>
+                </button>
+              </div>
+              <div className="action-placeholder">
+                <strong>{canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
+                <span>{playerControls ? "Take a seat and wait for the next hand." : "Join the room to play."}</span>
+              </div>
             </div>
           )}
         </div>

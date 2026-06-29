@@ -124,7 +124,7 @@ describe("ActionControls", () => {
     expect(html).not.toContain(">All in<");
   });
 
-  it("hides betting buttons while waiting for the host to start", () => {
+  it("keeps a disabled betting console shape while waiting for the host to start", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: null,
@@ -135,9 +135,11 @@ describe("ActionControls", () => {
     );
 
     expect(html).toContain("Waiting for host to deal");
-    expect(html).not.toContain(">Fold<");
-    expect(html).not.toContain(">Call<");
-    expect(html).not.toContain(">Raise<");
+    expect(html).toContain("bet-console is-waiting");
+    expect(html).toContain("<span>Fold</span>");
+    expect(html).toContain("<span>Call</span>");
+    expect(html).toContain("<span>Raise to</span>");
+    expect(html).toContain("disabled");
   });
 
   it("keeps room management behind a host tools menu", () => {
