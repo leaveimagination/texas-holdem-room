@@ -52,6 +52,13 @@ export function ActionControls({
   const [rebuyAmount, setRebuyAmount] = useState("500");
   const [disconnectedParticipantId, setDisconnectedParticipantId] = useState("");
   const quickBets = buildQuickBets({ bigBlind, pot, raiseLimits });
+  const sliderStep = getBetSliderStep(bigBlind);
+  const sliderBounds = getBetSliderBounds({ raiseLimits, raiseAmount, bigBlind });
+  const selectedRaiseAmount = clampBetAmount(readPositiveAmount(raiseAmount) ?? sliderBounds.min, {
+    min: sliderBounds.min,
+    max: sliderBounds.max
+  });
+  const sliderProgress = Math.round(((selectedRaiseAmount - sliderBounds.min) / Math.max(sliderBounds.max - sliderBounds.min, 1)) * 100);
   const activeActorId = actorId ?? "pending-player";
   const hasActiveTurn = Boolean(actorId);
   const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
@@ -73,9 +80,17 @@ export function ActionControls({
       }
 
       const parsedAmount = readPositiveAmount(currentAmount);
-      return parsedAmount === null || parsedAmount < raiseLimits.min ? String(raiseLimits.min) : currentAmount;
+      if (parsedAmount === null || parsedAmount < raiseLimits.min) {
+        return String(raiseLimits.min);
+      }
+
+      if (typeof raiseLimits.max === "number" && parsedAmount > raiseLimits.max) {
+        return String(raiseLimits.max);
+      }
+
+      return currentAmount;
     });
-  }, [raiseLimits?.min]);
+  }, [raiseLimits?.min, raiseLimits?.max]);
 
   function sendAction(type: ActionType) {
     if (type === "bet" || type === "raise") {
@@ -122,15 +137,16 @@ export function ActionControls({
                   </button>
                 ))}
               </div>
-              <label className="amount-control">
-                <span>Raise to</span>
+              <label className="amount-control bet-slider-control" style={{ "--bet-progress": `${sliderProgress}%` } as React.CSSProperties}>
+                <span className="bet-slider-value">{formatBb(selectedRaiseAmount, bigBlind)}</span>
                 <input
-                  aria-label="Raise amount"
-                  inputMode="numeric"
-                  min={1}
-                  type="number"
-                  value={raiseAmount}
-                  disabled={!canUsePlayerActions}
+                  aria-label="Bet amount slider"
+                  min={sliderBounds.min}
+                  max={sliderBounds.max}
+                  step={sliderStep}
+                  type="range"
+                  value={selectedRaiseAmount}
+                  disabled={!canUsePlayerActions || !raiseLimits}
                   onChange={(event) => setRaiseAmount(event.target.value)}
                 />
               </label>
@@ -141,7 +157,7 @@ export function ActionControls({
               ) : null}
               <div className={`primary-action-row action-grid action-count-${actionButtons.length}`}>
                 {actionButtons.map((type) => {
-                  const label = formatActionLabel(type, actions, bigBlind);
+                  const label = formatActionLabel(type, actions, bigBlind, selectedRaiseAmount);
                   return (
                     <button
                       type="button"
@@ -166,10 +182,10 @@ export function ActionControls({
                   </button>
                 ))}
               </div>
-              <label className="amount-control">
-                <span>Raise to</span>
-                <input aria-label="Raise amount" value="--" disabled readOnly />
-              </label>
+              <div className="amount-control bet-slider-control is-disabled" aria-label="Bet amount slider">
+                <span className="bet-slider-value" aria-hidden="true" />
+                <span className="bet-slider-track" aria-hidden="true" />
+              </div>
               <div className="primary-action-row action-grid action-count-3">
                 <button type="button" className="is-primary-action" disabled>
                   <span>Fold</span>
@@ -297,14 +313,19 @@ function formatAction(type: ActionType): string {
   }
 }
 
-function formatActionLabel(type: ActionType, actions: ActionItem[], bigBlind?: number | null): { title: string; detail: string | null } {
+function formatActionLabel(
+  type: ActionType,
+  actions: ActionItem[],
+  bigBlind?: number | null,
+  selectedRaiseAmount?: number
+): { title: string; detail: string | null } {
   const action = actions.find((candidate) => candidate.type === type);
   if (type === "call" && typeof action?.amount === "number") {
     return { title: "Call", detail: formatBb(action.amount, bigBlind) };
   }
 
   if ((type === "raise" || type === "bet") && typeof action?.minAmountTo === "number") {
-    return { title: type === "bet" ? "Bet" : "Raise to", detail: formatBb(action.minAmountTo, bigBlind) };
+    return { title: type === "bet" ? "Bet" : "Raise to", detail: formatBb(selectedRaiseAmount ?? action.minAmountTo, bigBlind) };
   }
 
   if (type === "all-in" && typeof action?.amountTo === "number") {
@@ -362,4 +383,27 @@ function clampBetAmount(amount: number, raiseLimits: { min: number; max: number 
 
   const minClamped = Math.max(amount, raiseLimits.min);
   return raiseLimits.max === null ? minClamped : Math.min(minClamped, raiseLimits.max);
+}
+
+function getBetSliderStep(bigBlind?: number | null): number {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  return Math.max(1, Math.round(blind));
+}
+
+function getBetSliderBounds({
+  raiseLimits,
+  raiseAmount,
+  bigBlind
+}: {
+  raiseLimits: { min: number; max: number | null } | null;
+  raiseAmount: string;
+  bigBlind?: number | null;
+}): { min: number; max: number } {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  const parsedAmount = readPositiveAmount(raiseAmount);
+  const min = raiseLimits?.min ?? blind;
+  const fallbackMax = Math.max(min, parsedAmount ?? min, blind * 100);
+  const max = typeof raiseLimits?.max === "number" ? Math.max(raiseLimits.max, min) : fallbackMax;
+
+  return { min, max };
 }

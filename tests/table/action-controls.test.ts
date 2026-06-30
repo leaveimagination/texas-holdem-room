@@ -108,11 +108,12 @@ describe("ActionControls", () => {
     expect(html).not.toContain("is-secondary-action");
   });
 
-  it("initializes the raise amount input from the legal minimum when available", () => {
+  it("renders the legal raise amount as a draggable bet slider", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: "p1",
         localParticipantId: "p1",
+        bigBlind: 20,
         playerControls: true,
         legalActions: {
           actions: [{ type: "raise", minAmountTo: 240, maxAmountTo: 2000 }]
@@ -120,8 +121,16 @@ describe("ActionControls", () => {
       })
     );
 
+    expect(html).toContain("bet-slider-control");
+    expect(html).toContain("aria-label=\"Bet amount slider\"");
+    expect(html).toContain("type=\"range\"");
+    expect(html).toContain("min=\"240\"");
+    expect(html).toContain("max=\"2000\"");
+    expect(html).toContain("step=\"20\"");
     expect(html).toContain("value=\"240\"");
+    expect(html).toContain("12 BB");
     expect(html).not.toContain("value=\"100\"");
+    expect(html).not.toContain("aria-label=\"Raise amount\"");
   });
 
   it("does not invent fallback legal actions during a live hand when actions are absent", () => {
@@ -154,9 +163,13 @@ describe("ActionControls", () => {
 
     expect(html).toContain("Waiting for host to deal");
     expect(html).toContain("bet-console is-waiting");
+    expect(html).toContain("bet-slider-control is-disabled");
+    expect(html).toContain("bet-slider-track");
     expect(html).toContain("<span>Fold</span>");
     expect(html).toContain("<span>Call</span>");
     expect(html).toContain("<span>Raise to</span>");
+    expect(html).not.toContain("value=\"--\"");
+    expect(html).not.toContain(">--<");
     expect(html).toContain("disabled");
   });
 
