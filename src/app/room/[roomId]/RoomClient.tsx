@@ -4,7 +4,6 @@ import React from "react";
 import { useEffect, useState } from "react";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
 import { PokerTable } from "@/components/table/PokerTable";
-import { SystemLog } from "@/components/table/SystemLog";
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 
@@ -87,15 +86,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
     send({ type: "handle_disconnect", roomId, hostToken, participantId, handling: "pause" });
   }
 
-  function sendQuickPhrase(phrase: "think" | "nice_hand" | "well_played" | "another_hand") {
-    const participantToken = getParticipantToken(roomId);
-    if (!participantToken) {
-      return;
-    }
-
-    send({ type: "quick_phrase", roomId, participantToken, phrase });
-  }
-
   return (
     <main className={hasJoinedRoom ? "room-page game-room-page is-joined" : "room-page game-room-page"}>
       <header className="room-header">
@@ -131,7 +121,6 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onHandleDisconnect={handleDisconnect}
       />
       <TableEventToast messages={messages} />
-      {hasJoinedRoom ? <SystemLog messages={messages} onQuickPhrase={sendQuickPhrase} /> : null}
     </main>
   );
 }

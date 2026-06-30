@@ -22,6 +22,8 @@ test("room page shows join flow and table surface", async ({ page }) => {
 
   await page.getByRole("button", { name: "Spectate" }).click();
   await expect(joinFrame).resolves.toContain("\"participantToken\":null");
+  await expect(page.getByRole("button", { name: "Nice hand" })).toHaveCount(0);
+  await expect(page.getByLabel("System log")).toHaveCount(0);
 });
 
 test("table controls send room websocket commands", async ({ page }) => {

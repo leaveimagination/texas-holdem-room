@@ -150,66 +150,6 @@ main {
   display: none;
 }
 
-.game-room-page .system-log {
-  position: fixed;
-  left: clamp(22px, 4vw, 54px);
-  bottom: 130px;
-  z-index: 9;
-  width: auto;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-}
-
-.game-room-page .quick-phrases {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-}
-
-.game-room-page .quick-phrases button {
-  width: 42px;
-  min-width: 42px;
-  min-height: 42px;
-  border-radius: 999px;
-  padding: 0;
-  overflow: hidden;
-  color: transparent;
-  position: relative;
-  background:
-    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.25), transparent 26%),
-    linear-gradient(180deg, #323841, #11151b);
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.42);
-}
-
-.game-room-page .quick-phrases button::before {
-  content: "...";
-  color: rgba(255, 247, 232, 0.78);
-  font-size: 1rem;
-  letter-spacing: 0;
-}
-
-.game-room-page .quick-phrases button:nth-child(1)::before {
-  content: "T";
-}
-
-.game-room-page .quick-phrases button:nth-child(2)::before {
-  content: "N";
-}
-
-.game-room-page .quick-phrases button:nth-child(3)::before {
-  content: "W";
-}
-
-.game-room-page .quick-phrases button:nth-child(4)::before {
-  content: "A";
-}
-
-.game-room-page .log-entries {
-  display: none;
-}
-
 .game-room-page .table-event-toast {
   position: fixed;
   left: 50%;
@@ -289,15 +229,13 @@ main {
 
 .join-panel,
 .table-surface,
-.system-log,
 .review-section {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
 }
 
 .join-panel,
-.review-section,
-.system-log {
+.review-section {
   background: rgba(15, 19, 26, 0.9);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
 }
@@ -1552,8 +1490,7 @@ main {
   position: relative;
 }
 
-.table-tools summary,
-.quick-phrases button {
+.table-tools summary {
   min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
@@ -1596,32 +1533,10 @@ main {
   grid-template-columns: minmax(160px, 0.7fr) minmax(0, 1fr) minmax(160px, 0.7fr);
 }
 
-.quick-phrases {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
 .hand-result {
   background: rgba(0, 0, 0, 0.22);
   border-radius: 8px;
   padding: 10px;
-}
-
-.system-log {
-  padding: 10px;
-  display: grid;
-  gap: 10px;
-}
-
-.log-entries {
-  max-height: 120px;
-  overflow: auto;
-  color: var(--muted);
-}
-
-.log-entries p {
-  margin: 0 0 6px;
 }
 
 @keyframes pulse-border {
@@ -1685,10 +1600,6 @@ main {
 }
 
 @media (max-width: 760px) {
-  .game-room-page .system-log {
-    display: none;
-  }
-
   .home,
   main {
     padding: 8px;
@@ -1835,7 +1746,6 @@ main {
   }
 
   .quick-bet-row,
-  .quick-phrases,
   .host-controls,
   .rebuy-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
