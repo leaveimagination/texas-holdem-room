@@ -18,6 +18,7 @@ test("room page shows join flow and table surface", async ({ page }) => {
   await expect(page.getByText("Table")).toBeVisible();
   await expect(page.getByText("Waiting for deal")).toBeVisible();
   await expect(page.getByRole("region", { name: "Actions" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open Next.js Dev Tools" })).toHaveCount(0);
   expect(new URL(webSocket.url()).pathname).toBe("/ws");
 
   await page.getByRole("button", { name: "Spectate" }).click();
