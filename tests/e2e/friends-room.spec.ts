@@ -16,8 +16,8 @@ test("room page shows join flow and table surface", async ({ page }) => {
 
   await expect(page.getByLabel("Nickname")).toBeVisible();
   await expect(page.getByText("Table")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fold" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Nice hand" })).toBeVisible();
+  await expect(page.getByText("Waiting for deal")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Actions" })).toHaveCount(0);
   expect(new URL(webSocket.url()).pathname).toBe("/ws");
 
   await page.getByRole("button", { name: "Spectate" }).click();
@@ -46,22 +46,16 @@ test("table controls send room websocket commands", async ({ page }) => {
   await page.getByRole("button", { name: "Claim seat 1" }).click();
   await expect.poll(() => findFrame(page, "claim_seat")).toContain("\"seatNumber\":1");
 
+  await page.locator(".host-popover").evaluate((details) => {
+    if (details instanceof HTMLDetailsElement) {
+      details.open = true;
+    }
+  });
   await page.getByRole("button", { name: "Start room" }).click();
   await expect.poll(() => findFrame(page, "start_room")).toContain("\"hostToken\":\"host-token\"");
 
-  await page.getByRole("button", { name: "Fold" }).click();
-  await expect.poll(() => findFrame(page, "player_action", "\"fold\"")).toContain("\"participantToken\":\"participant-token\"");
-
-  await page.getByLabel("Raise amount").fill("120");
-  await page.getByRole("button", { name: "Raise" }).click();
-  await expect.poll(() => findFrame(page, "player_action", "\"raise\"")).toContain("\"amountTo\":120");
-
-  await page.getByRole("button", { name: "All in" }).click();
-  await expect.poll(() => findFrame(page, "player_action", "\"all-in\"")).toContain("\"type\":\"all-in\"");
-
-  await page.getByLabel("Add chips amount").fill("500");
-  await page.getByRole("button", { name: "Add chips" }).click();
-  await expect.poll(() => findFrame(page, "rebuy")).toContain("\"amount\":500");
+  await expect(page.getByRole("dialog", { name: "Add chips" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Add chips" })).toHaveCount(0);
 
   await page.getByLabel("Disconnected participant").fill("p1");
   await page.getByRole("button", { name: "Pause for disconnect" }).click();

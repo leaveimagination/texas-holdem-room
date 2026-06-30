@@ -16,7 +16,7 @@ export function ActionControls({
   actorName,
   heroCards: _heroCards = [],
   heroName: _heroName,
-  heroStack: _heroStack,
+  heroStack,
   tableStatus,
   bigBlind = 20,
   pot = 0,
@@ -59,6 +59,7 @@ export function ActionControls({
   const actionButtons = visibleActions.filter((type) => type !== "all-in");
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = playerControls && (!hasActiveTurn || isPlayerTurn);
+  const showRebuyModal = Boolean(playerControls && typeof heroStack === "number" && heroStack <= 0);
   const statusText = isPlayerTurn
     ? "YOUR TURN"
     : hasActiveTurn
@@ -189,8 +190,8 @@ export function ActionControls({
         </div>
       </div>
 
-      <div className="table-tools" aria-label="Table tools">
-        {hostControls ? (
+      {hostControls ? (
+        <div className="table-tools" aria-label="Table tools">
           <details className="host-popover">
             <summary>Host tools</summary>
             <div className="popover-body host-controls" aria-label="Host controls">
@@ -207,11 +208,17 @@ export function ActionControls({
               <button type="button" onClick={sendDisconnectHandling}>Pause for disconnect</button>
             </div>
           </details>
-        ) : null}
+        </div>
+      ) : null}
 
-        <details className="rebuy-popover">
-          <summary>Add chips</summary>
-          <div className="popover-body rebuy-strip" aria-label="Add chips controls">
+      {showRebuyModal ? (
+        <div className="rebuy-modal-backdrop">
+          <section className="rebuy-modal" role="dialog" aria-label="Add chips">
+            <div className="rebuy-modal-copy">
+              <span>Stack empty</span>
+              <strong>Add chips</strong>
+              <p>{tableStatus === "playing" ? "Top up now and return when the next hand is ready." : "Add virtual chips to sit back in."}</p>
+            </div>
             <label>
               Add chips amount
               <input
@@ -225,9 +232,9 @@ export function ActionControls({
               />
             </label>
             <button type="button" onClick={sendRebuy} disabled={!playerControls}>Add chips</button>
-          </div>
-        </details>
-      </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

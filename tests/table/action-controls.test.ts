@@ -39,12 +39,13 @@ describe("ActionControls", () => {
     expect(html).not.toContain("Kh");
   });
 
-  it("renders quick bet controls and keeps add chips as a secondary panel", () => {
+  it("renders quick bet controls without a persistent add chips tool while stacked", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: "p1",
         localParticipantId: "p1",
         playerControls: true,
+        heroStack: 2000,
         bigBlind: 20,
         pot: 80,
         legalActions: { actions: [{ type: "fold" }, { type: "call", amount: 30 }, { type: "raise", minAmountTo: 80, maxAmountTo: 2000 }] }
@@ -62,8 +63,25 @@ describe("ActionControls", () => {
     expect(html).toContain("1.5 BB");
     expect(html).toContain("Raise to");
     expect(html).toContain("4 BB");
+    expect(html).not.toContain("Add chips");
+    expect(html).not.toContain("rebuy-popover");
+    expect(html).not.toContain("rebuy-modal");
+  });
+
+  it("shows add chips as a modal only after the player is out of chips", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: null,
+        localParticipantId: "p1",
+        playerControls: true,
+        heroStack: 0,
+        tableStatus: "lobby"
+      })
+    );
+
+    expect(html).toContain("rebuy-modal");
     expect(html).toContain("Add chips");
-    expect(html).toContain("<details class=\"rebuy-popover\"");
+    expect(html).toContain("Add chips amount");
   });
 
   it("renders all live action buttons as primary red peers, including fold", () => {
