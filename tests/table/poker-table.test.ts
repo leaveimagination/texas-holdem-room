@@ -35,8 +35,12 @@ describe("PokerTable", () => {
     expect(html).toContain("poker-client-shell");
     expect(html).toContain("poker-client-backdrop");
     expect(html).toContain("table-watermark");
+    expect(html).toContain("HOLD&#x27;EM");
     expect(html).toContain("table-status-bar");
     expect(html).toContain("board is-featured-board");
+    expect(html).toContain("pot-display");
+    expect(html).toContain("pot-label");
+    expect(html).toContain("pot-amount");
     expect(html).toContain("Total Pot : 4 BB");
     expect(html).toContain("seat-nameplate");
     expect(html).toContain("chip-stack");

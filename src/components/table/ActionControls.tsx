@@ -161,7 +161,7 @@ export function ActionControls({
                   return (
                     <button
                       type="button"
-                      className="is-primary-action"
+                      className={["is-primary-action", actionToneClass(type)].join(" ")}
                       key={type}
                       onClick={() => sendAction(type)}
                       disabled={!canUsePlayerActions}
@@ -187,13 +187,13 @@ export function ActionControls({
                 <span className="bet-slider-track" aria-hidden="true" />
               </div>
               <div className="primary-action-row action-grid action-count-3">
-                <button type="button" className="is-primary-action" disabled>
+                <button type="button" className="is-primary-action is-fold-action" disabled>
                   <span>Fold</span>
                 </button>
-                <button type="button" className="is-primary-action" disabled>
+                <button type="button" className="is-primary-action is-call-action" disabled>
                   <span>Call</span>
                 </button>
-                <button type="button" className="is-primary-action" disabled>
+                <button type="button" className="is-primary-action is-raise-action" disabled>
                   <span>Raise to</span>
                 </button>
               </div>
@@ -333,6 +333,18 @@ function formatActionLabel(
   }
 
   return { title: formatAction(type), detail: null };
+}
+
+function actionToneClass(type: ActionType): string {
+  if (type === "fold") {
+    return "is-fold-action";
+  }
+
+  if (type === "call" || type === "check") {
+    return "is-call-action";
+  }
+
+  return "is-raise-action";
 }
 
 function readRaiseLimits(actions: ActionItem[]): { min: number; max: number | null } | null {

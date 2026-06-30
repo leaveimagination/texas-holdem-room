@@ -66,8 +66,18 @@ export function PokerTable({
         />
 
         <div className="table-center">
-          <div className="table-watermark" aria-hidden="true">GG</div>
-          {pot > 0 ? <div className="pot-chip" aria-label="Pot">Total Pot : {formatBb(pot, settings.bigBlind)}</div> : null}
+          <div className="table-watermark" aria-hidden="true">
+            <span>PRIVATE</span>
+            <strong>HOLD'EM</strong>
+          </div>
+          {pot > 0 ? (
+            <div className="pot-chip pot-display" aria-label={`Pot ${formatBb(pot, settings.bigBlind)}`}>
+              <span className="pot-chip-stack" aria-hidden="true" />
+              <span className="pot-label">Total Pot</span>
+              <strong className="pot-amount">{formatBb(pot, settings.bigBlind)}</strong>
+              <span className="sr-only">Total Pot : {formatBb(pot, settings.bigBlind)}</span>
+            </div>
+          ) : null}
           {board.length > 0 ? (
             <div className="board is-featured-board" aria-label="Board">
               {board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)}

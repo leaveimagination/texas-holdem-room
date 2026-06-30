@@ -52,14 +52,14 @@ export function JoinRoomForm({
   }
 
   return (
-    <form style={{ display: "grid", gap: 12 }} aria-label="Join room" onSubmit={handleSubmit}>
+    <form className="join-room-form" aria-label="Join room" onSubmit={handleSubmit}>
       <input type="hidden" name="roomId" value={roomId} />
-      <label style={{ display: "grid", gap: 6 }}>
-        Nickname
+      <label className="join-name-field">
+        <span>Nickname</span>
         <input name="displayName" maxLength={24} required />
       </label>
       {error ? <p className="inline-alert" role="status">{error}</p> : null}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+      <div className="join-room-actions">
         <button type="submit" disabled={joining}>{joining ? "Joining" : "Join"}</button>
         <button type="button" onClick={spectate}>Spectate</button>
       </div>

@@ -84,7 +84,7 @@ describe("ActionControls", () => {
     expect(html).toContain("Add chips amount");
   });
 
-  it("renders all live action buttons as primary red peers, including fold", () => {
+  it("renders live action buttons with client-style action weights", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: "p1",
@@ -104,7 +104,10 @@ describe("ActionControls", () => {
     expect(html).toContain(">Fold<");
     expect(html).toContain(">Call<");
     expect(html).toContain(">Raise to<");
-    expect(html).toContain("class=\"is-primary-action\"");
+    expect(html).toContain("is-fold-action");
+    expect(html).toContain("is-call-action");
+    expect(html).toContain("is-raise-action");
+    expect(html).toContain("class=\"is-primary-action is-fold-action\"");
     expect(html).not.toContain("is-secondary-action");
   });
 
