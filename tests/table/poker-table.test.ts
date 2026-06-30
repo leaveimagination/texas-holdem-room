@@ -41,6 +41,7 @@ describe("PokerTable", () => {
     expect(html).toContain("pot-display");
     expect(html).toContain("pot-label");
     expect(html).toContain("pot-amount");
+    expect(html).toContain("pot-screen-reader-text");
     expect(html).toContain("Total Pot : 4 BB");
     expect(html).toContain("seat-nameplate");
     expect(html).toContain("chip-stack");

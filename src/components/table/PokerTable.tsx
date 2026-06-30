@@ -75,7 +75,7 @@ export function PokerTable({
               <span className="pot-chip-stack" aria-hidden="true" />
               <span className="pot-label">Total Pot</span>
               <strong className="pot-amount">{formatBb(pot, settings.bigBlind)}</strong>
-              <span className="sr-only">Total Pot : {formatBb(pot, settings.bigBlind)}</span>
+              <span className="sr-only pot-screen-reader-text">Total Pot : {formatBb(pot, settings.bigBlind)}</span>
             </div>
           ) : null}
           {board.length > 0 ? (
