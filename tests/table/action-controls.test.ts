@@ -211,6 +211,7 @@ describe("ActionControls", () => {
     );
 
     expect(html).toContain("<summary>Host tools</summary>");
+    expect(html).toContain("is-anchored-host-controls");
     expect(html).toContain(">Start room<");
   });
 });

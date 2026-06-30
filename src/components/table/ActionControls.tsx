@@ -205,7 +205,7 @@ export function ActionControls({
         <div className="table-tools" aria-label="Table tools">
           <details className="host-popover">
             <summary>Host tools</summary>
-            <div className="popover-body host-controls" aria-label="Host controls">
+            <div className="popover-body host-controls is-anchored-host-controls" aria-label="Host controls">
               <button type="button" onClick={onStartRoom} disabled={!canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
               <label>
                 Disconnected participant
