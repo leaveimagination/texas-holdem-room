@@ -3,10 +3,17 @@ import React from "react";
 type CardVariant = "board" | "hero" | "mini";
 
 const SUIT_SYMBOLS = new Map([
-  ["h", "♥"],
-  ["d", "♦"],
-  ["c", "♣"],
-  ["s", "♠"]
+  ["h", "\u2665"],
+  ["d", "\u2666"],
+  ["c", "\u2663"],
+  ["s", "\u2660"]
+]);
+
+const SUIT_TONES = new Map([
+  ["h", "is-heart"],
+  ["d", "is-diamond"],
+  ["c", "is-club"],
+  ["s", "is-spade"]
 ]);
 
 export function PlayingCard({
@@ -19,11 +26,13 @@ export function PlayingCard({
   dealIndex?: number;
 }) {
   const parsed = parseCardLabel(card);
-  const suitColor = parsed.suit === "♥" || parsed.suit === "♦" ? "is-red" : "is-black";
+  const suitKey = card.slice(-1).toLowerCase();
+  const suitColor = suitKey === "h" || suitKey === "d" ? "is-red" : "is-black";
+  const suitTone = SUIT_TONES.get(suitKey) ?? "is-unknown-suit";
 
   return (
     <span
-      className={["poker-card", `is-${variant}`, suitColor, "is-dealing"].join(" ")}
+      className={["poker-card", `is-${variant}`, suitColor, suitTone, "is-dealing"].join(" ")}
       style={{ "--deal-index": dealIndex } as React.CSSProperties}
       aria-label={card}
     >

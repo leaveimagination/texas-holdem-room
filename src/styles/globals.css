@@ -412,8 +412,8 @@ main {
 }
 
 .poker-client-shell .table-center {
-  inset: 25% 21% 35%;
-  gap: 12px;
+  inset: 22% 17% 32%;
+  gap: 13px;
 }
 
 .poker-client-shell .table-watermark {
@@ -1332,6 +1332,19 @@ main {
   gap: 7px;
 }
 
+.board.is-featured-board {
+  position: relative;
+  z-index: 2;
+  min-height: 96px;
+  gap: clamp(8px, 1vw, 12px);
+  padding: 8px 12px;
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(255, 255, 255, 0.08), transparent 64%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.28));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+}
+
 .board-empty {
   color: var(--muted);
 }
@@ -1353,6 +1366,31 @@ main {
   transform-origin: center;
 }
 
+.poker-card.is-board {
+  width: clamp(56px, 5vw, 68px);
+  border: 1px solid rgba(10, 12, 16, 0.28);
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.96), transparent 26%),
+    linear-gradient(145deg, #ffffff 0%, #fffaf0 46%, #eadfcb 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -7px 14px rgba(84, 52, 23, 0.16),
+    0 3px 0 rgba(255, 255, 255, 0.5),
+    0 13px 24px rgba(0, 0, 0, 0.36);
+}
+
+.poker-card.is-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, currentColor 0 4px, transparent 4px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent 46%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .poker-card::after {
   content: "";
   position: absolute;
@@ -1367,6 +1405,22 @@ main {
 }
 
 .poker-card.is-black {
+  color: #151922;
+}
+
+.poker-card.is-heart {
+  color: #dc2734;
+}
+
+.poker-card.is-diamond {
+  color: #2577e5;
+}
+
+.poker-card.is-club {
+  color: #15914a;
+}
+
+.poker-card.is-spade {
   color: #151922;
 }
 
@@ -1446,6 +1500,29 @@ main {
 
 .poker-card.is-hero .card-center-suit {
   font-size: 1.92rem;
+}
+
+.poker-card.is-board .card-corner {
+  top: 5px;
+  left: 6px;
+}
+
+.poker-card.is-board .card-corner.is-bottom {
+  right: 6px;
+  bottom: 5px;
+}
+
+.poker-card.is-board .card-rank {
+  font-size: clamp(1rem, 1.25vw, 1.2rem);
+}
+
+.poker-card.is-board .card-suit {
+  font-size: clamp(0.78rem, 1vw, 0.96rem);
+}
+
+.poker-card.is-board .card-center-suit {
+  font-size: clamp(1.8rem, 2.35vw, 2.35rem);
+  transform: translateY(3px);
 }
 
 .poker-card.is-dealing,

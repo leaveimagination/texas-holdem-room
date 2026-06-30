@@ -69,7 +69,7 @@ export function PokerTable({
           <div className="table-watermark" aria-hidden="true">GG</div>
           {pot > 0 ? <div className="pot-chip" aria-label="Pot">Total Pot : {formatBb(pot, settings.bigBlind)}</div> : null}
           {board.length > 0 ? (
-            <div className="board" aria-label="Board">
+            <div className="board is-featured-board" aria-label="Board">
               {board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)}
             </div>
           ) : null}
