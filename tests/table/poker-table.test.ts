@@ -47,4 +47,32 @@ describe("PokerTable", () => {
     expect(html).not.toContain("Live felt");
     expect(html).not.toContain("<h2>Table</h2>");
   });
+
+  it("keeps the table center quiet before cards are dealt", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "lobby",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 2000, status: "seated", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 2000, status: "seated", occupied: true }
+          ],
+          hand: {
+            pot: 0,
+            board: [],
+            seats: []
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("table-watermark");
+    expect(html).not.toContain("No pot yet");
+    expect(html).not.toContain("Board waiting");
+    expect(html).not.toContain("Waiting for deal");
+  });
 });

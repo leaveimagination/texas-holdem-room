@@ -67,15 +67,13 @@ export function PokerTable({
 
         <div className="table-center">
           <div className="table-watermark" aria-hidden="true">GG</div>
-          <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Total Pot : ${formatBb(pot, settings.bigBlind)}` : "No pot yet"}</div>
-          <div className="board" aria-label="Board">
-            {board.length > 0 ? (
-              board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)
-            ) : (
-              <span className="board-empty">Board waiting</span>
-            )}
-          </div>
-          <p className={actorId ? "actor-callout is-live" : "actor-callout"}>{actorId ? `${actorName ?? "Player"} to act` : "Waiting for deal"}</p>
+          {pot > 0 ? <div className="pot-chip" aria-label="Pot">Total Pot : {formatBb(pot, settings.bigBlind)}</div> : null}
+          {board.length > 0 ? (
+            <div className="board" aria-label="Board">
+              {board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)}
+            </div>
+          ) : null}
+          {actorId ? <p className="actor-callout is-live">{actorName ?? "Player"} to act</p> : null}
         </div>
       </div>
 
