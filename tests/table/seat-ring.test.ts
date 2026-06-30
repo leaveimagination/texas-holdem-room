@@ -48,7 +48,7 @@ describe("SeatRing", () => {
 
     expect(html).toContain("is-acting");
     expect(html).toContain("Seat 2 is acting");
-    expect(html).toContain("seat-action-ring");
+    expect(html).toContain("seat-action-ring is-subtle");
     expect(html).toContain("aria-hidden=\"true\"");
   });
 
