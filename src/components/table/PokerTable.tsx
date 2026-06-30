@@ -46,10 +46,11 @@ export function PokerTable({
 
   return (
     <section className="table-surface poker-client-shell" aria-label="Table">
-      <div className="table-topline">
+      <div className="poker-client-backdrop" aria-hidden="true" />
+      <div className="table-topline table-status-bar" aria-label="Table status">
         <div>
-          <p className="eyebrow">Live felt</p>
-          <h2>Table</h2>
+          <p className="eyebrow">Private table</p>
+          <h2>{tableStatus === "playing" ? "Hand live" : "Waiting"}</h2>
         </div>
         <span>{settings.bigBlind ? "BB view" : "Virtual chips"}</span>
       </div>
@@ -65,6 +66,7 @@ export function PokerTable({
         />
 
         <div className="table-center">
+          <div className="table-watermark" aria-hidden="true">GG</div>
           <div className="pot-chip" aria-label="Pot">{pot > 0 ? `Total Pot : ${formatBb(pot, settings.bigBlind)}` : "No pot yet"}</div>
           <div className="board" aria-label="Board">
             {board.length > 0 ? (

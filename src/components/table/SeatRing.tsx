@@ -42,6 +42,7 @@ export function SeatRing({
             "seat",
             `seat-slot-${slot}`,
             seat.occupied ? "is-occupied" : "",
+            seat.occupied ? "" : "is-empty-seat",
             seat.isActing ? "is-acting" : "",
             local ? "is-local-seat" : ""
           ].filter(Boolean).join(" ")}
@@ -55,9 +56,9 @@ export function SeatRing({
           disabled={seat.occupied || !canClaimSeat}
         >
           {local ? (
-            <span className="hero-seat-cluster">
-              <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
-              <span className="seat-panel">
+              <span className="hero-seat-cluster">
+                <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
+              <span className="seat-panel seat-nameplate">
                 <span className="seat-number">Seat {seat.seatNumber}</span>
                 {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
                 <strong>{seat.displayName ?? "Open"}</strong>
@@ -82,7 +83,7 @@ export function SeatRing({
           ) : (
             <>
               <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
-              <span className="seat-panel">
+              <span className="seat-panel seat-nameplate">
                 <span className="seat-number">Seat {seat.seatNumber}</span>
                 {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
                 <strong>{seat.displayName ?? "Open"}</strong>
@@ -91,7 +92,12 @@ export function SeatRing({
               </span>
             </>
           )}
-          {seat.streetCommitted > 0 ? <span className="seat-bet">{formatBb(seat.streetCommitted, bigBlind)}</span> : null}
+          {seat.streetCommitted > 0 ? (
+            <span className="seat-bet">
+              <span className="chip-stack" aria-hidden="true" />
+              <span>{formatBb(seat.streetCommitted, bigBlind)}</span>
+            </span>
+          ) : null}
           {local ? null : (
             <span className="seat-cards">
               {seat.holeCards.length > 0 ? (

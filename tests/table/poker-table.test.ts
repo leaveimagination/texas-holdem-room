@@ -15,7 +15,8 @@ describe("PokerTable", () => {
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 2000, status: "active", occupied: true },
-            { seatNumber: 2, displayName: "Villain", chips: 1980, status: "active", occupied: true }
+            { seatNumber: 2, displayName: "Villain", chips: 1980, status: "active", occupied: true },
+            { seatNumber: 3, displayName: null, chips: 0, status: "empty", occupied: false }
           ],
           hand: {
             pot: 80,
@@ -32,9 +33,18 @@ describe("PokerTable", () => {
     );
 
     expect(html).toContain("poker-client-shell");
+    expect(html).toContain("poker-client-backdrop");
+    expect(html).toContain("table-watermark");
+    expect(html).toContain("table-status-bar");
     expect(html).toContain("Total Pot : 4 BB");
+    expect(html).toContain("seat-nameplate");
+    expect(html).toContain("chip-stack");
+    expect(html).toContain("hero-seat-cluster");
+    expect(html).toContain("is-empty-seat");
     expect(html).toContain("33%");
     expect(html).toContain("As");
     expect(html).toContain("6s");
+    expect(html).not.toContain("Live felt");
+    expect(html).not.toContain("<h2>Table</h2>");
   });
 });
