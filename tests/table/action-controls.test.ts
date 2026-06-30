@@ -136,6 +136,29 @@ describe("ActionControls", () => {
     expect(html).not.toContain("aria-label=\"Raise amount\"");
   });
 
+  it("keeps all-in as an explicit action button instead of a slider-side icon", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        legalActions: {
+          actions: [
+            { type: "fold" },
+            { type: "call", amount: 40 },
+            { type: "raise", minAmountTo: 120, maxAmountTo: 1000 },
+            { type: "all-in", amountTo: 1000 }
+          ]
+        }
+      })
+    );
+
+    expect(html).toContain(">All in<");
+    expect(html).toContain("50 BB");
+    expect(html).toContain("is-all-in-action");
+    expect(html).not.toContain("all-in-chip");
+  });
+
   it("does not invent fallback legal actions during a live hand when actions are absent", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {

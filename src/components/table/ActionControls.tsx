@@ -63,7 +63,7 @@ export function ActionControls({
   const hasActiveTurn = Boolean(actorId);
   const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
-  const actionButtons = visibleActions.filter((type) => type !== "all-in");
+  const actionButtons = visibleActions;
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = playerControls && (!hasActiveTurn || isPlayerTurn);
   const showRebuyModal = Boolean(playerControls && typeof heroStack === "number" && heroStack <= 0);
@@ -150,11 +150,6 @@ export function ActionControls({
                   onChange={(event) => setRaiseAmount(event.target.value)}
                 />
               </label>
-              {visibleActions.includes("all-in") ? (
-                <button className="all-in-chip" type="button" onClick={() => sendAction("all-in")} disabled={!canUsePlayerActions}>
-                  All in
-                </button>
-              ) : null}
               <div className={`primary-action-row action-grid action-count-${actionButtons.length}`}>
                 {actionButtons.map((type) => {
                   const label = formatActionLabel(type, actions, bigBlind, selectedRaiseAmount);
@@ -338,6 +333,10 @@ function formatActionLabel(
 function actionToneClass(type: ActionType): string {
   if (type === "fold") {
     return "is-fold-action";
+  }
+
+  if (type === "all-in") {
+    return "is-all-in-action";
   }
 
   if (type === "call" || type === "check") {

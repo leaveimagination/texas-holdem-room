@@ -665,7 +665,7 @@ main {
   border: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   background:
     linear-gradient(180deg, rgba(3, 22, 12, 0.88), rgba(0, 0, 0, 0.58));
   color: #fff;
@@ -709,16 +709,17 @@ main {
 }
 
 .poker-client-shell .chip-stack {
-  width: 28px;
-  height: 24px;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 42% 30%, rgba(255, 255, 255, 0.7), transparent 20%),
-    linear-gradient(180deg, #e8eee8, #8e9892);
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.34) 0 24%, transparent 25%),
+    linear-gradient(180deg, #dce4de, #8b9691);
   box-shadow:
-    9px 3px 0 -2px #b8c3bd,
-    4px 9px 0 -3px #d6ddd7,
-    0 7px 10px rgba(0, 0, 0, 0.38);
+    5px 2px 0 -3px #c9d2cc,
+    0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
 .poker-client-shell .seat.is-local-seat {
@@ -1139,6 +1140,10 @@ main {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.poker-client-shell .primary-action-row.action-count-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .poker-client-shell .primary-action-row.action-count-1 {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1163,6 +1168,13 @@ main {
 
 .poker-client-shell .action-grid .is-secondary-action {
   background: linear-gradient(180deg, #e94a53, #851720);
+}
+
+.poker-client-shell .action-grid .is-all-in-action {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), transparent 30%),
+    linear-gradient(180deg, #7f2630, #3d1017 58%, #16070a);
+  color: #fff7e8;
 }
 
 .poker-client-shell .action-placeholder,
