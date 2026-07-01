@@ -193,4 +193,36 @@ describe("SeatRing", () => {
     expect(html).toContain("Raise 4 BB");
     expect(html).not.toContain("Call 1 BB");
   });
+
+  it("supports a nine-handed table while keeping the local player bottom-center", () => {
+    const seats = Array.from({ length: 9 }, (_, index) => ({
+      seatNumber: index + 1,
+      participantId: `p${index + 1}`,
+      displayName: index === 8 ? "Hero" : `P${index + 1}`,
+      chips: 1000,
+      status: "active",
+      occupied: true
+    }));
+    const handSeats = seats.map((seat) => ({
+      seatNumber: seat.seatNumber,
+      participantId: seat.participantId,
+      ...(seat.participantId === "p9" ? { holeCards: ["As", "Ah"] } : {})
+    }));
+
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        localParticipantId: "p9",
+        view: {
+          seats,
+          hand: { seats: handSeats }
+        }
+      })
+    );
+
+    expect(html).toContain("Seat 9 occupied by Hero");
+    expect(html).toContain("seat-slot-9");
+    expect(html).toContain("seat-slot-5");
+    expect(html).toContain("is-local-seat");
+    expect(html).toContain("hero-seat-cluster");
+  });
 });

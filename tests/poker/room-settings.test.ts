@@ -37,6 +37,15 @@ describe("room settings", () => {
     expect(() => validateRoomSettings({ ...validCashSettings, seats: 1 })).toThrow();
   });
 
+  it("accepts nine-handed cash and tournament settings", () => {
+    expect(validateRoomSettings({ ...validCashSettings, seats: 9 })).toMatchObject({ seats: 9 });
+    expect(validateRoomSettings({ ...validTournamentSettings, seats: 9 })).toMatchObject({ seats: 9 });
+  });
+
+  it("rejects more than nine seats", () => {
+    expect(() => validateRoomSettings({ ...validCashSettings, seats: 10 })).toThrow();
+  });
+
   it("rejects cash mode with blind increases", () => {
     expect(() =>
       validateRoomSettings({

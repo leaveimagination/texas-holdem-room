@@ -62,9 +62,25 @@ describe("realtime messages", () => {
       roomId: "room1",
       participantToken: "token",
       displayName: "dealer",
-      seatNumber: 1
+      seatNumber: 9
     });
 
     expect(parsed.type).toBe("claim_seat");
+    if (parsed.type !== "claim_seat") {
+      throw new Error("Expected claim_seat message");
+    }
+    expect(parsed.seatNumber).toBe(9);
+  });
+
+  it("rejects seat claims above nine", () => {
+    expect(() =>
+      ClientMessageSchema.parse({
+        type: "claim_seat",
+        roomId: "room1",
+        participantToken: "token",
+        displayName: "dealer",
+        seatNumber: 10
+      })
+    ).toThrow();
   });
 });

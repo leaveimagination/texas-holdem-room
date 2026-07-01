@@ -6,6 +6,7 @@ test("host can open create room form", async ({ page }) => {
   await page.getByRole("link", { name: "Create room" }).click();
   await expect(page.getByRole("heading", { name: "Create private room" })).toBeVisible();
   await expect(page.getByLabel("Seats")).toBeVisible();
+  await expect(page.getByLabel("Seats")).toContainText("9");
 });
 
 test("host can submit room settings and see invite links", async ({ page }) => {

@@ -8,7 +8,7 @@ export const BlindIncreaseSchema = z.object({
 export const RoomSettingsSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("cash"),
-    seats: z.number().int().min(2).max(6),
+    seats: z.number().int().min(2).max(9),
     initialChips: z.number().int().min(100).max(100000),
     smallBlind: z.number().int().min(1),
     bigBlind: z.number().int().min(2),
@@ -16,7 +16,7 @@ export const RoomSettingsSchema = z.discriminatedUnion("mode", [
   }).strict(),
   z.object({
     mode: z.literal("tournament"),
-    seats: z.number().int().min(2).max(6),
+    seats: z.number().int().min(2).max(9),
     initialChips: z.number().int().min(100).max(100000),
     smallBlind: z.number().int().min(1),
     bigBlind: z.number().int().min(2),

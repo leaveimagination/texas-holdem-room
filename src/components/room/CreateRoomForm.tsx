@@ -78,7 +78,7 @@ export function CreateRoomForm() {
       <label style={fieldStyle}>
         Seats
         <select name="seats" defaultValue="6">
-          {[2, 3, 4, 5, 6].map((seats) => (
+          {[2, 3, 4, 5, 6, 7, 8, 9].map((seats) => (
             <option value={seats} key={seats}>
               {seats}
             </option>

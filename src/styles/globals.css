@@ -857,18 +857,18 @@ main {
 }
 
 .poker-client-shell .seat-slot-1 {
-  left: 4%;
-  top: 1%;
+  left: 7%;
+  top: 5%;
 }
 
 .poker-client-shell .seat-slot-2 {
-  left: 42%;
+  left: 31%;
   top: -8%;
 }
 
 .poker-client-shell .seat-slot-3 {
-  right: 4%;
-  top: 1%;
+  right: 7%;
+  top: 5%;
 }
 
 .poker-client-shell .seat-slot-4 {
@@ -889,6 +889,22 @@ main {
 .poker-client-shell .seat-slot-6 {
   left: 1%;
   bottom: 17%;
+}
+
+.poker-client-shell .seat-slot-7 {
+  left: 1%;
+  top: 34%;
+}
+
+.poker-client-shell .seat-slot-8 {
+  left: 56%;
+  top: -8%;
+}
+
+.poker-client-shell .seat-slot-9 {
+  left: 18%;
+  right: auto;
+  bottom: 3%;
 }
 
 .poker-client-shell .action-dock {
@@ -1705,6 +1721,27 @@ main {
   top: auto;
 }
 
+.seat-slot-7 {
+  left: 2%;
+  top: 40%;
+  right: auto;
+  bottom: auto;
+}
+
+.seat-slot-8 {
+  right: 2%;
+  top: 40%;
+  left: auto;
+  bottom: auto;
+}
+
+.seat-slot-9 {
+  left: 18%;
+  bottom: -3%;
+  right: auto;
+  top: auto;
+}
+
 .board {
   min-height: 64px;
   display: flex;
@@ -2412,6 +2449,27 @@ main {
     bottom: auto;
   }
 
+  .seat-slot-7 {
+    left: 2%;
+    right: auto;
+    top: 21%;
+    bottom: auto;
+  }
+
+  .seat-slot-8 {
+    right: 2%;
+    left: auto;
+    top: 21%;
+    bottom: auto;
+  }
+
+  .seat-slot-9 {
+    left: 2%;
+    right: auto;
+    bottom: 20%;
+    top: auto;
+  }
+
   .hud-main {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2567,6 +2625,25 @@ main {
     left: 2%;
     top: 38%;
     bottom: auto;
+  }
+
+  .poker-client-shell .seat-slot-7 {
+    left: 2%;
+    top: 20%;
+    bottom: auto;
+  }
+
+  .poker-client-shell .seat-slot-8 {
+    right: 2%;
+    top: 20%;
+    left: auto;
+  }
+
+  .poker-client-shell .seat-slot-9 {
+    right: auto;
+    left: 2%;
+    bottom: 16%;
+    top: auto;
   }
 
   .poker-client-shell .action-dock {

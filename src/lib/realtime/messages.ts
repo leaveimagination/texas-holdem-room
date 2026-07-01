@@ -17,7 +17,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
       roomId: z.string(),
       participantToken: z.string(),
       displayName: z.string().min(1).max(24),
-      seatNumber: z.number().int().min(1).max(6)
+      seatNumber: z.number().int().min(1).max(9)
     })
     .strict(),
   z.object({ type: z.literal("leave_seat"), roomId: z.string(), participantToken: z.string() }).strict(),

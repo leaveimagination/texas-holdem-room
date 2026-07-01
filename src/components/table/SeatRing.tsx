@@ -32,7 +32,7 @@ export function SeatRing({
   onClaimSeat?: (seatNumber: number) => void;
 }) {
   const seats = readSeats(view);
-  const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(6), localParticipantId, localDisplayName);
+  const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(9), localParticipantId, localDisplayName);
 
   return (
     <div className="seat-ring" aria-label="Seats">
@@ -337,10 +337,13 @@ function playerSlotForIndex(index: number, count: number): number {
     3: [5, 1, 3],
     4: [5, 6, 2, 4],
     5: [5, 6, 1, 3, 4],
-    6: [5, 6, 1, 2, 3, 4]
+    6: [5, 6, 1, 2, 3, 4],
+    7: [5, 6, 7, 1, 2, 3, 4],
+    8: [5, 6, 7, 1, 2, 3, 8, 4],
+    9: [5, 6, 7, 1, 2, 8, 3, 4, 9]
   };
 
-  return (slotsByCount[count] ?? slotsByCount[6])[index] ?? index + 1;
+  return (slotsByCount[count] ?? slotsByCount[9])[index] ?? index + 1;
 }
 
 function defaultSlotForIndex(index: number, count: number): number {
@@ -349,10 +352,13 @@ function defaultSlotForIndex(index: number, count: number): number {
     3: [5, 1, 3],
     4: [5, 6, 2, 4],
     5: [5, 6, 1, 3, 4],
-    6: [1, 2, 3, 4, 5, 6]
+    6: [1, 2, 3, 4, 5, 6],
+    7: [1, 2, 3, 4, 5, 6, 7],
+    8: [1, 2, 3, 4, 5, 6, 7, 8],
+    9: [1, 2, 3, 4, 5, 6, 7, 8, 9]
   };
 
-  return (slotsByCount[count] ?? slotsByCount[6])[index] ?? index + 1;
+  return (slotsByCount[count] ?? slotsByCount[9])[index] ?? index + 1;
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
