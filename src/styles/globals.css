@@ -902,9 +902,9 @@ main {
 }
 
 .poker-client-shell .seat-slot-9 {
-  left: 18%;
-  right: auto;
-  bottom: 3%;
+  right: 8%;
+  left: auto;
+  bottom: 24%;
 }
 
 .poker-client-shell .action-dock {
@@ -1736,9 +1736,9 @@ main {
 }
 
 .seat-slot-9 {
-  left: 18%;
-  bottom: -3%;
-  right: auto;
+  right: 8%;
+  bottom: 7%;
+  left: auto;
   top: auto;
 }
 
@@ -2464,8 +2464,8 @@ main {
   }
 
   .seat-slot-9 {
-    left: 2%;
-    right: auto;
+    right: 2%;
+    left: auto;
     bottom: 20%;
     top: auto;
   }
@@ -2640,8 +2640,8 @@ main {
   }
 
   .poker-client-shell .seat-slot-9 {
-    right: auto;
-    left: 2%;
+    right: 2%;
+    left: auto;
     bottom: 16%;
     top: auto;
   }

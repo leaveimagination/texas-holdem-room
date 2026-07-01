@@ -224,5 +224,13 @@ describe("SeatRing", () => {
     expect(html).toContain("seat-slot-5");
     expect(html).toContain("is-local-seat");
     expect(html).toContain("hero-seat-cluster");
+    expect(html).toMatch(/seat-slot-6[\s\S]*Seat 1/);
+    expect(html).toMatch(/seat-slot-7[\s\S]*Seat 2/);
+    expect(html).toMatch(/seat-slot-1[\s\S]*Seat 3/);
+    expect(html).toMatch(/seat-slot-2[\s\S]*Seat 4/);
+    expect(html).toMatch(/seat-slot-8[\s\S]*Seat 5/);
+    expect(html).toMatch(/seat-slot-3[\s\S]*Seat 6/);
+    expect(html).toMatch(/seat-slot-4[\s\S]*Seat 7/);
+    expect(html).toMatch(/seat-slot-9[\s\S]*Seat 8/);
   });
 });
