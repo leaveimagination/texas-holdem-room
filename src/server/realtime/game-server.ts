@@ -5,6 +5,7 @@ import { WebSocketServer, type RawData } from "ws";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 import { ClientMessageSchema } from "@/lib/realtime/messages";
 import { applyPlayerAction, claimSeat, markDisconnected, rebuy, startHand, type RoomState } from "@/lib/poker/engine";
+import { serializeCard } from "@/lib/poker/cards";
 import { toParticipantView } from "@/lib/poker/visibility";
 import type { LiveRoomStore } from "@/server/live-room-store";
 import { RoomRepository } from "@/server/repositories/room-repository";
@@ -78,6 +79,8 @@ async function handleIncomingMessage(
 
   let updatedRoom: RoomState | null = null;
   let systemNotice: string | null = null;
+  let actionNotice: unknown = null;
+  let handFinishedNotice: unknown = null;
 
   try {
     const room = await liveRooms.getRoom(message.roomId);
@@ -153,6 +156,8 @@ async function handleIncomingMessage(
       case "player_action":
         validatePlayerAction(message, room, session);
         updatedRoom = applyPlayerAction(room, message.action);
+        actionNotice = buildActionNotice(updatedRoom, message.action);
+        handFinishedNotice = updatedRoom.hand?.finished ? buildHandFinishedNotice(updatedRoom) : null;
         await recordFinishedHand(roomRepository, updatedRoom);
         updatedRoom = startNextHandIfReady(updatedRoom);
         break;
@@ -178,6 +183,20 @@ async function handleIncomingMessage(
     const messageText = error instanceof Error ? error.message : "Unable to process message";
     sendMessage(session.socket, { type: "error", payload: { message: messageText } });
     return;
+  }
+
+  if (updatedRoom && actionNotice) {
+    sessions.broadcast(updatedRoom.roomId, () => ({
+      type: "action_recorded",
+      payload: actionNotice
+    }));
+  }
+
+  if (updatedRoom && handFinishedNotice) {
+    sessions.broadcast(updatedRoom.roomId, () => ({
+      type: "hand_finished",
+      payload: handFinishedNotice
+    }));
   }
 
   if (updatedRoom) {
@@ -218,6 +237,38 @@ function startNextHandIfReady(room: RoomState): RoomState {
   }
 
   return startHand(room);
+}
+
+function buildActionNotice(room: RoomState, action: Extract<ClientMessage, { type: "player_action" }>["action"]): unknown {
+  return {
+    playerId: action.playerId,
+    displayName: displayNameForParticipant(room, action.playerId),
+    action
+  };
+}
+
+function buildHandFinishedNotice(room: RoomState): unknown {
+  const hand = room.hand;
+  if (!hand) {
+    return null;
+  }
+
+  const pot = hand.betting.players.reduce((sum, player) => sum + player.committed, 0);
+  const winnerCount = Math.max(hand.winners.length, 1);
+  return {
+    handNumber: hand.number,
+    pot,
+    board: hand.board.map(serializeCard),
+    winners: hand.winners.map((participantId) => {
+      const seat = room.seats.find((candidate) => candidate.participantId === participantId);
+      return {
+        participantId,
+        displayName: displayNameForParticipant(room, participantId),
+        seatNumber: seat?.seatNumber ?? null,
+        amount: Math.floor(pot / winnerCount)
+      };
+    })
+  };
 }
 
 function parseClientMessage(data: RawData): ClientMessage | null {

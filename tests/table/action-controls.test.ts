@@ -214,4 +214,25 @@ describe("ActionControls", () => {
     expect(html).toContain("is-anchored-host-controls");
     expect(html).toContain(">Start room<");
   });
+
+  it("disables host and player controls while reconnecting", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls as React.ComponentType<Record<string, unknown>>, {
+        connected: false,
+        actorId: "p1",
+        localParticipantId: "p1",
+        hostControls: true,
+        playerControls: true,
+        tableStatus: "playing",
+        legalActions: {
+          actions: [{ type: "fold" }, { type: "call", amount: 20 }, { type: "raise", minAmountTo: 60, maxAmountTo: 1000 }]
+        }
+      })
+    );
+
+    expect(html).toContain("Reconnecting to table");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>\s*<span>Fold<\/span>/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Start room<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Pause for disconnect<\/button>/);
+  });
 });

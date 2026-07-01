@@ -12,6 +12,7 @@ export function PokerTable({
   legalActions,
   hostControls = false,
   playerControls = false,
+  connected = true,
   localParticipantId,
   localDisplayName,
   onClaimSeat,
@@ -24,6 +25,7 @@ export function PokerTable({
   legalActions?: unknown;
   hostControls?: boolean;
   playerControls?: boolean;
+  connected?: boolean;
   localParticipantId?: string | null;
   localDisplayName?: string | null;
   onClaimSeat?: (seatNumber: number) => void;
@@ -61,7 +63,7 @@ export function PokerTable({
           localParticipantId={localParticipantId}
           localDisplayName={localDisplayName}
           bigBlind={settings.bigBlind}
-          canClaimSeat={playerControls}
+          canClaimSeat={playerControls && connected}
           onClaimSeat={onClaimSeat}
         />
 
@@ -101,6 +103,7 @@ export function PokerTable({
         canStartRoom={canStartRoom}
         hostControls={showHostControls}
         playerControls={playerControls}
+        connected={connected}
         onStartRoom={onStartRoom}
         onPlayerAction={onPlayerAction}
         onRebuy={onRebuy}

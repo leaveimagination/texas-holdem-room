@@ -164,4 +164,33 @@ describe("SeatRing", () => {
     expect(html).toContain("is-local-seat");
     expect(html).toContain("hero-seat-cluster");
   });
+
+  it("shows the latest player action on that player's seat", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        bigBlind: 20,
+        view: {
+          seats: [
+            { seatNumber: 1, participantId: "p1", displayName: "Alice", chips: 960, status: "active", occupied: true },
+            { seatNumber: 2, participantId: "p2", displayName: "Bob", chips: 1040, status: "active", occupied: true }
+          ],
+          hand: {
+            actorId: "p2",
+            actions: [
+              { playerId: "p1", type: "call", amount: 20 },
+              { playerId: "p2", type: "raise", amountTo: 80 }
+            ],
+            seats: [
+              { seatNumber: 1, participantId: "p1", streetCommitted: 20 },
+              { seatNumber: 2, participantId: "p2", streetCommitted: 80 }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("seat-last-action");
+    expect(html).toContain("Raise 4 BB");
+    expect(html).not.toContain("Call 1 BB");
+  });
 });

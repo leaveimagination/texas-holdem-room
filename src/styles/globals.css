@@ -131,6 +131,47 @@ main {
   margin-left: 16px;
 }
 
+.game-room-page .room-header-actions {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.game-room-page .room-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(241, 196, 95, 0.24);
+  border-radius: 999px;
+  background: rgba(5, 7, 10, 0.56);
+  padding: 4px;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22);
+}
+
+.game-room-page .room-share a,
+.game-room-page .room-share button {
+  min-height: 26px;
+  border-radius: 999px;
+  color: #f7e1aa;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.game-room-page .room-share a {
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+}
+
+.game-room-page .room-share button {
+  border: 0;
+  background: linear-gradient(180deg, rgba(241, 196, 95, 0.28), rgba(0, 0, 0, 0.22));
+  padding: 0 9px;
+}
+
 .game-room-page .join-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -670,6 +711,28 @@ main {
     linear-gradient(180deg, rgba(3, 22, 12, 0.88), rgba(0, 0, 0, 0.58));
   color: #fff;
   text-shadow: 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.poker-client-shell .seat-last-action {
+  position: absolute;
+  left: 50%;
+  top: -28px;
+  z-index: 6;
+  transform: translateX(-50%);
+  min-width: 70px;
+  border: 1px solid rgba(241, 196, 95, 0.44);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 36%),
+    rgba(8, 10, 13, 0.86);
+  color: #ffd978;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  font-weight: 1000;
+  text-align: center;
+  text-shadow: 0 2px 7px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.34);
+  animation: toast-rise-seat 220ms ease-out both;
 }
 
 .poker-client-shell .seat-action-ring {
@@ -2115,9 +2178,40 @@ main {
 }
 
 .hand-result {
-  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(241, 196, 95, 0.24);
   border-radius: 8px;
-  padding: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent 28%),
+    rgba(8, 10, 13, 0.72);
+  color: #fff7e8;
+  padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.hand-result-card > div {
+  display: grid;
+  gap: 3px;
+}
+
+.hand-result-card span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hand-result-card strong {
+  color: var(--gold);
+}
+
+.hand-result-detail {
+  justify-items: end;
+  text-align: right;
+}
+
+.hand-result-detail small {
+  color: rgba(255, 247, 232, 0.78);
+  font-weight: 800;
 }
 
 @keyframes pulse-border {
@@ -2177,6 +2271,17 @@ main {
   from {
     opacity: 0;
     transform: translateX(-50%) translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-rise-seat {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.96);
   }
   to {
     opacity: 1;

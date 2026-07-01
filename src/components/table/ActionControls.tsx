@@ -23,6 +23,7 @@ export function ActionControls({
   canStartRoom = true,
   hostControls = false,
   playerControls = false,
+  connected = true,
   onStartRoom,
   onPlayerAction,
   onRebuy,
@@ -41,6 +42,7 @@ export function ActionControls({
   canStartRoom?: boolean;
   hostControls?: boolean;
   playerControls?: boolean;
+  connected?: boolean;
   onStartRoom?: () => void;
   onPlayerAction?: (action: PlayerAction) => void;
   onRebuy?: (amount: number) => void;
@@ -65,9 +67,11 @@ export function ActionControls({
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
   const actionButtons = visibleActions;
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
-  const canUsePlayerActions = playerControls && (!hasActiveTurn || isPlayerTurn);
+  const canUsePlayerActions = connected && playerControls && (!hasActiveTurn || isPlayerTurn);
   const showRebuyModal = Boolean(playerControls && typeof heroStack === "number" && heroStack <= 0);
-  const statusText = isPlayerTurn
+  const statusText = !connected
+    ? "Reconnecting to table"
+    : isPlayerTurn
     ? "YOUR TURN"
     : hasActiveTurn
       ? `Waiting for ${actorName ?? "another player"}`
@@ -206,7 +210,7 @@ export function ActionControls({
           <details className="host-popover">
             <summary>Host tools</summary>
             <div className="popover-body host-controls is-anchored-host-controls" aria-label="Host controls">
-              <button type="button" onClick={onStartRoom} disabled={!canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
+              <button type="button" onClick={onStartRoom} disabled={!connected || !canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
               <label>
                 Disconnected participant
                 <input
@@ -216,7 +220,7 @@ export function ActionControls({
                   placeholder="participant id"
                 />
               </label>
-              <button type="button" onClick={sendDisconnectHandling}>Pause for disconnect</button>
+              <button type="button" onClick={sendDisconnectHandling} disabled={!connected}>Pause for disconnect</button>
             </div>
           </details>
         </div>
@@ -238,11 +242,11 @@ export function ActionControls({
                 min={1}
                 type="number"
                 value={rebuyAmount}
-                disabled={!playerControls}
+                disabled={!connected || !playerControls}
                 onChange={(event) => setRebuyAmount(event.target.value)}
               />
             </label>
-            <button type="button" onClick={sendRebuy} disabled={!playerControls}>Add chips</button>
+            <button type="button" onClick={sendRebuy} disabled={!connected || !playerControls}>Add chips</button>
           </section>
         </div>
       ) : null}

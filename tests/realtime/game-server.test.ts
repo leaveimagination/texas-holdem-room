@@ -263,7 +263,7 @@ describe("createGameServer", () => {
     playerSocket.send(JSON.stringify({ type: "start_room", roomId, hostToken: "host-token" }));
     await started;
 
-    const nextHandSnapshot = nextMessage(playerSocket);
+    const actionSequence = nextMessages(playerSocket, 3);
     playerSocket.send(
       JSON.stringify({
         type: "player_action",
@@ -273,7 +273,27 @@ describe("createGameServer", () => {
       })
     );
 
-    await expect(nextHandSnapshot).resolves.toMatchObject({
+    const [actionRecorded, handFinished, nextHandSnapshot] = await actionSequence;
+
+    expect(actionRecorded).toMatchObject({
+      type: "action_recorded",
+      payload: {
+        playerId: "p1",
+        displayName: "P1",
+        action: { type: "fold", playerId: "p1" }
+      }
+    });
+
+    expect(handFinished).toMatchObject({
+      type: "hand_finished",
+      payload: {
+        winners: [{ participantId: "p2", displayName: "P2" }],
+        pot: 30,
+        board: []
+      }
+    });
+
+    expect(nextHandSnapshot).toMatchObject({
       type: "room_snapshot",
       payload: {
         status: "playing",
@@ -390,6 +410,45 @@ function nextMessage(socket: WebSocket): Promise<unknown> {
     const onClose = () => {
       cleanup();
       reject(new Error("Socket closed before receiving a message"));
+    };
+
+    socket.on("message", onMessage);
+    socket.on("error", onError);
+    socket.on("close", onClose);
+  });
+}
+
+function nextMessages(socket: WebSocket, count: number): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const messages: unknown[] = [];
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for ${count} websocket messages`));
+    }, 2000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket.off("message", onMessage);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    };
+
+    const onMessage = (data: WebSocket.RawData) => {
+      messages.push(JSON.parse(data.toString()));
+      if (messages.length >= count) {
+        cleanup();
+        resolve(messages);
+      }
+    };
+
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Socket closed before receiving websocket messages"));
     };
 
     socket.on("message", onMessage);

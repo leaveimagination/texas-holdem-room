@@ -13,6 +13,7 @@ interface SeatView {
   role: string | null;
   committed: number;
   streetCommitted: number;
+  recentAction: string | null;
 }
 
 export function SeatRing({
@@ -99,6 +100,7 @@ export function SeatRing({
               <span>{formatBb(seat.streetCommitted, bigBlind)}</span>
             </span>
           ) : null}
+          {seat.recentAction ? <span className="seat-last-action">{seat.recentAction}</span> : null}
           {local ? null : (
             <span className="seat-cards">
               {seat.holeCards.length > 0 ? (
@@ -139,6 +141,7 @@ function readSeats(view: unknown): SeatView[] {
   const holeCardsBySeat = readHoleCardsBySeat(view);
   const handMetaBySeat = readHandMetaBySeat(view);
   const actingSeatNumber = readActingSeatNumber(view);
+  const recentActionBySeat = readRecentActionBySeat(view);
   if (!Array.isArray(value)) {
     return [];
   }
@@ -168,7 +171,8 @@ function readSeats(view: unknown): SeatView[] {
       isActing: actingSeatNumber === seat.seatNumber,
       role: handMetaBySeat.get(seat.seatNumber)?.role ?? null,
       committed: handMetaBySeat.get(seat.seatNumber)?.committed ?? 0,
-      streetCommitted: handMetaBySeat.get(seat.seatNumber)?.streetCommitted ?? 0
+      streetCommitted: handMetaBySeat.get(seat.seatNumber)?.streetCommitted ?? 0,
+      recentAction: recentActionBySeat.get(seat.seatNumber) ?? null
     }];
   });
 }
@@ -237,6 +241,63 @@ function readHandMetaBySeat(view: unknown): Map<number, { participantId: string 
   }
 
   return result;
+}
+
+function readRecentActionBySeat(view: unknown): Map<number, string> {
+  const result = new Map<number, string>();
+  const hand = readObject(readObject(view)?.hand);
+  const actions = hand?.actions;
+  const handSeats = hand?.seats;
+  if (!Array.isArray(actions) || actions.length === 0 || !Array.isArray(handSeats)) {
+    return result;
+  }
+
+  const latestAction = readObject(actions[actions.length - 1]);
+  if (!latestAction) {
+    return result;
+  }
+
+  const playerId = typeof latestAction?.playerId === "string" ? latestAction.playerId : null;
+  const type = typeof latestAction?.type === "string" ? latestAction.type : null;
+  if (!playerId || !type) {
+    return result;
+  }
+
+  const seat = handSeats.map(readObject).find((candidate) => candidate?.participantId === playerId);
+  if (!seat || typeof seat.seatNumber !== "number") {
+    return result;
+  }
+
+  const amount = typeof latestAction.amountTo === "number"
+    ? latestAction.amountTo
+    : typeof latestAction.amount === "number"
+      ? latestAction.amount
+      : null;
+  result.set(seat.seatNumber, formatRecentAction(type, amount, readBigBlind(view)));
+  return result;
+}
+
+function formatRecentAction(type: string, amount: number | null, bigBlind?: number | null): string {
+  const label = type === "all-in"
+    ? "All in"
+    : type === "raise"
+      ? "Raise"
+      : type === "bet"
+        ? "Bet"
+        : type === "call"
+          ? "Call"
+          : type === "check"
+            ? "Check"
+            : type === "fold"
+              ? "Fold"
+              : type;
+
+  return amount ? `${label} ${formatBb(amount, bigBlind)}` : label;
+}
+
+function readBigBlind(view: unknown): number | null {
+  const settings = readObject(readObject(view)?.settings);
+  return typeof settings?.bigBlind === "number" ? settings.bigBlind : null;
 }
 
 function arrangeSeatsForViewer(
@@ -310,6 +371,7 @@ function emptySeats(count: number): SeatView[] {
     isActing: false,
     role: null,
     committed: 0,
-    streetCommitted: 0
+    streetCommitted: 0,
+    recentAction: null
   }));
 }

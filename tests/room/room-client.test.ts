@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
+import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { JoinRoomForm } from "@/components/room/JoinRoomForm";
 import { RoomClient, TableEventToast } from "@/app/room/[roomId]/RoomClient";
 
 describe("RoomClient", () => {
@@ -23,5 +25,27 @@ describe("RoomClient", () => {
 
     expect(html).toContain("table-event-toast");
     expect(html).toContain("Player 1 added 500 chips");
+  });
+
+  it("renders an in-room invite button that shares the player link without host credentials", () => {
+    const html = renderToStaticMarkup(createElement(RoomClient, { roomId: "room_share" }));
+
+    expect(html).toContain("room-share");
+    expect(html).toContain("Invite");
+    expect(html).toContain("/room/room_share");
+    expect(html).not.toContain("?host=");
+  });
+
+  it("keeps join controls disabled until the realtime connection is ready", () => {
+    const html = renderToStaticMarkup(
+      createElement(JoinRoomForm as ComponentType<{ roomId: string; connected: boolean }>, {
+        roomId: "room_test",
+        connected: false
+      })
+    );
+
+    expect(html).toContain("Connecting to room");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Join<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Spectate<\/button>/);
   });
 });
