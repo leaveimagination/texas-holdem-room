@@ -9,7 +9,8 @@ describe("ActionControls", () => {
       createElement(ActionControls, {
         actorId: "p2",
         localParticipantId: "p1",
-        playerControls: true
+        playerControls: true,
+        legalActions: { actions: [{ type: "fold" }, { type: "call", amount: 20 }, { type: "raise", minAmountTo: 60, maxAmountTo: 1000 }] }
       })
     );
 
@@ -125,9 +126,9 @@ describe("ActionControls", () => {
     expect(html).toContain("50%");
     expect(html).toContain("75%");
     expect(html).toContain("100%");
-    expect(html).toContain(">Check / Fold<");
     expect(html).toContain(">Check<");
     expect(html).toContain(">Bet<");
+    expect(html).not.toContain(">Check / Fold<");
     expect(html).not.toContain(">Call<");
     expect(html).not.toContain(">Raise to<");
   });
@@ -234,6 +235,7 @@ describe("ActionControls", () => {
     );
 
     expect(html).toContain("action-console");
+    expect(html).toContain("Syncing actions");
     expect(html).not.toContain(">Fold<");
     expect(html).not.toContain(">Check<");
     expect(html).not.toContain(">Call<");

@@ -224,9 +224,10 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
   const currentBet = bettingPlayers.reduce((max, player) => Math.max(max, player.streetCommitted), 0);
   const minRaise = currentBet > 0 && currentBet < state.settings.bigBlind ? state.settings.bigBlind - currentBet : state.settings.bigBlind;
   const preferredActorSeat = activeSeats.length === 2 ? smallBlindSeat : nextSeatAfter(bigBlindSeat, activeSeats);
-  const actorId = findNextEligibleActorId(seats, bettingPlayers, preferredActorSeat);
+  const firstActorId = findNextEligibleActorId(seats, bettingPlayers, preferredActorSeat);
+  const actorId = firstActorId ?? bettingPlayers[0]!.id;
 
-  return {
+  const startedState: RoomState = {
     ...state,
     status: "playing",
     handCounter: state.handCounter + 1,
@@ -252,11 +253,17 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
       winners: []
     }
   };
+
+  return firstActorId ? startedState : finishHandIfReady(startedState);
 }
 
 export function applyPlayerAction(state: RoomState, action: BettingAction): RoomState {
   if (!state.hand || state.hand.finished) {
     throw new Error("No active hand");
+  }
+
+  if (state.hand.insuranceOffer?.status === "pending") {
+    throw new Error("Insurance decision is pending");
   }
 
   const betting = normalizeBlindCompletionMinRaise(state, action, applyBettingAction(state.hand.betting, action));
@@ -753,14 +760,14 @@ function drawCard(deck: Card[]): Card {
   return card;
 }
 
-function findNextEligibleActorId(seats: Seat[], players: BettingState["players"], startingSeatNumber: number): string {
+function findNextEligibleActorId(seats: Seat[], players: BettingState["players"], startingSeatNumber: number): string | null {
   const eligibleSeats = seats.filter((seat) => {
     const player = players.find((candidate) => candidate.id === seat.participantId);
     return player && !player.folded && !player.allIn;
   });
 
   if (eligibleSeats.length === 0) {
-    throw new Error("No player can act after blinds");
+    return null;
   }
 
   const actorSeatNumber = nextSeatOnOrAfter(startingSeatNumber, eligibleSeats);

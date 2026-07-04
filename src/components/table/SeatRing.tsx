@@ -257,28 +257,31 @@ function readRecentActionBySeat(view: unknown): Map<number, string> {
     return result;
   }
 
-  const latestAction = readObject(actions[actions.length - 1]);
-  if (!latestAction) {
-    return result;
-  }
+  const handSeatObjects = handSeats.map(readObject);
+  for (const candidate of actions) {
+    const action = readObject(candidate);
+    if (!action) {
+      continue;
+    }
 
-  const playerId = typeof latestAction?.playerId === "string" ? latestAction.playerId : null;
-  const type = typeof latestAction?.type === "string" ? latestAction.type : null;
-  if (!playerId || !type) {
-    return result;
-  }
+    const playerId = typeof action?.playerId === "string" ? action.playerId : null;
+    const type = typeof action?.type === "string" ? action.type : null;
+    if (!playerId || !type) {
+      continue;
+    }
 
-  const seat = handSeats.map(readObject).find((candidate) => candidate?.participantId === playerId);
-  if (!seat || typeof seat.seatNumber !== "number") {
-    return result;
-  }
+    const seat = handSeatObjects.find((handSeat) => handSeat?.participantId === playerId);
+    if (!seat || typeof seat.seatNumber !== "number") {
+      continue;
+    }
 
-  const amount = typeof latestAction.amountTo === "number"
-    ? latestAction.amountTo
-    : typeof latestAction.amount === "number"
-      ? latestAction.amount
-      : null;
-  result.set(seat.seatNumber, formatRecentAction(type, amount, readBigBlind(view)));
+    const amount = typeof action.amountTo === "number"
+      ? action.amountTo
+      : typeof action.amount === "number"
+        ? action.amount
+        : null;
+    result.set(seat.seatNumber, formatRecentAction(type, amount, readBigBlind(view)));
+  }
   return result;
 }
 

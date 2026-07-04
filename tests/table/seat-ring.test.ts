@@ -167,7 +167,7 @@ describe("SeatRing", () => {
     expect(html).toContain("hero-seat-cluster");
   });
 
-  it("shows the latest player action on that player's seat", () => {
+  it("shows each player's latest street action on their own seat", () => {
     const html = renderToStaticMarkup(
       createElement(SeatRing, {
         bigBlind: 20,
@@ -193,7 +193,7 @@ describe("SeatRing", () => {
 
     expect(html).toContain("seat-last-action");
     expect(html).toContain("Raise 4 BB");
-    expect(html).not.toContain("Call 1 BB");
+    expect(html).toContain("Call 1 BB");
   });
 
   it("marks all-in actions with a dedicated animation class", () => {

@@ -73,6 +73,7 @@ export function ActionControls({
   const activeActorId = actorId ?? "pending-player";
   const hasActiveTurn = Boolean(actorId);
   const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
+  const isAwaitingLegalActions = showBettingControls && actions.length === 0;
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
   const actionButtons = buildActionButtons(actions, visibleActions);
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
@@ -140,7 +141,7 @@ export function ActionControls({
           <div className={isPlayerTurn ? "turn-banner is-your-turn" : "turn-banner"} role="status">
             {statusText}
           </div>
-          {showBettingControls ? (
+          {showBettingControls && !isAwaitingLegalActions ? (
             <div className={["bet-console", bettingMode === "facing-bet" ? "is-facing-bet" : bettingMode === "open-bet" ? "is-open-bet" : null].filter(Boolean).join(" ")}>
               <div className="quick-bet-row" aria-label="Quick bet controls">
                 {quickBets.map((bet) => (
@@ -197,31 +198,41 @@ export function ActionControls({
             </div>
           ) : (
             <div className="bet-console is-waiting">
-              <div className="quick-bet-row" aria-label="Quick bet controls">
-                {["33%", "50%", "75%", "100%"].map((label) => (
-                  <button type="button" key={label} disabled>
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="amount-control bet-slider-control is-disabled" aria-label="Bet amount slider">
-                <span className="bet-slider-value" aria-hidden="true" />
-                <span className="bet-slider-track" aria-hidden="true" />
-              </div>
-              <div className="primary-action-row action-grid action-count-3">
-                <button type="button" className="is-primary-action is-fold-action" disabled>
-                  <span>Fold</span>
-                </button>
-                <button type="button" className="is-primary-action is-call-action" disabled>
-                  <span>Call</span>
-                </button>
-                <button type="button" className="is-primary-action is-raise-action" disabled>
-                  <span>Raise to</span>
-                </button>
-              </div>
+              {!isAwaitingLegalActions ? (
+                <>
+                  <div className="quick-bet-row" aria-label="Quick bet controls">
+                    {["33%", "50%", "75%", "100%"].map((label) => (
+                      <button type="button" key={label} disabled>
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="amount-control bet-slider-control is-disabled" aria-label="Bet amount slider">
+                    <span className="bet-slider-value" aria-hidden="true" />
+                    <span className="bet-slider-track" aria-hidden="true" />
+                  </div>
+                  <div className="primary-action-row action-grid action-count-3">
+                    <button type="button" className="is-primary-action is-fold-action" disabled>
+                      <span>Fold</span>
+                    </button>
+                    <button type="button" className="is-primary-action is-call-action" disabled>
+                      <span>Call</span>
+                    </button>
+                    <button type="button" className="is-primary-action is-raise-action" disabled>
+                      <span>Raise to</span>
+                    </button>
+                  </div>
+                </>
+              ) : null}
               <div className="action-placeholder">
-                <strong>{canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
-                <span>{playerControls ? "Take a seat and wait for the next hand." : "Join the room to play."}</span>
+                <strong>{isAwaitingLegalActions ? "Syncing actions" : canStartRoom ? "Ready to deal" : "Hand in progress"}</strong>
+                <span>
+                  {isAwaitingLegalActions
+                    ? "Refreshing the legal moves for this turn."
+                    : playerControls
+                      ? "Take a seat and wait for the next hand."
+                      : "Join the room to play."}
+                </span>
               </div>
             </div>
           )}
@@ -392,7 +403,7 @@ function buildActionButtons(actions: ActionItem[], visibleActions: ActionType[])
   }
 
   if (types.has("check") && types.has("bet")) {
-    const buttons: ActionButton[] = [{ type: "check-fold" }, { type: "check" }, { type: "bet" }];
+    const buttons: ActionButton[] = [{ type: "check" }, { type: "bet" }];
     if (types.has("all-in")) {
       buttons.push({ type: "all-in" });
     }

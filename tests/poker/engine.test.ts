@@ -232,7 +232,11 @@ describe("engine", () => {
   });
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
-    expect(() => startHand(createReadyHeadsUpState([5, 15]), fixedDeck)).toThrow("No player can act after blinds");
+    const started = startHand(createReadyHeadsUpState([5, 15]), fixedDeck);
+
+    expect(started.hand?.finished).toBe(true);
+    expect(started.hand?.board).toHaveLength(5);
+    expect(started.hand?.winners.length).toBeGreaterThan(0);
   });
 
   it("keeps the hand live when a remaining player still owes chips after an all-in and a fold", () => {
@@ -286,6 +290,33 @@ describe("engine", () => {
     expect(resolved.hand?.winners).toEqual(["p2"]);
     expect(resolved.hand?.insuranceOffer).toMatchObject({ status: "accepted", paidOut: true });
     expect(resolved.seats.find((seat) => seat.participantId === "p1")?.chips).toBe(pending.hand?.insuranceOffer?.coverage);
+  });
+
+  it("rejects player actions while an all-in insurance offer is pending", () => {
+    const pending = finishHandIfReady(createTurnAllInInsuranceState());
+
+    expect(pending.hand?.insuranceOffer).toMatchObject({ status: "pending" });
+    expect(() => applyPlayerAction(pending, { type: "check", playerId: "p1" })).toThrow("Insurance decision is pending");
+  });
+
+  it("settles a hand when blinds put every remaining player all in before anyone can act", () => {
+    const state = createInitialRoomState(
+      { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+      "room-short-blinds"
+    );
+    const ready = {
+      ...state,
+      seats: [
+        { seatNumber: 1, participantId: "p1", displayName: "Short 1", chips: 5, cumulativeBuyIn: 1000, status: "ready" as const },
+        { seatNumber: 2, participantId: "p2", displayName: "Short 2", chips: 15, cumulativeBuyIn: 1000, status: "ready" as const }
+      ]
+    };
+
+    const started = startHand(ready);
+
+    expect(started.hand?.finished).toBe(true);
+    expect(started.hand?.board).toHaveLength(5);
+    expect(started.hand?.winners.length).toBeGreaterThan(0);
   });
 });
 

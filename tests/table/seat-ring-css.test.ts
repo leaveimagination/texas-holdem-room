@@ -18,4 +18,22 @@ describe("SeatRing CSS", () => {
     expect(css).toContain("@keyframes to-act-ring-pulse");
     expect(css).toContain("@keyframes to-act-panel-glow");
   });
+
+  it("keeps quick bet amounts visible in the poker client shell", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    const quickBetAmountRule = css.match(/\.poker-client-shell \.quick-bet-row button strong\s*{[^}]*}/s)?.[0] ?? "";
+
+    expect(quickBetAmountRule).toContain("display: block");
+    expect(quickBetAmountRule).not.toContain("display: none");
+  });
+
+  it("blocks table clicks behind a pending insurance decision", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    const insuranceBackdropRule = css.match(/\.poker-client-shell \.insurance-backdrop\s*{[^}]*}/s)?.[0] ?? "";
+
+    expect(insuranceBackdropRule).toContain("pointer-events: auto");
+    expect(insuranceBackdropRule).not.toContain("pointer-events: none");
+  });
 });

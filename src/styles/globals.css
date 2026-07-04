@@ -1058,6 +1058,9 @@ main {
   border-radius: 3px;
   background: linear-gradient(180deg, #3a3f47, #1b1f25 56%, #0d1014);
   color: #f3f4f6;
+  display: grid;
+  place-items: center;
+  gap: 1px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
     inset 0 -2px 0 rgba(0, 0, 0, 0.5),
@@ -1070,7 +1073,10 @@ main {
 }
 
 .poker-client-shell .quick-bet-row button strong {
-  display: none;
+  display: block;
+  color: var(--gold);
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .poker-client-shell .amount-control {
@@ -1493,7 +1499,7 @@ main {
   display: grid;
   place-items: center;
   padding: 18px;
-  pointer-events: none;
+  pointer-events: auto;
   background:
     radial-gradient(circle at center, rgba(241, 196, 95, 0.18), transparent 30%),
     radial-gradient(circle at center, rgba(0, 0, 0, 0.42), transparent 56%);
