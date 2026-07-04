@@ -837,6 +837,11 @@ main {
   transform: translateX(-50%);
 }
 
+.poker-client-shell .seat.is-local-seat .seat-last-action {
+  top: -58px;
+  z-index: 9;
+}
+
 .poker-client-shell .seat.is-local-seat .poker-card.is-hero,
 .poker-client-shell .seat.is-local-seat .card-back {
   width: 72px;
@@ -2625,6 +2630,10 @@ main {
 
   .poker-client-shell .seat.is-local-seat .hero-hole-cards {
     top: -48px;
+  }
+
+  .poker-client-shell .seat.is-local-seat .seat-last-action {
+    top: -82px;
   }
 
   .poker-client-shell .seat.is-local-seat .poker-card.is-hero {
