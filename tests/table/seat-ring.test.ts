@@ -194,6 +194,33 @@ describe("SeatRing", () => {
     expect(html).not.toContain("Call 1 BB");
   });
 
+  it("marks all-in actions with a dedicated animation class", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        bigBlind: 20,
+        view: {
+          seats: [
+            { seatNumber: 1, participantId: "p1", displayName: "Alice", chips: 0, status: "all-in", occupied: true },
+            { seatNumber: 2, participantId: "p2", displayName: "Bob", chips: 1040, status: "active", occupied: true }
+          ],
+          hand: {
+            actions: [
+              { playerId: "p1", type: "all-in", amountTo: 2000 }
+            ],
+            seats: [
+              { seatNumber: 1, participantId: "p1", streetCommitted: 2000 },
+              { seatNumber: 2, participantId: "p2", streetCommitted: 20 }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("seat-last-action");
+    expect(html).toContain("is-all-in-action-label");
+    expect(html).toContain("All in 100 BB");
+  });
+
   it("supports a nine-handed table while keeping the local player bottom-center", () => {
     const seats = Array.from({ length: 9 }, (_, index) => ({
       seatNumber: index + 1,

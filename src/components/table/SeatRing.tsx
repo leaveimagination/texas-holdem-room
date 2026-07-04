@@ -100,7 +100,11 @@ export function SeatRing({
               <span>{formatBb(seat.streetCommitted, bigBlind)}</span>
             </span>
           ) : null}
-          {seat.recentAction ? <span className="seat-last-action">{seat.recentAction}</span> : null}
+          {seat.recentAction ? (
+            <span className={["seat-last-action", seat.recentAction.startsWith("All in") ? "is-all-in-action-label" : ""].filter(Boolean).join(" ")}>
+              {seat.recentAction}
+            </span>
+          ) : null}
           {local ? null : (
             <span className="seat-cards">
               {seat.holeCards.length > 0 ? (
