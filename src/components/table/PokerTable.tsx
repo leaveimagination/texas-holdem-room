@@ -36,12 +36,14 @@ export function PokerTable({
 }) {
   const board = readBoard(view);
   const pot = readPot(view);
+  const currentBet = readCurrentBet(view);
   const settings = readSettings(view);
   const tableStatus = readTableStatus(view);
   const actorId = readActorId(view);
   const actorName = readActorName(view);
   const heroCards = readHeroCards(view, localParticipantId);
   const heroSeat = readLocalSeat(view, localParticipantId, localDisplayName);
+  const heroStreetCommitted = readHeroStreetCommitted(view, localParticipantId);
   const canStartRoom = readCanStartRoom(view);
   const showHostControls = hostControls || readHostControls(view);
   const resolvedLegalActions = legalActions ?? readLegalActions(view);
@@ -100,6 +102,8 @@ export function PokerTable({
         tableStatus={tableStatus}
         bigBlind={settings.bigBlind}
         pot={pot}
+        currentBet={currentBet}
+        heroStreetCommitted={heroStreetCommitted}
         canStartRoom={canStartRoom}
         hostControls={showHostControls}
         playerControls={playerControls}
@@ -152,6 +156,27 @@ function readBoard(view: unknown): string[] {
   const board = hand?.board;
 
   return Array.isArray(board) ? board.filter((card): card is string => typeof card === "string") : [];
+}
+
+function readCurrentBet(view: unknown): number {
+  const hand = readObject(readObject(view)?.hand);
+  return typeof hand?.currentBet === "number" ? hand.currentBet : 0;
+}
+
+function readHeroStreetCommitted(view: unknown, localParticipantId?: string | null): number {
+  const hand = readObject(readObject(view)?.hand);
+  if (!localParticipantId || !Array.isArray(hand?.seats)) {
+    return 0;
+  }
+
+  for (const candidate of hand.seats) {
+    const seat = readObject(candidate);
+    if (seat?.participantId === localParticipantId && typeof seat.streetCommitted === "number") {
+      return seat.streetCommitted;
+    }
+  }
+
+  return 0;
 }
 
 function readPot(view: unknown): number {

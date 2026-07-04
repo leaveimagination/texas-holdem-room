@@ -7,6 +7,8 @@ import type { ClientMessage } from "@/lib/realtime/messages";
 type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
 type ActionType = PlayerAction["type"];
 type ActionItem = { type: ActionType; amount?: number; amountTo?: number; minAmountTo?: number; maxAmountTo?: number };
+type BettingMode = "facing-bet" | "open-bet" | "none";
+type ActionButton = { type: ActionType } | { type: "check-fold" };
 
 const FALLBACK_ACTIONS: ActionType[] = ["fold", "check", "call", "raise", "all-in"];
 export function ActionControls({
@@ -20,6 +22,8 @@ export function ActionControls({
   tableStatus,
   bigBlind = 20,
   pot = 0,
+  currentBet = 0,
+  heroStreetCommitted = 0,
   canStartRoom = true,
   hostControls = false,
   playerControls = false,
@@ -39,6 +43,8 @@ export function ActionControls({
   tableStatus?: string | null;
   bigBlind?: number | null;
   pot?: number | null;
+  currentBet?: number | null;
+  heroStreetCommitted?: number | null;
   canStartRoom?: boolean;
   hostControls?: boolean;
   playerControls?: boolean;
@@ -53,7 +59,10 @@ export function ActionControls({
   const [raiseAmount, setRaiseAmount] = useState(() => String(raiseLimits?.min ?? 100));
   const [rebuyAmount, setRebuyAmount] = useState("500");
   const [disconnectedParticipantId, setDisconnectedParticipantId] = useState("");
-  const quickBets = buildQuickBets({ bigBlind, pot, raiseLimits });
+  const hasCallAction = actions.some((action) => action.type === "call");
+  const hasBetAction = actions.some((action) => action.type === "bet");
+  const bettingMode = hasCallAction ? "facing-bet" : hasBetAction ? "open-bet" : "none";
+  const quickBets = buildQuickBets({ bigBlind, pot, currentBet, heroStreetCommitted, raiseLimits, mode: bettingMode });
   const sliderStep = getBetSliderStep(bigBlind);
   const sliderBounds = getBetSliderBounds({ raiseLimits, raiseAmount, bigBlind });
   const selectedRaiseAmount = clampBetAmount(readPositiveAmount(raiseAmount) ?? sliderBounds.min, {
@@ -65,7 +74,7 @@ export function ActionControls({
   const hasActiveTurn = Boolean(actorId);
   const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
-  const actionButtons = visibleActions;
+  const actionButtons = buildActionButtons(actions, visibleActions);
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = connected && playerControls && (!hasActiveTurn || isPlayerTurn);
   const showRebuyModal = Boolean(playerControls && typeof heroStack === "number" && heroStack <= 0);
@@ -132,7 +141,7 @@ export function ActionControls({
             {statusText}
           </div>
           {showBettingControls ? (
-            <div className="bet-console">
+            <div className={["bet-console", bettingMode === "facing-bet" ? "is-facing-bet" : bettingMode === "open-bet" ? "is-open-bet" : null].filter(Boolean).join(" ")}>
               <div className="quick-bet-row" aria-label="Quick bet controls">
                 {quickBets.map((bet) => (
                   <button type="button" key={bet.label} onClick={() => setRaiseAmount(String(bet.amount))} disabled={!canUsePlayerActions}>
@@ -155,7 +164,21 @@ export function ActionControls({
                 />
               </label>
               <div className={`primary-action-row action-grid action-count-${actionButtons.length}`}>
-                {actionButtons.map((type) => {
+                {actionButtons.map((button) => {
+                  if (button.type === "check-fold") {
+                    return (
+                      <button
+                        type="button"
+                        className="is-primary-action is-fold-action is-check-fold-action"
+                        key={button.type}
+                        disabled
+                      >
+                        <span>Check / Fold</span>
+                      </button>
+                    );
+                  }
+
+                  const type = button.type;
                   const label = formatActionLabel(type, actions, bigBlind, selectedRaiseAmount);
                   return (
                     <button
@@ -362,20 +385,48 @@ function readRaiseLimits(actions: ActionItem[]): { min: number; max: number | nu
   };
 }
 
+function buildActionButtons(actions: ActionItem[], visibleActions: ActionType[]): ActionButton[] {
+  const types = new Set(actions.map((action) => action.type));
+  if (types.has("call")) {
+    return visibleActions.map((type) => ({ type }));
+  }
+
+  if (types.has("check") && types.has("bet")) {
+    const buttons: ActionButton[] = [{ type: "check-fold" }, { type: "check" }, { type: "bet" }];
+    if (types.has("all-in")) {
+      buttons.push({ type: "all-in" });
+    }
+    return buttons;
+  }
+
+  return visibleActions.map((type) => ({ type }));
+}
+
 function buildQuickBets({
   bigBlind,
   pot,
-  raiseLimits
+  currentBet,
+  heroStreetCommitted,
+  raiseLimits,
+  mode
 }: {
   bigBlind?: number | null;
   pot?: number | null;
+  currentBet?: number | null;
+  heroStreetCommitted?: number | null;
   raiseLimits: { min: number; max: number | null } | null;
+  mode: BettingMode;
 }): Array<{ label: string; amount: number }> {
   const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
   const potSize = typeof pot === "number" && pot > 0 ? pot : blind * 5;
+  const betToCall = typeof currentBet === "number" && currentBet > 0 ? currentBet : 0;
+  const committed = typeof heroStreetCommitted === "number" && heroStreetCommitted > 0 ? heroStreetCommitted : 0;
+  const callAmount = Math.max(0, betToCall - committed);
   const rawBets = [0.33, 0.5, 0.75, 1].map((ratio) => ({
     label: `${Math.round(ratio * 100)}%`,
-    amount: Math.max(blind, Math.round(potSize * ratio))
+    amount: mode === "facing-bet"
+      ? betToCall + Math.round((potSize + callAmount) * ratio)
+      : Math.max(blind, Math.round(potSize * ratio))
   }));
 
   return rawBets.map((bet) => ({

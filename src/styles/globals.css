@@ -965,6 +965,12 @@ main {
   align-items: stretch;
 }
 
+.poker-client-shell .bet-console.is-facing-bet,
+.poker-client-shell .bet-console.is-open-bet {
+  grid-template-columns: minmax(260px, 1fr) 150px minmax(96px, 0.42fr);
+  grid-template-rows: 44px 86px;
+}
+
 .poker-client-shell .quick-bet-row {
   grid-column: 1;
   grid-row: 1;
@@ -1006,6 +1012,15 @@ main {
   font-size: 0.62rem;
 }
 
+.poker-client-shell .bet-console.is-facing-bet .bet-slider-control,
+.poker-client-shell .bet-console.is-open-bet .bet-slider-control {
+  grid-column: 2 / 4;
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(96px, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
 .poker-client-shell .amount-control > span:not(.bet-slider-value):not(.bet-slider-track) {
   display: none;
 }
@@ -1043,6 +1058,13 @@ main {
   line-height: 1;
   text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.poker-client-shell .bet-console.is-facing-bet .bet-slider-value,
+.poker-client-shell .bet-console.is-open-bet .bet-slider-value {
+  min-width: 72px;
+  font-size: 0.96rem;
+  text-align: right;
 }
 
 .poker-client-shell .bet-slider-control input[type="range"] {
@@ -1145,6 +1167,11 @@ main {
   gap: 8px;
 }
 
+.poker-client-shell .bet-console.is-facing-bet .action-grid,
+.poker-client-shell .bet-console.is-open-bet .action-grid {
+  grid-column: 1 / 4;
+}
+
 .poker-client-shell .action-grid .is-primary-action {
   border: 0;
   border-radius: 6px;
@@ -1157,6 +1184,15 @@ main {
 .poker-client-shell .action-grid .is-fold-action {
   background: linear-gradient(180deg, #3d424a, #171b21 58%, #0c0e12);
   color: rgba(255, 247, 232, 0.82);
+}
+
+.poker-client-shell .action-grid .is-check-fold-action {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), transparent 30%),
+    linear-gradient(180deg, #d7463f, #8f201d 58%, #4f0e0c);
+  color: #fff7e8;
+  opacity: 1;
+  filter: none;
 }
 
 .poker-client-shell .action-grid .is-call-action {

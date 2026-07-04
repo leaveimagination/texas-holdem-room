@@ -68,6 +68,70 @@ describe("ActionControls", () => {
     expect(html).not.toContain("rebuy-modal");
   });
 
+  it("shows the GG-style call and raise console when facing a bet", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        bigBlind: 20,
+        pot: 200,
+        currentBet: 60,
+        heroStreetCommitted: 20,
+        legalActions: {
+          actions: [
+            { type: "fold" },
+            { type: "call", amount: 40 },
+            { type: "raise", minAmountTo: 120, maxAmountTo: 1000 }
+          ]
+        }
+      })
+    );
+
+    expect(html).toContain("bet-console is-facing-bet");
+    expect(html).toContain("33%");
+    expect(html).toContain("50%");
+    expect(html).toContain("75%");
+    expect(html).toContain("100%");
+    expect(html).toContain(">Fold<");
+    expect(html).toContain(">Call<");
+    expect(html).toContain("2 BB");
+    expect(html).toContain(">Raise to<");
+    expect(html).not.toContain(">Check<");
+    expect(html).not.toContain(">Bet<");
+  });
+
+  it("shows the GG-style check and bet console when no call is required", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: "p1",
+        localParticipantId: "p1",
+        playerControls: true,
+        bigBlind: 20,
+        pot: 120,
+        currentBet: 0,
+        heroStreetCommitted: 0,
+        legalActions: {
+          actions: [
+            { type: "check" },
+            { type: "bet", minAmountTo: 20, maxAmountTo: 1000 }
+          ]
+        }
+      })
+    );
+
+    expect(html).toContain("bet-console is-open-bet");
+    expect(html).toContain("33%");
+    expect(html).toContain("50%");
+    expect(html).toContain("75%");
+    expect(html).toContain("100%");
+    expect(html).toContain(">Check / Fold<");
+    expect(html).toContain(">Check<");
+    expect(html).toContain(">Bet<");
+    expect(html).not.toContain(">Call<");
+    expect(html).not.toContain(">Raise to<");
+  });
+
   it("shows add chips as a modal only after the player is out of chips", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
