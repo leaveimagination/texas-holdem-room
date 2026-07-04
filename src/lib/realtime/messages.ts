@@ -27,6 +27,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resume_room"), roomId: z.string(), hostToken: z.string() }).strict(),
   z.object({ type: z.literal("end_room"), roomId: z.string(), hostToken: z.string() }).strict(),
   z.object({ type: z.literal("player_action"), roomId: z.string(), participantToken: z.string(), action: BettingActionSchema }).strict(),
+  z.object({ type: z.literal("insurance_decision"), roomId: z.string(), participantToken: z.string(), accepted: z.boolean() }).strict(),
   z.object({ type: z.literal("rebuy"), roomId: z.string(), participantToken: z.string(), amount: z.number().int().positive() }).strict(),
   z.object({
     type: z.literal("quick_phrase"),

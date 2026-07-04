@@ -77,7 +77,7 @@ export function ActionControls({
   const actionButtons = buildActionButtons(actions, visibleActions);
   const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = connected && playerControls && (!hasActiveTurn || isPlayerTurn);
-  const showRebuyModal = Boolean(playerControls && typeof heroStack === "number" && heroStack <= 0);
+  const showRebuyModal = Boolean(playerControls && (tableStatus ?? "lobby") !== "playing" && typeof heroStack === "number" && heroStack <= 0);
   const statusText = !connected
     ? "Reconnecting to table"
     : isPlayerTurn

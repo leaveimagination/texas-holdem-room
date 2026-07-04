@@ -100,6 +100,19 @@ export function RoomClient({ roomId }: { roomId: string }) {
     send({ type: "rebuy", roomId, participantToken, amount });
   }
 
+  function sendInsuranceDecision(accepted: boolean) {
+    if (!connected) {
+      return;
+    }
+
+    const participantToken = getParticipantToken(roomId);
+    if (!participantToken) {
+      return;
+    }
+
+    send({ type: "insurance_decision", roomId, participantToken, accepted });
+  }
+
   function handleDisconnect(participantId: string) {
     if (!connected) {
       return;
@@ -147,6 +160,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onClaimSeat={claimSeat}
         onStartRoom={startRoom}
         onPlayerAction={sendPlayerAction}
+        onInsuranceDecision={sendInsuranceDecision}
         onRebuy={rebuy}
         onHandleDisconnect={handleDisconnect}
       />

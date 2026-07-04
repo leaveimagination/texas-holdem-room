@@ -34,8 +34,20 @@ export interface HandState {
   betting: BettingState;
   holeCardsByParticipantId: Record<string, Card[]>;
   actions: HandActionRecord[];
+  insuranceOffer?: InsuranceOffer;
   finished: boolean;
   winners: string[];
+}
+
+export interface InsuranceOffer {
+  id: string;
+  status: "pending" | "accepted" | "declined";
+  offeredTo: string;
+  potAmount: number;
+  equityPct: number;
+  coverage: number;
+  premium: number;
+  paidOut?: boolean;
 }
 
 export function createInitialRoomState(settings: RoomSettings, roomId: string): RoomState {
@@ -301,6 +313,30 @@ export function applyPlayerAction(state: RoomState, action: BettingAction): Room
   };
 }
 
+export function applyInsuranceDecision(state: RoomState, participantId: string, accepted: boolean): RoomState {
+  const offer = state.hand?.insuranceOffer;
+  if (!state.hand || state.hand.finished || !offer || offer.status !== "pending") {
+    throw new Error("No pending insurance offer");
+  }
+
+  if (offer.offeredTo !== participantId) {
+    throw new Error("Insurance is not offered to this player");
+  }
+
+  const decidedState: RoomState = {
+    ...state,
+    hand: {
+      ...state.hand,
+      insuranceOffer: {
+        ...offer,
+        status: accepted ? "accepted" : "declined"
+      }
+    }
+  };
+
+  return showdown(runOutBoard(decidedState));
+}
+
 export function finishHandIfReady(state: RoomState): RoomState {
   if (!state.hand || state.hand.finished) {
     return state;
@@ -314,6 +350,13 @@ export function finishHandIfReady(state: RoomState): RoomState {
     }
 
     if (hasAllInPlayer || state.hand.street === "river") {
+      if (hasAllInPlayer) {
+        const insuranceState = maybeOfferInsurance(state);
+        if (insuranceState !== state) {
+          return insuranceState;
+        }
+      }
+
       return showdown(runOutBoard(state));
     }
 
@@ -470,6 +513,94 @@ function runOutBoard(state: RoomState): RoomState {
   };
 }
 
+function maybeOfferInsurance(state: RoomState): RoomState {
+  if (!state.hand || state.mode !== "cash" || state.hand.finished || state.hand.insuranceOffer) {
+    return state;
+  }
+
+  if (state.hand.board.length < 3 || state.hand.board.length >= 5) {
+    return state;
+  }
+
+  const remainingPlayers = state.hand.betting.players.filter((player) => !player.folded);
+  if (remainingPlayers.length !== 2 || !remainingPlayers.every((player) => player.allIn)) {
+    return state;
+  }
+
+  const equity = calculateHeadsUpEquity(state.hand, remainingPlayers.map((player) => player.id));
+  const favorite = equity.find((candidate) => candidate.equity > 0.5);
+  const tiedFavorite = equity.filter((candidate) => candidate.equity === favorite?.equity);
+  if (!favorite || tiedFavorite.length !== 1) {
+    return state;
+  }
+
+  const potAmount = buildPots(state.hand.betting.players).reduce((sum, pot) => sum + pot.amount, 0);
+  if (potAmount <= 0) {
+    return state;
+  }
+
+  const losingProbability = Math.max(0, 1 - favorite.equity);
+  const coverage = Math.max(1, Math.floor(potAmount * favorite.equity));
+  const premium = Math.max(1, Math.ceil((coverage * losingProbability / favorite.equity) * 1.05));
+
+  return {
+    ...state,
+    hand: {
+      ...state.hand,
+      insuranceOffer: {
+        id: `${state.hand.id}-insurance`,
+        status: "pending",
+        offeredTo: favorite.playerId,
+        potAmount,
+        equityPct: Math.round(favorite.equity * 1000) / 10,
+        coverage,
+        premium
+      }
+    }
+  };
+}
+
+function calculateHeadsUpEquity(hand: HandState, playerIds: string[]): Array<{ playerId: string; equity: number }> {
+  const cardsNeeded = 5 - hand.board.length;
+  const runouts = combinations(hand.deck, cardsNeeded);
+  const wins = new Map(playerIds.map((playerId) => [playerId, 0]));
+  let totalShares = 0;
+
+  for (const runout of runouts) {
+    const board = [...hand.board, ...runout];
+    const values = playerIds.map((playerId) => ({
+      playerId,
+      value: evaluateSeven([...(hand.holeCardsByParticipantId[playerId] ?? []), ...board])
+    }));
+    const best = values.reduce((currentBest, candidate) => compareHands(candidate.value, currentBest.value) > 0 ? candidate : currentBest);
+    const winners = values.filter((candidate) => compareHands(candidate.value, best.value) === 0);
+    const share = 1 / winners.length;
+    totalShares += 1;
+    for (const winner of winners) {
+      wins.set(winner.playerId, (wins.get(winner.playerId) ?? 0) + share);
+    }
+  }
+
+  return playerIds.map((playerId) => ({
+    playerId,
+    equity: totalShares > 0 ? (wins.get(playerId) ?? 0) / totalShares : 0
+  }));
+}
+
+function combinations<T>(values: T[], count: number): T[][] {
+  if (count === 0) {
+    return [[]];
+  }
+
+  const result: T[][] = [];
+  for (let index = 0; index <= values.length - count; index += 1) {
+    for (const suffix of combinations(values.slice(index + 1), count - 1)) {
+      result.push([values[index], ...suffix]);
+    }
+  }
+  return result;
+}
+
 function showdown(state: RoomState): RoomState {
   if (!state.hand) {
     return state;
@@ -515,7 +646,7 @@ function showdown(state: RoomState): RoomState {
     }
   }
 
-  const seats = state.seats.map((seat) => {
+  const seatsBeforeInsurance = state.seats.map((seat) => {
     if (!seat.participantId) {
       return seat;
     }
@@ -531,16 +662,50 @@ function showdown(state: RoomState): RoomState {
   });
 
   const orderedWinners = [...winners].sort((left, right) => seatOrder.indexOf(left) - seatOrder.indexOf(right));
+  const insuranceResult = applyInsuranceSettlement(seatsBeforeInsurance, state.hand.insuranceOffer, orderedWinners);
 
   return applyPostHandRules({
     ...state,
-    seats,
+    seats: insuranceResult.seats,
     hand: {
       ...state.hand,
+      insuranceOffer: insuranceResult.offer,
       finished: true,
       winners: orderedWinners
     }
   });
+}
+
+function applyInsuranceSettlement(
+  seats: Seat[],
+  offer: InsuranceOffer | undefined,
+  winners: string[]
+): { seats: Seat[]; offer: InsuranceOffer | undefined } {
+  if (!offer || offer.status !== "accepted") {
+    return { seats, offer };
+  }
+
+  const insuredWon = winners.includes(offer.offeredTo);
+  const settledSeats = seats.map((seat) => {
+    if (seat.participantId !== offer.offeredTo) {
+      return seat;
+    }
+
+    const chips = insuredWon ? Math.max(0, seat.chips - offer.premium) : seat.chips + offer.coverage;
+    return {
+      ...seat,
+      chips,
+      status: chips > 0 ? "active" as const : seat.status
+    };
+  });
+
+  return {
+    seats: settledSeats,
+    offer: {
+      ...offer,
+      paidOut: !insuredWon
+    }
+  };
 }
 
 function getActiveSeats(seats: Seat[]): ActiveSeat[] {

@@ -13,6 +13,17 @@ describe("realtime messages", () => {
     expect(parsed.type).toBe("player_action");
   });
 
+  it("accepts all-in insurance decisions", () => {
+    const parsed = ClientMessageSchema.parse({
+      type: "insurance_decision",
+      roomId: "room1",
+      participantToken: "token",
+      accepted: true
+    });
+
+    expect(parsed.type).toBe("insurance_decision");
+  });
+
   it("rejects unknown message types", () => {
     expect(() => ClientMessageSchema.parse({ type: "peek_cards" })).toThrow();
   });

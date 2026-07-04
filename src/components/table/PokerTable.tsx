@@ -6,6 +6,7 @@ import { SeatRing } from "./SeatRing";
 import type { ClientMessage } from "@/lib/realtime/messages";
 
 type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
+type InsuranceDecision = (accepted: boolean) => void;
 
 export function PokerTable({
   view,
@@ -18,6 +19,7 @@ export function PokerTable({
   onClaimSeat,
   onStartRoom,
   onPlayerAction,
+  onInsuranceDecision,
   onRebuy,
   onHandleDisconnect
 }: {
@@ -31,6 +33,7 @@ export function PokerTable({
   onClaimSeat?: (seatNumber: number) => void;
   onStartRoom?: () => void;
   onPlayerAction?: (action: PlayerAction) => void;
+  onInsuranceDecision?: InsuranceDecision;
   onRebuy?: (amount: number) => void;
   onHandleDisconnect?: (participantId: string) => void;
 }) {
@@ -48,6 +51,7 @@ export function PokerTable({
   const showHostControls = hostControls || readHostControls(view);
   const snapshotLegalActions = readLegalActions(view);
   const resolvedLegalActions = snapshotLegalActions ?? legalActions;
+  const insuranceOffer = readInsuranceOffer(view);
 
   return (
     <section className="table-surface poker-client-shell" aria-label="Table">
@@ -114,8 +118,59 @@ export function PokerTable({
         onRebuy={onRebuy}
         onHandleDisconnect={onHandleDisconnect}
       />
+      <InsurancePanel
+        bigBlind={settings.bigBlind}
+        connected={connected}
+        localParticipantId={localParticipantId}
+        offer={insuranceOffer}
+        playerControls={playerControls}
+        onDecision={onInsuranceDecision}
+      />
       <HandResultPanel view={view} />
     </section>
+  );
+}
+
+function InsurancePanel({
+  offer,
+  localParticipantId,
+  playerControls,
+  connected,
+  bigBlind,
+  onDecision
+}: {
+  offer: ReturnType<typeof readInsuranceOffer>;
+  localParticipantId?: string | null;
+  playerControls: boolean;
+  connected: boolean;
+  bigBlind?: number | null;
+  onDecision?: InsuranceDecision;
+}) {
+  if (!offer || offer.status !== "pending") {
+    return null;
+  }
+
+  const canDecide = Boolean(playerControls && connected && localParticipantId === offer.offeredTo);
+
+  return (
+    <div className="insurance-backdrop">
+      <section className="insurance-panel" role="dialog" aria-label="All-in insurance">
+        <div className="insurance-copy">
+          <span>All-in insurance</span>
+          <strong>{formatPercent(offer.equityPct)} to hold</strong>
+          <p>{canDecide ? "Protect this all-in before the river is dealt." : "Waiting for the favorite to choose insurance."}</p>
+        </div>
+        <div className="insurance-terms" aria-label="Insurance terms">
+          <span><small>Pot</small><strong>{formatBb(offer.potAmount, bigBlind)}</strong></span>
+          <span><small>Coverage</small><strong>{formatBb(offer.coverage, bigBlind)}</strong></span>
+          <span><small>Premium</small><strong>{formatBb(offer.premium, bigBlind)}</strong></span>
+        </div>
+        <div className="insurance-actions">
+          <button type="button" onClick={() => onDecision?.(true)} disabled={!canDecide}>Buy insurance</button>
+          <button type="button" onClick={() => onDecision?.(false)} disabled={!canDecide}>Run it</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -124,6 +179,10 @@ function formatBb(amount: number, bigBlind?: number | null): string {
   const value = amount / blind;
   const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
   return `${rounded} BB`;
+}
+
+function formatPercent(value: number): string {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}%`;
 }
 
 function readActorName(view: unknown): string | null {
@@ -213,6 +272,37 @@ function readCanStartRoom(view: unknown): boolean {
 function readLegalActions(view: unknown): unknown {
   const hand = readObject(readObject(view)?.hand);
   return hand?.legalActions;
+}
+
+function readInsuranceOffer(view: unknown): null | {
+  status: string;
+  offeredTo: string;
+  potAmount: number;
+  equityPct: number;
+  coverage: number;
+  premium: number;
+} {
+  const hand = readObject(readObject(view)?.hand);
+  const offer = readObject(hand?.insuranceOffer);
+  if (
+    typeof offer?.status !== "string" ||
+    typeof offer.offeredTo !== "string" ||
+    typeof offer.potAmount !== "number" ||
+    typeof offer.equityPct !== "number" ||
+    typeof offer.coverage !== "number" ||
+    typeof offer.premium !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    status: offer.status,
+    offeredTo: offer.offeredTo,
+    potAmount: offer.potAmount,
+    equityPct: offer.equityPct,
+    coverage: offer.coverage,
+    premium: offer.premium
+  };
 }
 
 function readActingSeat(view: unknown): Record<string, unknown> | null {

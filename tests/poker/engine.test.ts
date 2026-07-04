@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseCard, serializeCard } from "@/lib/poker/cards";
 import { getLegalActions } from "@/lib/poker/betting";
-import { applyPlayerAction, createInitialRoomState, startHand } from "@/lib/poker/engine";
+import { applyInsuranceDecision, applyPlayerAction, createInitialRoomState, finishHandIfReady, startHand, type RoomState } from "@/lib/poker/engine";
 
 const fixedDeck = "As Ah Kd Kh Qs Qh Jd Jh Tc Td 9s 9h 8d 8h 7s 7h 6d 6h 5s 5h 4d 4h 3s 3h 2d 2h Ac Ad Kc Ks Qc Qd Jc Js Ts Th 9c 9d 8c 8s 7c 7d 6c 6s 5c 5d 4c 4s 3c 3d 2c 2s"
   .split(" ")
@@ -262,4 +262,72 @@ describe("engine", () => {
     expect(started.hand?.holeCardsByParticipantId.p1.map(serializeCard)).toEqual(["Ah", "Qs"]);
     expect(started.hand?.holeCardsByParticipantId.p3.map(serializeCard)).toEqual(["Kd", "Qh"]);
   });
+
+  it("offers cash-game all-in insurance before running out the river", () => {
+    const pending = finishHandIfReady(createTurnAllInInsuranceState());
+
+    expect(pending.hand?.finished).toBe(false);
+    expect(pending.hand?.board.map(serializeCard)).toEqual(["2c", "7d", "9h", "3s"]);
+    expect(pending.hand?.insuranceOffer).toMatchObject({
+      status: "pending",
+      offeredTo: "p1",
+      potAmount: 200
+    });
+    expect(pending.hand?.insuranceOffer?.coverage).toBeGreaterThan(100);
+    expect(pending.hand?.insuranceOffer?.premium).toBeGreaterThan(0);
+  });
+
+  it("pays accepted all-in insurance when the covered favorite loses", () => {
+    const pending = finishHandIfReady(createTurnAllInInsuranceState());
+    const resolved = applyInsuranceDecision(pending, "p1", true);
+
+    expect(resolved.hand?.finished).toBe(true);
+    expect(resolved.hand?.board.map(serializeCard)).toEqual(["2c", "7d", "9h", "3s", "Kc"]);
+    expect(resolved.hand?.winners).toEqual(["p2"]);
+    expect(resolved.hand?.insuranceOffer).toMatchObject({ status: "accepted", paidOut: true });
+    expect(resolved.seats.find((seat) => seat.participantId === "p1")?.chips).toBe(pending.hand?.insuranceOffer?.coverage);
+  });
 });
+
+function createTurnAllInInsuranceState(): RoomState {
+  return {
+    roomId: "room-insurance",
+    mode: "cash",
+    settings: { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+    status: "playing",
+    handCounter: 1,
+    buttonSeat: 1,
+    seats: [
+      { seatNumber: 1, participantId: "p1", displayName: "Aces", chips: 0, cumulativeBuyIn: 1000, status: "all-in" },
+      { seatNumber: 2, participantId: "p2", displayName: "Kings", chips: 0, cumulativeBuyIn: 1000, status: "all-in" }
+    ],
+    hand: {
+      id: "room-insurance-1",
+      number: 1,
+      street: "turn",
+      board: ["2c", "7d", "9h", "3s"].map(parseCard),
+      deck: "Kc 4d 5d 6d 8d Td Jd Qd Ad".split(" ").map(parseCard),
+      actorId: "p1",
+      betting: {
+        street: "turn",
+        currentBet: 100,
+        minRaise: 20,
+        actorId: "p1",
+        players: [
+          { id: "p1", stack: 0, committed: 100, streetCommitted: 100, folded: false, allIn: true },
+          { id: "p2", stack: 0, committed: 100, streetCommitted: 100, folded: false, allIn: true }
+        ]
+      },
+      holeCardsByParticipantId: {
+        p1: ["As", "Ah"].map(parseCard),
+        p2: ["Ks", "Kh"].map(parseCard)
+      },
+      actions: [
+        { playerId: "p1", type: "all-in", street: "turn", amount: 100 },
+        { playerId: "p2", type: "call", street: "turn", amount: 100 }
+      ],
+      finished: false,
+      winners: []
+    }
+  };
+}

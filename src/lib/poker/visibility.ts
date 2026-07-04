@@ -45,6 +45,15 @@ export interface ParticipantRoomView {
     }>;
     actions: Array<{ playerId: string; type: string; amount?: number }>;
     legalActions: Array<{ type: string; amount?: number; minAmountTo?: number; maxAmountTo?: number }>;
+    insuranceOffer?: {
+      status: string;
+      offeredTo: string;
+      potAmount: number;
+      equityPct: number;
+      coverage: number;
+      premium: number;
+      paidOut?: boolean;
+    };
     finished: boolean;
     winners: string[];
   };
@@ -95,7 +104,20 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
             };
           }),
           actions: hand.actions,
-          legalActions: hand.finished ? [] : getLegalActions(hand.betting, hand.actorId),
+          legalActions: hand.finished || hand.insuranceOffer?.status === "pending" ? [] : getLegalActions(hand.betting, hand.actorId),
+          ...(hand.insuranceOffer
+            ? {
+                insuranceOffer: {
+                  status: hand.insuranceOffer.status,
+                  offeredTo: hand.insuranceOffer.offeredTo,
+                  potAmount: hand.insuranceOffer.potAmount,
+                  equityPct: hand.insuranceOffer.equityPct,
+                  coverage: hand.insuranceOffer.coverage,
+                  premium: hand.insuranceOffer.premium,
+                  paidOut: hand.insuranceOffer.paidOut
+                }
+              }
+            : {}),
           finished: hand.finished,
           winners: hand.winners
         }

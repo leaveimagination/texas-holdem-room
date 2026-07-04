@@ -4,7 +4,7 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData } from "ws";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 import { ClientMessageSchema } from "@/lib/realtime/messages";
-import { applyPlayerAction, claimSeat, markDisconnected, rebuy, startHand, type RoomState } from "@/lib/poker/engine";
+import { applyInsuranceDecision, applyPlayerAction, claimSeat, markDisconnected, rebuy, startHand, type RoomState } from "@/lib/poker/engine";
 import { serializeCard } from "@/lib/poker/cards";
 import { toParticipantView } from "@/lib/poker/visibility";
 import type { LiveRoomStore } from "@/server/live-room-store";
@@ -161,6 +161,15 @@ async function handleIncomingMessage(
         await recordFinishedHand(roomRepository, updatedRoom);
         updatedRoom = startNextHandIfReady(updatedRoom);
         break;
+      case "insurance_decision":
+        if (!session.participantId) {
+          throw new Error("Participant token mismatch");
+        }
+        updatedRoom = applyInsuranceDecision(room, session.participantId, message.accepted);
+        handFinishedNotice = updatedRoom.hand?.finished ? buildHandFinishedNotice(updatedRoom) : null;
+        await recordFinishedHand(roomRepository, updatedRoom);
+        updatedRoom = startNextHandIfReady(updatedRoom);
+        break;
       case "rebuy":
         if (!session.participantId) {
           throw new Error("Participant token mismatch");
@@ -293,13 +302,14 @@ function isSupportedMessage(
   message: ClientMessage
 ): message is Extract<
   ClientMessage,
-  { type: "join_room" | "claim_seat" | "start_room" | "player_action" | "rebuy" | "quick_phrase" | "handle_disconnect" }
+  { type: "join_room" | "claim_seat" | "start_room" | "player_action" | "insurance_decision" | "rebuy" | "quick_phrase" | "handle_disconnect" }
 > {
   return (
     message.type === "join_room" ||
     message.type === "claim_seat" ||
     message.type === "start_room" ||
     message.type === "player_action" ||
+    message.type === "insurance_decision" ||
     message.type === "rebuy" ||
     message.type === "quick_phrase" ||
     message.type === "handle_disconnect"

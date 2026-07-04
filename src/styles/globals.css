@@ -1486,6 +1486,120 @@ main {
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.24), 0 14px 26px rgba(0, 0, 0, 0.44);
 }
 
+.poker-client-shell .insurance-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, rgba(241, 196, 95, 0.18), transparent 30%),
+    radial-gradient(circle at center, rgba(0, 0, 0, 0.42), transparent 56%);
+}
+
+.poker-client-shell .insurance-panel {
+  pointer-events: auto;
+  width: min(430px, calc(100vw - 32px));
+  border: 1px solid rgba(255, 217, 120, 0.52);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 20%),
+    radial-gradient(circle at 24% 0%, rgba(84, 184, 255, 0.18), transparent 40%),
+    linear-gradient(180deg, rgba(25, 22, 18, 0.98), rgba(7, 9, 13, 0.98));
+  color: #fff7e8;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 34px rgba(241, 196, 95, 0.24),
+    0 26px 80px rgba(0, 0, 0, 0.68);
+}
+
+.poker-client-shell .insurance-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.poker-client-shell .insurance-copy span {
+  color: #ffd978;
+  font-size: 0.76rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.poker-client-shell .insurance-copy strong {
+  color: #fff7e8;
+  font-size: 1.48rem;
+  line-height: 1.05;
+}
+
+.poker-client-shell .insurance-copy p {
+  margin: 0;
+  color: rgba(255, 247, 232, 0.72);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.poker-client-shell .insurance-terms {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.poker-client-shell .insurance-terms span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.28);
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+}
+
+.poker-client-shell .insurance-terms small {
+  color: rgba(255, 247, 232, 0.58);
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.poker-client-shell .insurance-terms strong {
+  color: #54b8ff;
+  font-size: 0.98rem;
+}
+
+.poker-client-shell .insurance-actions {
+  display: grid;
+  grid-template-columns: 1fr 0.85fr;
+  gap: 10px;
+}
+
+.poker-client-shell .insurance-actions button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff7e8;
+  font-size: 1rem;
+  font-weight: 1000;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 14px 26px rgba(0, 0, 0, 0.36);
+}
+
+.poker-client-shell .insurance-actions button:first-child {
+  background: linear-gradient(180deg, #f85861 0%, #c92531 54%, #8c141f 100%);
+}
+
+.poker-client-shell .insurance-actions button:last-child {
+  background: linear-gradient(180deg, #3f454d 0%, #1b2028 58%, #0c0e12 100%);
+}
+
+.poker-client-shell .insurance-actions button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+  opacity: 0.62;
+}
+
 .felt-stage {
   position: relative;
   min-height: clamp(310px, 45dvh, 430px);

@@ -46,6 +46,16 @@ const HandActionRecordSchema = z.object({
   street: z.enum(["preflop", "flop", "turn", "river"]),
   amount: z.number().optional()
 });
+const InsuranceOfferSchema = z.object({
+  id: z.string(),
+  status: z.enum(["pending", "accepted", "declined"]),
+  offeredTo: z.string(),
+  potAmount: z.number().int().positive(),
+  equityPct: z.number(),
+  coverage: z.number().int().positive(),
+  premium: z.number().int().positive(),
+  paidOut: z.boolean().optional()
+});
 const HandStateSchema = z
   .object({
     id: z.string(),
@@ -57,6 +67,7 @@ const HandStateSchema = z
     betting: BettingStateSchema,
     holeCardsByParticipantId: z.record(z.string(), z.array(CardSchema)),
     actions: z.array(HandActionRecordSchema),
+    insuranceOffer: InsuranceOfferSchema.optional(),
     finished: z.boolean(),
     winners: z.array(z.string())
   })

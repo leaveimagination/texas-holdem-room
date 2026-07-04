@@ -122,4 +122,48 @@ describe("PokerTable", () => {
     expect(html).toContain(">Raise to<");
     expect(html).toContain(">All in<");
   });
+
+  it("shows an insurance offer to the covered all-in favorite", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        connected: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 0, status: "all-in", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 0, status: "all-in", occupied: true }
+          ],
+          hand: {
+            pot: 200,
+            actorId: "p1",
+            board: ["2c", "7d", "9h", "3s"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "Ah"], streetCommitted: 100 },
+              { seatNumber: 2, participantId: "p2", streetCommitted: 100 }
+            ],
+            legalActions: [],
+            insuranceOffer: {
+              status: "pending",
+              offeredTo: "p1",
+              potAmount: 200,
+              equityPct: 88.9,
+              coverage: 177,
+              premium: 24
+            }
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("insurance-panel");
+    expect(html).toContain("All-in insurance");
+    expect(html).toContain("88.9%");
+    expect(html).toContain("Coverage");
+    expect(html).toContain("Buy insurance");
+    expect(html).toContain("Run it");
+  });
 });
