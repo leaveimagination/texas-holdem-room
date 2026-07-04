@@ -46,7 +46,8 @@ export function PokerTable({
   const heroStreetCommitted = readHeroStreetCommitted(view, localParticipantId);
   const canStartRoom = readCanStartRoom(view);
   const showHostControls = hostControls || readHostControls(view);
-  const resolvedLegalActions = legalActions ?? readLegalActions(view);
+  const snapshotLegalActions = readLegalActions(view);
+  const resolvedLegalActions = snapshotLegalActions ?? legalActions;
 
   return (
     <section className="table-surface poker-client-shell" aria-label="Table">

@@ -81,4 +81,45 @@ describe("PokerTable", () => {
     expect(html).not.toContain("Board waiting");
     expect(html).not.toContain("Waiting for deal");
   });
+
+  it("uses refreshed snapshot legal actions after a rebuy instead of stale action messages", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        legalActions: { actions: [] },
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 500, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 1500, status: "active", occupied: true }
+          ],
+          hand: {
+            pot: 80,
+            currentBet: 20,
+            actorId: "p1",
+            board: [],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "Kd"], streetCommitted: 10 },
+              { seatNumber: 2, participantId: "p2", streetCommitted: 20 }
+            ],
+            legalActions: [
+              { type: "fold" },
+              { type: "call", amount: 10 },
+              { type: "raise", minAmountTo: 40, maxAmountTo: 500 },
+              { type: "all-in", amountTo: 500 }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("YOUR TURN");
+    expect(html).toContain(">Fold<");
+    expect(html).toContain(">Call<");
+    expect(html).toContain(">Raise to<");
+    expect(html).toContain(">All in<");
+  });
 });
