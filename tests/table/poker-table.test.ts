@@ -203,4 +203,40 @@ describe("PokerTable", () => {
     expect(html).toContain("Buy insurance");
     expect(html).toContain("Run it");
   });
+
+  it("does not keep a stale actor prompt after a hand has finished", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 0, status: "all-in", occupied: true },
+            { seatNumber: 2, displayName: "Winner", chips: 4000, status: "active", occupied: true }
+          ],
+          hand: {
+            number: 4,
+            pot: 4000,
+            currentBet: 20,
+            actorId: "p1",
+            board: ["Qc", "8c", "3h", "6c", "Jc"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", streetCommitted: 20 },
+              { seatNumber: 2, participantId: "p2", streetCommitted: 20 }
+            ],
+            legalActions: [],
+            finished: true,
+            winners: ["p2"]
+          }
+        }
+      })
+    );
+
+    expect(html).not.toContain("Hero to act");
+    expect(html).not.toContain("Syncing actions");
+    expect(html).toContain("Add chips");
+  });
 });

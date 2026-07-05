@@ -149,6 +149,23 @@ describe("ActionControls", () => {
     expect(html).toContain("Add chips amount");
   });
 
+  it("allows an out-of-chips player to add chips after a finished hand while the room remains playing", () => {
+    const html = renderToStaticMarkup(
+      createElement(ActionControls, {
+        actorId: null,
+        localParticipantId: "p1",
+        playerControls: true,
+        heroStack: 0,
+        tableStatus: "playing",
+        canStartRoom: true
+      })
+    );
+
+    expect(html).toContain("rebuy-modal");
+    expect(html).toContain("Add chips");
+    expect(html).not.toContain("Syncing actions");
+  });
+
   it("renders live action buttons with client-style action weights", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {

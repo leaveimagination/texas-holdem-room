@@ -292,6 +292,9 @@ function readTableStatus(view: unknown): string | null {
 
 function readActorId(view: unknown): string | null {
   const hand = readObject(readObject(view)?.hand);
+  if (hand?.finished === true) {
+    return null;
+  }
   return typeof hand?.actorId === "string" ? hand.actorId : null;
 }
 

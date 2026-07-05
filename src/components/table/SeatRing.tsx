@@ -249,6 +249,9 @@ function readSeats(view: unknown): SeatView[] {
 
 function readActingSeatNumber(view: unknown): number | null {
   const hand = readObject(readObject(view)?.hand);
+  if (hand?.finished === true) {
+    return null;
+  }
   const actorId = typeof hand?.actorId === "string" ? hand.actorId : null;
   const handSeats = hand?.seats;
   if (!actorId || !Array.isArray(handSeats)) {
