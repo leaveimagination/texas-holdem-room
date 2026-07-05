@@ -42,6 +42,8 @@ export function SeatRing({
         const allInAction = isAllInAction(seat.recentAction);
         const isWinner = Boolean(seat.participantId && winnerIds.has(seat.participantId));
         const seatDealIndex = dealIndexBySeat.get(seat.seatNumber) ?? 0;
+        const roleBadges = roleBadgesForDisplay(seat.role);
+        const isDealer = isDealerRole(seat.role);
         const seatClassName = [
           "seat",
           `seat-slot-${slot}`,
@@ -75,7 +77,7 @@ export function SeatRing({
                 <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
               <span className="seat-panel seat-nameplate">
                 <span className="seat-number">Seat {seat.seatNumber}</span>
-                {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
+                {roleBadges.map((badge) => <span className="seat-badge" key={badge}>{badge}</span>)}
                 <strong>{seat.displayName ?? "Open"}</strong>
                 <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
                 <small>{seat.status}</small>
@@ -101,7 +103,7 @@ export function SeatRing({
               <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
               <span className="seat-panel seat-nameplate">
                 <span className="seat-number">Seat {seat.seatNumber}</span>
-                {seat.role ? <span className="seat-badge">{seat.role}</span> : null}
+                {roleBadges.map((badge) => <span className="seat-badge" key={badge}>{badge}</span>)}
                 <strong>{seat.displayName ?? "Open"}</strong>
                 <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
                 <small>{seat.status}</small>
@@ -109,6 +111,11 @@ export function SeatRing({
               </span>
             </>
           )}
+          {isDealer ? (
+            <span className="dealer-button" aria-label={`Seat ${seat.seatNumber} dealer button`}>
+              D
+            </span>
+          ) : null}
           {isWinner ? (
             <span className="winner-smile-badge" aria-label={`${seat.displayName ?? `Seat ${seat.seatNumber}`} collected the pot`}>
               :)
@@ -142,6 +149,18 @@ export function SeatRing({
       })}
     </div>
   );
+}
+
+function isDealerRole(role: string | null): boolean {
+  return Boolean(role?.split("/").includes("BTN"));
+}
+
+function roleBadgesForDisplay(role: string | null): string[] {
+  if (!role) {
+    return [];
+  }
+
+  return role.split("/").filter((badge) => badge === "SB" || badge === "BB");
 }
 
 function readDealIndexBySeat(seats: SeatView[]): Map<number, number> {

@@ -90,4 +90,17 @@ describe("SeatRing CSS", () => {
     expect(topRightSeatRule).not.toContain("top: -8%");
     expect(css).not.toContain(".poker-client-shell .seat-slot-2 .seat-last-action,\n.poker-client-shell .seat-slot-8 .seat-last-action");
   });
+
+  it("styles the dealer button as a standalone gold table marker", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    const dealerRule = css.match(/\.poker-client-shell \.dealer-button\s*{[^}]*}/s)?.[0] ?? "";
+
+    expect(dealerRule).toContain("position: absolute");
+    expect(dealerRule).toContain("border-radius: 999px");
+    expect(dealerRule).toContain("background:");
+    expect(dealerRule).toContain("color: #211306");
+    expect(dealerRule).toContain("animation: dealer-button-pop");
+    expect(css).toContain("@keyframes dealer-button-pop");
+  });
 });

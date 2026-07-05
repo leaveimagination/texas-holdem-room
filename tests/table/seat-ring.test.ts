@@ -54,7 +54,7 @@ describe("SeatRing", () => {
     expect(html).toContain("aria-hidden=\"true\"");
   });
 
-  it("renders dealer blind badges and committed chip markers", () => {
+  it("renders an independent dealer button with compact blind badges", () => {
     const html = renderToStaticMarkup(
       createElement(SeatRing, {
         bigBlind: 20,
@@ -74,7 +74,11 @@ describe("SeatRing", () => {
       })
     );
 
-    expect(html).toContain("BTN/SB");
+    expect(html).toContain("dealer-button");
+    expect(html).toContain("aria-label=\"Seat 1 dealer button\"");
+    expect(html).not.toContain("BTN/SB");
+    expect(html).not.toContain(">BTN<");
+    expect(html).toContain(">SB<");
     expect(html).toContain("BB");
     expect(html).toContain("49.5 BB");
     expect(html).toContain("49 BB");
