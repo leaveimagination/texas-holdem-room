@@ -239,4 +239,119 @@ describe("PokerTable", () => {
     expect(html).not.toContain("Syncing actions");
     expect(html).toContain("Add chips");
   });
+
+  it("renders a showdown reveal and collect-pot animation when a hand finishes at showdown", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 880, status: "all-in", occupied: true }
+          ],
+          hand: {
+            number: 8,
+            finished: true,
+            pot: 240,
+            board: ["Ah", "Kd", "7c", "2s", "9d"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "Ad"] },
+              { seatNumber: 2, participantId: "p2", holeCards: ["Kh", "Kc"] }
+            ],
+            winners: ["p1"]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("showdown-overlay");
+    expect(html).toContain("Showdown");
+    expect(html).toContain("showdown-card-strip");
+    expect(html).toContain("Hero");
+    expect(html).toContain("Villain");
+    expect(html).toContain("collect-pot-burst");
+    expect(html).toContain("collect-pot-flight collect-pot-flight-0");
+    expect(html).toContain("aria-label=\"Pot collected by Hero\"");
+  });
+
+  it("does not force a showdown reveal for a fold-win hand with one visible hand", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 880, status: "folded", occupied: true }
+          ],
+          hand: {
+            number: 9,
+            finished: true,
+            pot: 80,
+            board: ["Ah", "Kd", "7c"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "Ad"] },
+              { seatNumber: 2, participantId: "p2" }
+            ],
+            winners: ["p1"]
+          }
+        }
+      })
+    );
+
+    expect(html).not.toContain("showdown-overlay");
+    expect(html).toContain("collect-pot-burst");
+  });
+
+  it("keeps the recent showdown and collect animation visible after the next hand snapshot arrives", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 880, status: "active", occupied: true }
+          ],
+          handResult: {
+            handNumber: 8,
+            pot: 240,
+            board: ["Ah", "Kd", "7c", "2s", "9d"],
+            winners: [{ participantId: "p1", displayName: "Hero", seatNumber: 1 }],
+            showdownPlayers: [
+              { participantId: "p1", displayName: "Hero", seatNumber: 1, holeCards: ["As", "Ad"] },
+              { participantId: "p2", displayName: "Villain", seatNumber: 2, holeCards: ["Kh", "Kc"] }
+            ]
+          },
+          hand: {
+            number: 9,
+            finished: false,
+            pot: 30,
+            board: [],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["2c", "3c"] },
+              { seatNumber: 2, participantId: "p2" }
+            ],
+            winners: []
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("showdown-overlay");
+    expect(html).toContain("Showdown");
+    expect(html).toContain("Hero");
+    expect(html).toContain("Villain");
+    expect(html).toContain("collect-pot-burst");
+  });
 });

@@ -54,6 +54,8 @@ export function PokerTable({
   const snapshotLegalActions = readLegalActions(view);
   const resolvedLegalActions = snapshotLegalActions ?? legalActions;
   const insuranceOffer = readInsuranceOffer(view);
+  const showdown = readShowdown(view);
+  const collectPot = readCollectPot(view, localParticipantId, localDisplayName);
 
   return (
     <section className="table-surface poker-client-shell" aria-label="Table">
@@ -103,6 +105,8 @@ export function PokerTable({
           ) : null}
           {actorId ? <p className="actor-callout is-live">{actorName ?? "Player"} to act</p> : null}
         </div>
+        {showdown ? <ShowdownOverlay showdown={showdown} /> : null}
+        {collectPot ? <CollectPotBurst collectPot={collectPot} /> : null}
       </div>
 
       <ActionControls
@@ -137,6 +141,44 @@ export function PokerTable({
       />
       <HandResultPanel view={view} />
     </section>
+  );
+}
+
+function ShowdownOverlay({ showdown }: { showdown: { players: Array<{ name: string; cards: string[]; winner: boolean }> } }) {
+  return (
+    <section className="showdown-overlay" aria-label="Showdown reveal">
+      <span className="showdown-kicker">Showdown</span>
+      <div className="showdown-card-strip">
+        {showdown.players.map((player, index) => (
+          <div className={player.winner ? "showdown-player is-showdown-winner" : "showdown-player"} key={`${player.name}-${index}`}>
+            <strong>{player.name}</strong>
+            <span className="showdown-cards">
+              {player.cards.map((card, cardIndex) => (
+                <PlayingCard card={card} variant="mini" dealIndex={cardIndex} key={`${card}-${cardIndex}`} />
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CollectPotBurst({ collectPot }: { collectPot: { winners: Array<{ name: string; slot: number }> } }) {
+  return (
+    <div className="collect-pot-burst" aria-label={`Pot collected by ${collectPot.winners.map((winner) => winner.name).join(", ")}`}>
+      {collectPot.winners.map((winner, index) => (
+        <span
+          className={`collect-pot-flight collect-pot-flight-${index} collect-pot-to-slot-${winner.slot}`}
+          aria-hidden="true"
+          key={`${winner.name}-${index}`}
+        >
+          <span />
+          <span />
+          <span />
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -196,6 +238,220 @@ function formatBb(amount: number, bigBlind?: number | null): string {
 
 function formatPercent(value: number): string {
   return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}%`;
+}
+
+function readShowdown(view: unknown): null | { players: Array<{ name: string; cards: string[]; winner: boolean }> } {
+  const viewObject = readObject(view);
+  const hand = readObject(viewObject?.hand);
+  const handResult = readObject(viewObject?.handResult);
+  const eventShowdownPlayers = handResult?.showdownPlayers;
+  if (Array.isArray(eventShowdownPlayers)) {
+    const winnerIds = readWinnerIdSet(viewObject, hand);
+    const players = eventShowdownPlayers.flatMap((candidate) => {
+      const player = readObject(candidate);
+      if (!player || !Array.isArray(player.holeCards)) {
+        return [];
+      }
+
+      const cards = player.holeCards.filter((card): card is string => typeof card === "string");
+      const participantId = typeof player.participantId === "string" ? player.participantId : null;
+      const name = typeof player.displayName === "string"
+        ? player.displayName
+        : participantId
+          ? displayNameForParticipant(viewObject, participantId)
+          : "Player";
+
+      return cards.length === 2 ? [{ name, cards, winner: Boolean(participantId && winnerIds.has(participantId)) }] : [];
+    });
+
+    return players.length >= 2 ? { players } : null;
+  }
+
+  if (hand?.finished !== true) {
+    return null;
+  }
+
+  const handSeats = hand?.seats;
+  if (!Array.isArray(handSeats)) {
+    return null;
+  }
+
+  const winnerIds = readWinnerIdSet(viewObject, hand);
+  const players = handSeats.flatMap((candidate) => {
+    const seat = readObject(candidate);
+    if (!seat || typeof seat.participantId !== "string" || !Array.isArray(seat.holeCards)) {
+      return [];
+    }
+
+    const cards = seat.holeCards.filter((card): card is string => typeof card === "string");
+    if (cards.length !== 2) {
+      return [];
+    }
+
+    return [{
+      name: displayNameForParticipant(viewObject, seat.participantId),
+      cards,
+      winner: winnerIds.has(seat.participantId)
+    }];
+  });
+
+  return players.length >= 2 ? { players } : null;
+}
+
+function readCollectPot(
+  view: unknown,
+  localParticipantId?: string | null,
+  localDisplayName?: string | null
+): null | { winners: Array<{ name: string; slot: number }> } {
+  const viewObject = readObject(view);
+  const hand = readObject(viewObject?.hand);
+  const handResult = readObject(viewObject?.handResult);
+  const source = handResult ?? (hand?.finished === true ? hand : null);
+  const rawWinners = source?.winners;
+  if (!Array.isArray(rawWinners) || rawWinners.length === 0) {
+    return null;
+  }
+
+  const winners = rawWinners.flatMap((winner) => {
+    const participantId = typeof winner === "string" ? winner : typeof readObject(winner)?.participantId === "string" ? readObject(winner)!.participantId as string : null;
+    const displayName = typeof readObject(winner)?.displayName === "string" ? readObject(winner)!.displayName as string : null;
+    if (!participantId && !displayName) {
+      return [];
+    }
+
+    return [{
+      name: displayName ?? (participantId ? displayNameForParticipant(viewObject, participantId) : "Winner"),
+      slot: participantId ? displaySlotForParticipant(viewObject, participantId, localParticipantId, localDisplayName) : 0
+    }];
+  });
+
+  return winners.length > 0 ? { winners } : null;
+}
+
+function readWinnerIdSet(view: Record<string, unknown> | null, hand: Record<string, unknown> | null): Set<string> {
+  const result = new Set<string>();
+  const handResult = readObject(view?.handResult);
+  const source = handResult ?? (hand?.finished === true ? hand : null);
+  const winners = source?.winners;
+  if (!Array.isArray(winners)) {
+    return result;
+  }
+
+  for (const winner of winners) {
+    if (typeof winner === "string") {
+      result.add(winner);
+      continue;
+    }
+
+    const winnerObject = readObject(winner);
+    if (typeof winnerObject?.participantId === "string") {
+      result.add(winnerObject.participantId);
+    }
+  }
+
+  return result;
+}
+
+function isStaleHandResult(result: Record<string, unknown>, hand: Record<string, unknown> | null): boolean {
+  if (!hand || hand.finished === true) {
+    return false;
+  }
+
+  const resultHandNumber = typeof result.handNumber === "number" ? result.handNumber : null;
+  const currentHandNumber = typeof hand.number === "number" ? hand.number : null;
+  return resultHandNumber !== null && currentHandNumber !== null && resultHandNumber !== currentHandNumber;
+}
+
+function displayNameForParticipant(view: Record<string, unknown> | null, participantId: string): string {
+  const handSeats = readObject(view?.hand)?.seats;
+  const handSeat = Array.isArray(handSeats) ? handSeats.map(readObject).find((candidate) => candidate?.participantId === participantId) : null;
+  const seats = view?.seats;
+  if (!Array.isArray(seats)) {
+    return participantId;
+  }
+
+  for (const candidate of seats) {
+    const seat = readObject(candidate);
+    if (seat?.participantId === participantId && typeof seat.displayName === "string") {
+      return seat.displayName;
+    }
+
+    if (typeof handSeat?.seatNumber === "number" && seat?.seatNumber === handSeat.seatNumber && typeof seat.displayName === "string") {
+      return seat.displayName;
+    }
+  }
+
+  if (typeof handSeat?.displayName === "string") {
+    return handSeat.displayName;
+  }
+
+  return participantId;
+}
+
+function displaySlotForParticipant(
+  view: Record<string, unknown> | null,
+  participantId: string,
+  localParticipantId?: string | null,
+  localDisplayName?: string | null
+): number {
+  const handSeats = readObject(view?.hand)?.seats;
+  const seatNumber = Array.isArray(handSeats)
+    ? handSeats.map(readObject).find((seat) => seat?.participantId === participantId)?.seatNumber
+    : null;
+  if (typeof seatNumber !== "number") {
+    return 0;
+  }
+
+  const seats = view?.seats;
+  if (!Array.isArray(seats)) {
+    return 0;
+  }
+
+  const occupied = seats
+    .map(readObject)
+    .filter((seat): seat is Record<string, unknown> => Boolean(seat && typeof seat.seatNumber === "number" && seat.occupied !== false))
+    .sort((left, right) => (left.seatNumber as number) - (right.seatNumber as number));
+  const localIndex = findLocalSeatIndex(occupied, localParticipantId, localDisplayName);
+  const arranged = localIndex === -1 ? occupied : [...occupied.slice(localIndex), ...occupied.slice(0, localIndex)];
+  const index = arranged.findIndex((seat) => seat.seatNumber === seatNumber);
+  const defaultSlotsByCount: Record<number, number[]> = {
+    2: [5, 2],
+    3: [5, 1, 3],
+    4: [5, 6, 2, 4],
+    5: [5, 6, 1, 3, 4],
+    6: [1, 2, 3, 4, 5, 6],
+    7: [1, 2, 3, 4, 5, 6, 7],
+    8: [1, 2, 3, 4, 5, 6, 7, 8],
+    9: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  };
+  const playerSlotsByCount: Record<number, number[]> = {
+    2: [5, 2],
+    3: [5, 1, 3],
+    4: [5, 6, 2, 4],
+    5: [5, 6, 1, 3, 4],
+    6: [5, 6, 1, 2, 3, 4],
+    7: [5, 6, 7, 1, 2, 3, 4],
+    8: [5, 6, 7, 1, 2, 3, 8, 4],
+    9: [5, 6, 7, 1, 2, 8, 3, 4, 9]
+  };
+  const slotsByCount = localIndex === -1 ? defaultSlotsByCount : playerSlotsByCount;
+  return index === -1 ? 0 : (slotsByCount[occupied.length] ?? slotsByCount[9])[index] ?? 0;
+}
+
+function findLocalSeatIndex(
+  seats: Array<Record<string, unknown>>,
+  localParticipantId?: string | null,
+  localDisplayName?: string | null
+): number {
+  if (localParticipantId) {
+    const byParticipant = seats.findIndex((seat) => seat.participantId === localParticipantId);
+    if (byParticipant !== -1) {
+      return byParticipant;
+    }
+  }
+
+  const trimmedName = localDisplayName?.trim();
+  return trimmedName ? seats.findIndex((seat) => seat.displayName === trimmedName) : -1;
 }
 
 function readActorName(view: unknown): string | null {

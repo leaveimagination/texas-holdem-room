@@ -265,10 +265,22 @@ function buildHandFinishedNotice(room: RoomState): unknown {
 
   const pot = hand.betting.players.reduce((sum, player) => sum + player.committed, 0);
   const winnerCount = Math.max(hand.winners.length, 1);
+  const showdownPlayers = hand.betting.players
+    .filter((player) => !player.folded && (hand.holeCardsByParticipantId[player.id]?.length ?? 0) === 2)
+    .map((player) => {
+      const seat = room.seats.find((candidate) => candidate.participantId === player.id);
+      return {
+        participantId: player.id,
+        displayName: displayNameForParticipant(room, player.id),
+        seatNumber: seat?.seatNumber ?? null,
+        holeCards: hand.holeCardsByParticipantId[player.id].map(serializeCard)
+      };
+    });
   return {
     handNumber: hand.number,
     pot,
     board: hand.board.map(serializeCard),
+    ...(showdownPlayers.length >= 2 ? { showdownPlayers } : {}),
     winners: hand.winners.map((participantId) => {
       const seat = room.seats.find((candidate) => candidate.participantId === participantId);
       return {

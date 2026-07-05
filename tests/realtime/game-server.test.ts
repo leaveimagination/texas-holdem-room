@@ -310,6 +310,65 @@ describe("createGameServer", () => {
     expect(room?.hand?.finished).toBe(false);
   });
 
+  it("includes showdown hole cards in the hand finished event before the next hand snapshot", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+
+    const { url } = await startTestServer(liveRooms, validAuth, { recordHand: vi.fn(), recordBuyIn: vi.fn() });
+    const p1Socket = connect(url);
+    const p2Socket = connect(url);
+
+    await Promise.all([waitForOpen(p1Socket), waitForOpen(p2Socket)]);
+
+    const p1Joined = nextMessage(p1Socket);
+    p1Socket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "P1" }));
+    await p1Joined;
+
+    const p1AfterP2Join = nextMessage(p1Socket);
+    const p2Joined = nextMessage(p2Socket);
+    p2Socket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p2-token", displayName: "P2" }));
+    await Promise.all([p1AfterP2Join, p2Joined]);
+
+    const started = nextMessage(p1Socket);
+    p1Socket.send(JSON.stringify({ type: "start_room", roomId, hostToken: "host-token" }));
+    await started;
+
+    const afterAllIn = nextMessages(p1Socket, 2);
+    p1Socket.send(
+      JSON.stringify({
+        type: "player_action",
+        roomId,
+        participantToken: "p1-token",
+        action: { type: "all-in", playerId: "p1" }
+      })
+    );
+    await afterAllIn;
+
+    const showdownMessages = nextMessages(p1Socket, 3);
+    p2Socket.send(
+      JSON.stringify({
+        type: "player_action",
+        roomId,
+        participantToken: "p2-token",
+        action: { type: "call", playerId: "p2" }
+      })
+    );
+
+    const [, handFinished, finishedSnapshot] = await showdownMessages;
+    expect(handFinished).toMatchObject({
+      type: "hand_finished",
+      payload: {
+        showdownPlayers: [
+          { participantId: "p1", displayName: "P1", seatNumber: 1 },
+          { participantId: "p2", displayName: "P2", seatNumber: 2 }
+        ]
+      }
+    });
+    expect(getShowdownCards(handFinished, "p1")).toHaveLength(2);
+    expect(getShowdownCards(handFinished, "p2")).toHaveLength(2);
+    expect(finishedSnapshot).toMatchObject({ type: "room_snapshot", payload: { hand: { number: 1, finished: true } } });
+  });
+
   it("automatically starts the next hand after a busted player rebuys", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createFinishedHeadsUpRoomWithBustedPlayer());
@@ -555,6 +614,27 @@ function getHandSeat(snapshot: unknown, participantId: string): { holeCards?: st
       "participantId" in seat &&
       seat.participantId === participantId
   );
+}
+
+function getShowdownCards(message: unknown, participantId: string): string[] | undefined {
+  if (
+    !message ||
+    typeof message !== "object" ||
+    !("payload" in message) ||
+    !message.payload ||
+    typeof message.payload !== "object" ||
+    !("showdownPlayers" in message.payload) ||
+    !Array.isArray(message.payload.showdownPlayers)
+  ) {
+    return undefined;
+  }
+
+  const player = message.payload.showdownPlayers.find((candidate) => {
+    return typeof candidate === "object" && candidate !== null && "participantId" in candidate && candidate.participantId === participantId;
+  });
+  return typeof player === "object" && player !== null && "holeCards" in player && Array.isArray(player.holeCards)
+    ? player.holeCards.filter((card: unknown): card is string => typeof card === "string")
+    : undefined;
 }
 
 function closeSocket(socket: WebSocket): Promise<void> {

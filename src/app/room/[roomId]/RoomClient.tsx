@@ -16,14 +16,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [hostToken, setHostToken] = useState<string | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
-  const handResult = findLatestPayload(messages, ["hand_finished"]);
-  const tableView = attachHandResult(roomView, handResult);
+  const latestHandResult = findLatestPayload(messages, ["hand_finished"]);
+  const [visibleHandResult, setVisibleHandResult] = useState<unknown>(null);
+  const tableView = attachHandResult(roomView, visibleHandResult);
 
   useEffect(() => {
     setHasParticipantToken(Boolean(getParticipantToken(roomId)));
     setParticipantId(getParticipantId(roomId));
     setHostToken(readHostToken());
   }, [roomId]);
+
+  useEffect(() => {
+    if (!latestHandResult) {
+      return;
+    }
+
+    setVisibleHandResult(latestHandResult);
+    const timeout = window.setTimeout(() => setVisibleHandResult(null), 3600);
+    return () => window.clearTimeout(timeout);
+  }, [latestHandResult]);
 
   useEffect(() => {
     const visibleParticipantId = readVisibleParticipantId(roomView);
