@@ -163,6 +163,9 @@ describe("PokerTable", () => {
     expect(html).toContain("All-in insurance");
     expect(html).toContain("88.9%");
     expect(html).toContain("Coverage");
+    expect(html).toContain("Pay 1.2 BB now");
+    expect(html).toContain("If you get outdrawn");
+    expect(html).toContain("If you still win");
     expect(html).toContain("Buy insurance");
     expect(html).toContain("Run it");
   });

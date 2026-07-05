@@ -33,30 +33,42 @@ export function SeatRing({
 }) {
   const seats = readSeats(view);
   const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(9), localParticipantId, localDisplayName);
+  const winnerIds = readWinnerIds(view);
 
   return (
     <div className="seat-ring" aria-label="Seats">
-      {displaySeats.map(({ seat, slot, local }) => (
-        <button
-          type="button"
-          className={[
-            "seat",
-            `seat-slot-${slot}`,
-            seat.occupied ? "is-occupied" : "",
-            seat.occupied ? "" : "is-empty-seat",
-            seat.isActing ? "is-acting" : "",
-            local ? "is-local-seat" : ""
-          ].filter(Boolean).join(" ")}
-          key={seat.seatNumber}
-          onClick={() => {
-            if (!seat.occupied && canClaimSeat) {
-              onClaimSeat?.(seat.seatNumber);
-            }
-          }}
-          aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
-          disabled={seat.occupied || !canClaimSeat}
-        >
-          {local ? (
+      {displaySeats.map(({ seat, slot, local }) => {
+        const allInAction = isAllInAction(seat.recentAction);
+        const isWinner = Boolean(seat.participantId && winnerIds.has(seat.participantId));
+        const seatClassName = [
+          "seat",
+          `seat-slot-${slot}`,
+          seat.occupied ? "is-occupied" : "",
+          seat.occupied ? "" : "is-empty-seat",
+          seat.isActing ? "is-acting" : "",
+          isWinner ? "is-pot-winner" : "",
+          local ? "is-local-seat" : ""
+        ].filter(Boolean).join(" ");
+        const panelStatus = allInAction ? (
+          <span className="seat-last-action is-all-in-action-label seat-status-strip">
+            {seat.recentAction}
+          </span>
+        ) : null;
+
+        return (
+          <button
+            type="button"
+            className={seatClassName}
+            key={seat.seatNumber}
+            onClick={() => {
+              if (!seat.occupied && canClaimSeat) {
+                onClaimSeat?.(seat.seatNumber);
+              }
+            }}
+            aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
+            disabled={seat.occupied || !canClaimSeat}
+          >
+            {local ? (
               <span className="hero-seat-cluster">
                 <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
               <span className="seat-panel seat-nameplate">
@@ -65,6 +77,7 @@ export function SeatRing({
                 <strong>{seat.displayName ?? "Open"}</strong>
                 <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
                 <small>{seat.status}</small>
+                {panelStatus}
               </span>
               <span className="hero-hole-cards">
                 {seat.holeCards.length > 0 ? (
@@ -90,16 +103,22 @@ export function SeatRing({
                 <strong>{seat.displayName ?? "Open"}</strong>
                 <span className="seat-stack">{seat.occupied ? formatBb(seat.chips, bigBlind) : "Available"}</span>
                 <small>{seat.status}</small>
+                {panelStatus}
               </span>
             </>
           )}
-          {seat.streetCommitted > 0 ? (
-            <span className="seat-bet">
-              <span className="chip-stack" aria-hidden="true" />
-              <span>{formatBb(seat.streetCommitted, bigBlind)}</span>
+          {isWinner ? (
+            <span className="winner-smile-badge" aria-label={`${seat.displayName ?? `Seat ${seat.seatNumber}`} collected the pot`}>
+              :)
             </span>
           ) : null}
-          {seat.recentAction ? (
+          {seat.streetCommitted > 0 ? (
+            <span className="seat-bet">
+              <span className="chip-tower" style={{ "--chip-layers": chipTowerLayers(seat.streetCommitted, bigBlind) } as React.CSSProperties} aria-hidden="true" />
+              <span className="seat-bet-amount">{formatBb(seat.streetCommitted, bigBlind)}</span>
+            </span>
+          ) : null}
+          {seat.recentAction && !allInAction ? (
             <span className={["seat-last-action", seat.recentAction.startsWith("All in") ? "is-all-in-action-label" : ""].filter(Boolean).join(" ")}>
               {seat.recentAction}
             </span>
@@ -122,7 +141,8 @@ export function SeatRing({
           )}
           {seat.isActing ? <span className="seat-timer" aria-hidden="true" /> : null}
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -137,6 +157,28 @@ function formatBb(amount: number, bigBlind?: number | null): string {
   const value = amount / blind;
   const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
   return `${rounded} BB`;
+}
+
+function chipTowerLayers(amount: number, bigBlind?: number | null): number {
+  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
+  const bb = amount / blind;
+  if (bb >= 10) {
+    return 5;
+  }
+  if (bb >= 5) {
+    return 4;
+  }
+  if (bb >= 2.5) {
+    return 3;
+  }
+  if (bb >= 1) {
+    return 2;
+  }
+  return 1;
+}
+
+function isAllInAction(action: string | null): boolean {
+  return Boolean(action?.startsWith("All in"));
 }
 
 function readSeats(view: unknown): SeatView[] {
@@ -281,6 +323,42 @@ function readRecentActionBySeat(view: unknown): Map<number, string> {
     result.set(seat.seatNumber, formatRecentAction(type, amount, readBigBlind(view)));
   }
   return result;
+}
+
+function readWinnerIds(view: unknown): Set<string> {
+  const result = new Set<string>();
+  const viewObject = readObject(view);
+  const hand = readObject(viewObject?.hand);
+  const handResult = readObject(viewObject?.handResult);
+  const source = handResult && !isStaleHandResult(handResult, hand) ? handResult : hand?.finished === true ? hand : null;
+  const winners = source?.winners;
+  if (!Array.isArray(winners)) {
+    return result;
+  }
+
+  for (const winner of winners) {
+    if (typeof winner === "string") {
+      result.add(winner);
+      continue;
+    }
+
+    const winnerObject = readObject(winner);
+    if (typeof winnerObject?.participantId === "string") {
+      result.add(winnerObject.participantId);
+    }
+  }
+
+  return result;
+}
+
+function isStaleHandResult(result: Record<string, unknown>, hand: Record<string, unknown> | null): boolean {
+  if (!hand || hand.finished === true) {
+    return false;
+  }
+
+  const resultHandNumber = typeof result.handNumber === "number" ? result.handNumber : null;
+  const currentHandNumber = typeof hand.number === "number" ? hand.number : null;
+  return resultHandNumber !== null && currentHandNumber !== null && resultHandNumber !== currentHandNumber;
 }
 
 function formatRecentAction(type: string, amount: number | null, bigBlind?: number | null): string {

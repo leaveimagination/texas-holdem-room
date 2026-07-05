@@ -704,6 +704,7 @@ main {
 .poker-client-shell .seat-bet {
   left: 52%;
   bottom: -42px;
+  z-index: 7;
   transform: translateX(-50%);
   border: 0;
   display: inline-flex;
@@ -713,6 +714,12 @@ main {
     linear-gradient(180deg, rgba(3, 22, 12, 0.88), rgba(0, 0, 0, 0.58));
   color: #fff;
   text-shadow: 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.poker-client-shell .seat-bet-amount {
+  position: relative;
+  z-index: 2;
+  white-space: nowrap;
 }
 
 .poker-client-shell .seat-last-action {
@@ -738,30 +745,36 @@ main {
 }
 
 .poker-client-shell .seat-last-action.is-all-in-action-label {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  width: fit-content;
+  min-width: 0;
+  margin-block-start: 4px;
+  transform: none;
   border-color: rgba(255, 217, 120, 0.9);
+  border-radius: 4px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 32%),
     linear-gradient(180deg, #ff4f53, #9b0f1a 58%, #320407);
   color: #fff7e8;
+  padding: 3px 7px;
+  font-size: 0.62rem;
+  line-height: 1;
   box-shadow:
     0 0 0 1px rgba(255, 217, 120, 0.32),
-    0 0 24px rgba(255, 65, 72, 0.72),
-    0 16px 30px rgba(0, 0, 0, 0.48);
-  animation: all-in-pop 760ms cubic-bezier(0.18, 0.9, 0.18, 1.08) both, all-in-pulse 1.6s ease-in-out 760ms infinite;
+    0 0 12px rgba(255, 65, 72, 0.36);
+  animation: all-in-strip-pop 1s ease-out both;
 }
 
 .poker-client-shell .seat-last-action.is-all-in-action-label::after {
-  content: "";
-  position: absolute;
-  inset: -12px -18px;
-  border: 2px solid rgba(255, 217, 120, 0.76);
-  border-radius: 999px;
-  pointer-events: none;
-  animation: all-in-shockwave 760ms ease-out both;
+  content: none;
 }
 
 .poker-client-shell .seat:has(.is-all-in-action-label) .seat-panel {
-  animation: all-in-seat-flash 900ms ease-out both;
+  animation: all-in-seat-flash 1s ease-out both;
 }
 
 .poker-client-shell .seat.is-acting .seat-panel {
@@ -795,6 +808,70 @@ main {
   box-shadow:
     5px 2px 0 -3px #c9d2cc,
     0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.poker-client-shell .chip-tower {
+  --chip-layers: 1;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: 20px;
+  height: calc(11px + (var(--chip-layers) * 3px));
+  min-height: 14px;
+  border-radius: 999px 999px 5px 5px;
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(255, 255, 255, 0.76) 0 28%, transparent 30%),
+    repeating-linear-gradient(
+      to top,
+      #cfd8d2 0 3px,
+      #8e9993 3px 5px,
+      #f1c45f 5px 6px
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+    0 5px 10px rgba(0, 0, 0, 0.42);
+  animation: chip-tower-pop 1s ease-out both;
+}
+
+.poker-client-shell .chip-tower::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: -3px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.36);
+  filter: blur(1px);
+}
+
+.poker-client-shell .seat.is-pot-winner .seat-panel {
+  animation: winner-seat-glow 3s ease-out both;
+}
+
+.poker-client-shell .winner-smile-badge {
+  position: absolute;
+  left: 36px;
+  top: -12px;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid rgba(255, 247, 210, 0.86);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.7), transparent 24%),
+    linear-gradient(180deg, #ffe28a, #d79b24 62%, #71450d);
+  color: #231403;
+  font-size: 0.78rem;
+  font-weight: 1000;
+  box-shadow:
+    0 0 0 2px rgba(241, 196, 95, 0.22),
+    0 0 22px rgba(241, 196, 95, 0.54),
+    0 12px 20px rgba(0, 0, 0, 0.44);
+  pointer-events: none;
+  animation: winner-smile-pop 3s ease-out both;
 }
 
 .poker-client-shell .seat.is-local-seat {
@@ -1518,6 +1595,22 @@ main {
 .poker-client-shell .insurance-terms strong {
   color: #54b8ff;
   font-size: 0.98rem;
+}
+
+.poker-client-shell .insurance-explainer {
+  display: grid;
+  gap: 6px;
+  color: rgba(255, 247, 232, 0.82);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.32;
+}
+
+.poker-client-shell .insurance-explainer span {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 7px 9px;
 }
 
 .poker-client-shell .insurance-actions {
@@ -2500,6 +2593,84 @@ main {
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes chip-tower-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scaleY(0.58);
+    transform-origin: bottom;
+  }
+  48% {
+    opacity: 1;
+    transform: translateY(-2px) scaleY(1.08);
+    transform-origin: bottom;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+@keyframes all-in-strip-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.92);
+    filter: brightness(1.25);
+  }
+  34% {
+    opacity: 1;
+    transform: translateX(0) scale(1.04);
+    filter: brightness(1.2);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes winner-smile-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.72) rotate(-8deg);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.12) rotate(4deg);
+  }
+  76% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92) rotate(0);
+  }
+}
+
+@keyframes winner-seat-glow {
+  0% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.7),
+      0 12px 22px rgba(0, 0, 0, 0.52);
+  }
+  18%, 62% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.7),
+      0 0 0 2px rgba(255, 217, 120, 0.38),
+      0 0 24px rgba(241, 196, 95, 0.42),
+      0 12px 22px rgba(0, 0, 0, 0.52);
+  }
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.7),
+      0 12px 22px rgba(0, 0, 0, 0.52);
   }
 }
 

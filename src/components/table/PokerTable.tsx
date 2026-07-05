@@ -158,12 +158,16 @@ function InsurancePanel({
         <div className="insurance-copy">
           <span>All-in insurance</span>
           <strong>{formatPercent(offer.equityPct)} to hold</strong>
-          <p>{canDecide ? "Protect this all-in before the river is dealt." : "Waiting for the favorite to choose insurance."}</p>
+          <p>{canDecide ? `Pay ${formatBb(offer.premium, bigBlind)} now to protect this all-in before the river is dealt.` : "Waiting for the favorite to choose insurance."}</p>
         </div>
         <div className="insurance-terms" aria-label="Insurance terms">
           <span><small>Pot</small><strong>{formatBb(offer.potAmount, bigBlind)}</strong></span>
           <span><small>Coverage</small><strong>{formatBb(offer.coverage, bigBlind)}</strong></span>
           <span><small>Premium</small><strong>{formatBb(offer.premium, bigBlind)}</strong></span>
+        </div>
+        <div className="insurance-explainer">
+          <span>If you get outdrawn, receive {formatBb(offer.coverage, bigBlind)} compensation.</span>
+          <span>If you still win, collect the pot and pay the {formatBb(offer.premium, bigBlind)} premium.</span>
         </div>
         <div className="insurance-actions">
           <button type="button" onClick={() => onDecision?.(true)} disabled={!canDecide}>Buy insurance</button>

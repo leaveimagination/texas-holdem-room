@@ -220,7 +220,59 @@ describe("SeatRing", () => {
 
     expect(html).toContain("seat-last-action");
     expect(html).toContain("is-all-in-action-label");
+    expect(html).toContain("seat-status-strip");
     expect(html).toContain("All in 100 BB");
+  });
+
+  it("renders committed chips with a non-overlapping animated chip tower", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        bigBlind: 20,
+        view: {
+          seats: [
+            { seatNumber: 1, participantId: "p1", displayName: "Alice", chips: 800, status: "active", occupied: true }
+          ],
+          hand: {
+            seats: [
+              { seatNumber: 1, participantId: "p1", streetCommitted: 200 }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("seat-bet");
+    expect(html).toContain("chip-tower");
+    expect(html).toContain("--chip-layers:5");
+    expect(html).toContain("10 BB");
+  });
+
+  it("marks winner seats with a short smile collect-pot feedback", () => {
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        bigBlind: 20,
+        view: {
+          seats: [
+            { seatNumber: 1, participantId: "p1", displayName: "Alice", chips: 1120, status: "active", occupied: true },
+            { seatNumber: 2, participantId: "p2", displayName: "Bob", chips: 880, status: "all-in", occupied: true }
+          ],
+          handResult: {
+            handNumber: 1,
+            pot: 120,
+            winners: [{ participantId: "p1", displayName: "Alice" }]
+          },
+          hand: {
+            number: 1,
+            finished: true,
+            winners: ["p1"]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("is-pot-winner");
+    expect(html).toContain("winner-smile-badge");
+    expect(html).toContain("aria-label=\"Alice collected the pot\"");
   });
 
   it("supports a nine-handed table while keeping the local player bottom-center", () => {
