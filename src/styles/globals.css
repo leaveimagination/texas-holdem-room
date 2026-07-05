@@ -764,71 +764,15 @@ main {
   animation: all-in-seat-flash 900ms ease-out both;
 }
 
-.poker-client-shell .seat-action-ring {
-  position: absolute;
-  inset: -12px -14px;
-  z-index: 0;
-  border: 2px solid rgba(255, 209, 95, 0.52);
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at 20% 48%, rgba(255, 226, 138, 0.42), transparent 30%),
-    radial-gradient(ellipse at 52% 50%, rgba(255, 209, 95, 0.2), transparent 62%);
-  box-shadow:
-    0 0 0 2px rgba(255, 209, 95, 0.18),
-    0 0 34px rgba(255, 209, 95, 0.62),
-    0 18px 38px rgba(0, 0, 0, 0.48);
-  opacity: 1;
-  pointer-events: none;
-  animation: to-act-ring-pulse 1.1s ease-in-out infinite;
-}
-
-.poker-client-shell .seat-to-act-label {
-  position: absolute;
-  left: 50%;
-  top: -48px;
-  z-index: 10;
-  transform: translateX(-50%);
-  min-width: 78px;
-  border: 1px solid rgba(255, 237, 168, 0.84);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 34%),
-    linear-gradient(180deg, #ffe28a, #d59625 58%, #71450d);
-  color: #1a1002;
-  padding: 5px 10px;
-  font-size: 0.68rem;
-  font-weight: 1000;
-  letter-spacing: 0;
-  text-align: center;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(255, 209, 95, 0.28),
-    0 0 22px rgba(255, 209, 95, 0.62),
-    0 14px 26px rgba(0, 0, 0, 0.42);
-  pointer-events: none;
-  animation: to-act-label-pop 360ms ease-out both, to-act-label-pulse 1.1s ease-in-out 360ms infinite;
-}
-
-.poker-client-shell .seat-to-act-label::after {
-  content: "";
-  position: absolute;
-  inset: -8px -14px;
-  border: 2px solid rgba(255, 226, 138, 0.72);
-  border-radius: 999px;
-  pointer-events: none;
-  animation: to-act-ring-pulse 1.1s ease-out infinite;
-}
-
 .poker-client-shell .seat.is-acting .seat-panel {
   background:
-    linear-gradient(90deg, rgba(255, 209, 95, 0.28), transparent 40%),
+    linear-gradient(90deg, rgba(255, 209, 95, 0.16), transparent 42%),
     linear-gradient(180deg, rgba(35, 31, 26, 0.98), rgba(5, 5, 8, 0.98));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 4px 0 0 rgba(255, 209, 95, 0.86),
-    0 0 24px rgba(255, 209, 95, 0.32),
+    inset 4px 0 0 rgba(255, 209, 95, 0.66),
+    0 0 18px rgba(255, 209, 95, 0.18),
     0 14px 26px rgba(0, 0, 0, 0.58);
-  animation: to-act-panel-glow 1.1s ease-in-out infinite;
 }
 
 .poker-client-shell .seat.is-acting .seat-avatar {
@@ -2501,71 +2445,6 @@ main {
   }
 }
 
-@keyframes to-act-label-pop {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@keyframes to-act-label-pulse {
-  0%, 100% {
-    filter: brightness(1);
-    box-shadow:
-      0 0 0 1px rgba(255, 209, 95, 0.28),
-      0 0 18px rgba(255, 209, 95, 0.52),
-      0 14px 26px rgba(0, 0, 0, 0.42);
-  }
-  50% {
-    filter: brightness(1.16);
-    box-shadow:
-      0 0 0 2px rgba(255, 226, 138, 0.36),
-      0 0 30px rgba(255, 209, 95, 0.82),
-      0 16px 30px rgba(0, 0, 0, 0.48);
-  }
-}
-
-@keyframes to-act-ring-pulse {
-  0%, 100% {
-    opacity: 0.68;
-    transform: scale(0.98);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.03);
-  }
-}
-
-@keyframes to-act-panel-glow {
-  0%, 100% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      inset 4px 0 0 rgba(255, 209, 95, 0.74),
-      0 0 16px rgba(255, 209, 95, 0.22),
-      0 14px 26px rgba(0, 0, 0, 0.58);
-  }
-  50% {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      inset 4px 0 0 rgba(255, 226, 138, 0.98),
-      0 0 32px rgba(255, 209, 95, 0.42),
-      0 16px 30px rgba(0, 0, 0, 0.62);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .poker-client-shell .seat-action-ring,
-  .poker-client-shell .seat-to-act-label,
-  .poker-client-shell .seat-to-act-label::after,
-  .poker-client-shell .seat.is-acting .seat-panel {
-    animation: none;
-  }
-}
-
 @keyframes breathe {
   0%, 100% {
     opacity: 0.7;
@@ -2948,17 +2827,6 @@ main {
 
   .poker-client-shell .seat.is-local-seat .hero-hole-cards {
     top: -48px;
-  }
-
-  .poker-client-shell .seat-to-act-label {
-    top: -36px;
-    min-width: 66px;
-    padding: 4px 8px;
-    font-size: 0.6rem;
-  }
-
-  .poker-client-shell .seat.is-local-seat .seat-to-act-label {
-    top: -112px;
   }
 
   .poker-client-shell .seat.is-local-seat .seat-last-action {

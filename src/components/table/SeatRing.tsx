@@ -56,8 +56,6 @@ export function SeatRing({
           aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
           disabled={seat.occupied || !canClaimSeat}
         >
-          {seat.isActing ? <span className="seat-action-ring is-subtle" aria-hidden="true" /> : null}
-          {seat.isActing ? <span className="seat-to-act-label" aria-hidden="true">TO ACT</span> : null}
           {local ? (
               <span className="hero-seat-cluster">
                 <span className="seat-avatar" aria-hidden="true">{avatarInitial(seat.displayName, seat.seatNumber)}</span>
