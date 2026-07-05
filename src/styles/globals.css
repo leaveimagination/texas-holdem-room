@@ -957,7 +957,7 @@ main {
 
 .poker-client-shell .seat-slot-2 {
   left: 31%;
-  top: 2%;
+  top: -2%;
 }
 
 .poker-client-shell .seat-slot-3 {
@@ -992,13 +992,14 @@ main {
 
 .poker-client-shell .seat-slot-8 {
   left: 56%;
-  top: 2%;
+  top: -2%;
 }
 
 .poker-client-shell .seat-slot-2 .seat-last-action,
 .poker-client-shell .seat-slot-8 .seat-last-action {
-  top: auto;
-  bottom: -34px;
+  top: 8px;
+  bottom: auto;
+  z-index: 10;
 }
 
 .poker-client-shell .seat-slot-9 {

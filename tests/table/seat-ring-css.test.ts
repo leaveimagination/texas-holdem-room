@@ -78,18 +78,19 @@ describe("SeatRing CSS", () => {
     expect(css).toContain("@keyframes deal-card-from-deck");
   });
 
-  it("keeps the upper seats and their action labels inside the visible table area", () => {
+  it("keeps the upper seats natural while pinning their action labels to the nameplate", () => {
     const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
 
     const topLeftSeatRule = css.match(/\.poker-client-shell \.seat-slot-2\s*{[^}]*}/s)?.[0] ?? "";
     const topRightSeatRule = css.match(/\.poker-client-shell \.seat-slot-8\s*{[^}]*}/s)?.[0] ?? "";
     const topActionRule = css.match(/\.poker-client-shell \.seat-slot-2 \.seat-last-action,\s*\.poker-client-shell \.seat-slot-8 \.seat-last-action\s*{[^}]*}/s)?.[0] ?? "";
 
-    expect(topLeftSeatRule).toContain("top: 2%");
-    expect(topRightSeatRule).toContain("top: 2%");
+    expect(topLeftSeatRule).toContain("top: -2%");
+    expect(topRightSeatRule).toContain("top: -2%");
     expect(topLeftSeatRule).not.toContain("top: -8%");
     expect(topRightSeatRule).not.toContain("top: -8%");
-    expect(topActionRule).toContain("top: auto");
-    expect(topActionRule).toContain("bottom: -34px");
+    expect(topActionRule).toContain("top: 8px");
+    expect(topActionRule).toContain("bottom: auto");
+    expect(topActionRule).not.toContain("bottom: -34px");
   });
 });
