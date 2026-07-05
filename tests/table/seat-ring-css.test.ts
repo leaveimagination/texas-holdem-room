@@ -103,4 +103,20 @@ describe("SeatRing CSS", () => {
     expect(dealerRule).toContain("animation: dealer-button-pop");
     expect(css).toContain("@keyframes dealer-button-pop");
   });
+
+  it("places the dealer button on the felt toward table center instead of on the nameplate edge", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    const topDealerRule = css.match(/\.poker-client-shell \.seat-slot-1 \.dealer-button,\n\.poker-client-shell \.seat-slot-2 \.dealer-button,\n\.poker-client-shell \.seat-slot-3 \.dealer-button,\n\.poker-client-shell \.seat-slot-8 \.dealer-button\s*{[^}]*}/s)?.[0] ?? "";
+    const leftDealerRule = css.match(/\.poker-client-shell \.seat-slot-6 \.dealer-button,\n\.poker-client-shell \.seat-slot-7 \.dealer-button\s*{[^}]*}/s)?.[0] ?? "";
+    const rightDealerRule = css.match(/\.poker-client-shell \.seat-slot-4 \.dealer-button,\n\.poker-client-shell \.seat-slot-9 \.dealer-button\s*{[^}]*}/s)?.[0] ?? "";
+    const localDealerRule = css.match(/\.poker-client-shell \.seat\.is-local-seat \.dealer-button\s*{[^}]*}/s)?.[0] ?? "";
+
+    expect(topDealerRule).toContain("top: calc(100% + 12px)");
+    expect(leftDealerRule).toContain("left: calc(100% + 12px)");
+    expect(rightDealerRule).toContain("right: calc(100% + 12px)");
+    expect(localDealerRule).toContain("top: -48px");
+    expect(localDealerRule).toContain("left: calc(50% + 106px)");
+    expect(localDealerRule).not.toContain("bottom: 36px");
+  });
 });
