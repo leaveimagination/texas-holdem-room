@@ -34,12 +34,14 @@ export function SeatRing({
   const seats = readSeats(view);
   const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(9), localParticipantId, localDisplayName);
   const winnerIds = readWinnerIds(view);
+  const dealIndexBySeat = readDealIndexBySeat(displaySeats.map(({ seat }) => seat));
 
   return (
     <div className="seat-ring" aria-label="Seats">
       {displaySeats.map(({ seat, slot, local }) => {
         const allInAction = isAllInAction(seat.recentAction);
         const isWinner = Boolean(seat.participantId && winnerIds.has(seat.participantId));
+        const seatDealIndex = dealIndexBySeat.get(seat.seatNumber) ?? 0;
         const seatClassName = [
           "seat",
           `seat-slot-${slot}`,
@@ -83,13 +85,13 @@ export function SeatRing({
                 {seat.holeCards.length > 0 ? (
                   <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
                     {seat.holeCards.map((card, index) => (
-                      <PlayingCard card={card} variant="hero" dealIndex={index} key={card} />
+                      <PlayingCard card={card} variant="hero" dealIndex={seatDealIndex + index} key={card} />
                     ))}
                   </span>
                 ) : seat.occupied ? (
                   <span className="card-back-row" aria-hidden="true">
-                    <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
-                    <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
+                    <span className="card-back is-dealing" style={{ "--deal-index": seatDealIndex } as React.CSSProperties} />
+                    <span className="card-back is-dealing" style={{ "--deal-index": seatDealIndex + 1 } as React.CSSProperties} />
                   </span>
                 ) : null}
               </span>
@@ -128,13 +130,13 @@ export function SeatRing({
               {seat.holeCards.length > 0 ? (
                 <span className="hole-card-row" aria-label={`Seat ${seat.seatNumber} hole cards`}>
                   {seat.holeCards.map((card, index) => (
-                    <PlayingCard card={card} variant="mini" dealIndex={index} key={card} />
+                    <PlayingCard card={card} variant="mini" dealIndex={seatDealIndex + index} key={card} />
                   ))}
                 </span>
               ) : seat.occupied ? (
                 <span className="card-back-row" aria-hidden="true">
-                  <span className="card-back is-dealing" style={{ "--deal-index": 0 } as React.CSSProperties} />
-                  <span className="card-back is-dealing" style={{ "--deal-index": 1 } as React.CSSProperties} />
+                  <span className="card-back is-dealing" style={{ "--deal-index": seatDealIndex } as React.CSSProperties} />
+                  <span className="card-back is-dealing" style={{ "--deal-index": seatDealIndex + 1 } as React.CSSProperties} />
                 </span>
               ) : null}
             </span>
@@ -145,6 +147,15 @@ export function SeatRing({
       })}
     </div>
   );
+}
+
+function readDealIndexBySeat(seats: SeatView[]): Map<number, number> {
+  const result = new Map<number, number>();
+  const occupiedSeats = seats.filter((seat) => seat.occupied);
+  occupiedSeats.forEach((seat, index) => {
+    result.set(seat.seatNumber, index * 2);
+  });
+  return result;
 }
 
 function avatarInitial(displayName: string | null, seatNumber: number): string {

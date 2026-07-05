@@ -2218,6 +2218,26 @@ main {
   animation-delay: calc(var(--deal-index, 0) * var(--card-deal-stagger));
 }
 
+.poker-client-shell .deal-sequence .poker-card.is-dealing {
+  --deal-from-x: 0px;
+  --deal-from-y: -42px;
+  animation:
+    deal-card-from-deck var(--card-deal-duration) cubic-bezier(0.18, 0.9, 0.22, 1.08) both,
+    card-glint 2600ms ease-in-out none;
+  animation-delay: calc(var(--deal-index, 0) * var(--card-deal-stagger)), calc((var(--deal-index, 0) * var(--card-deal-stagger)) + 520ms);
+  transform-origin: 50% 72%;
+  will-change: transform, opacity, filter;
+}
+
+.poker-client-shell .deal-sequence .card-back.is-dealing {
+  --deal-from-x: 0px;
+  --deal-from-y: -42px;
+  animation: deal-card-from-deck var(--card-deal-duration) cubic-bezier(0.18, 0.9, 0.22, 1.08) both;
+  animation-delay: calc(var(--deal-index, 0) * var(--card-deal-stagger));
+  transform-origin: 50% 72%;
+  will-change: transform, opacity, filter;
+}
+
 .action-dock {
   border: 1px solid rgba(241, 196, 95, 0.18);
   border-radius: 8px;
@@ -2557,6 +2577,29 @@ main {
     opacity: 1;
     transform: translate3d(4px, 5px, 0) rotate(2deg) scale(1.04);
     filter: blur(0) brightness(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    filter: blur(0) brightness(1);
+  }
+}
+
+@keyframes deal-card-from-deck {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--deal-from-x, 0px), var(--deal-from-y, -42px), 0) rotate(-10deg) scale(0.62);
+    filter: blur(1.2px) brightness(1.18);
+  }
+  54% {
+    opacity: 1;
+    transform: translate3d(calc(var(--deal-from-x, 0px) * 0.18), calc(var(--deal-from-y, -42px) * 0.12), 0) rotate(3deg) scale(1.06);
+    filter: blur(0) brightness(1.08);
+  }
+  78% {
+    opacity: 1;
+    transform: translate3d(0, 3px, 0) rotate(-1deg) scale(0.99);
+    filter: blur(0) brightness(1.03);
   }
   100% {
     opacity: 1;

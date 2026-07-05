@@ -54,6 +54,40 @@ describe("PokerTable", () => {
     expect(html).not.toContain("<h2>Table</h2>");
   });
 
+  it("marks each live hand as a deal sequence so a new hand can replay card motion", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 2000, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 2000, status: "active", occupied: true }
+          ],
+          hand: {
+            number: 12,
+            pot: 30,
+            board: ["Ac", "Kd", "7h"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "6s"] },
+              { seatNumber: 2, participantId: "p2" }
+            ]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("deal-sequence");
+    expect(html).toContain("data-hand-number=\"12\"");
+    expect(html).toContain("style=\"--board-deal-offset:4\"");
+    expect(html).toContain("style=\"--deal-index:4\"");
+    expect(html).toContain("style=\"--deal-index:5\"");
+    expect(html).toContain("style=\"--deal-index:6\"");
+  });
+
   it("keeps the table center quiet before cards are dealt", () => {
     const html = renderToStaticMarkup(
       createElement(PokerTable, {

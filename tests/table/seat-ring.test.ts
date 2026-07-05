@@ -314,4 +314,39 @@ describe("SeatRing", () => {
     expect(html).toMatch(/seat-slot-4[\s\S]*Seat 7/);
     expect(html).toMatch(/seat-slot-9[\s\S]*Seat 8/);
   });
+
+  it("stagger-deals occupied seats one card at a time around the table", () => {
+    const seats = Array.from({ length: 6 }, (_, index) => ({
+      seatNumber: index + 1,
+      participantId: `p${index + 1}`,
+      displayName: index === 0 ? "Hero" : `P${index + 1}`,
+      chips: 1000,
+      status: "active",
+      occupied: true
+    }));
+
+    const html = renderToStaticMarkup(
+      createElement(SeatRing, {
+        localParticipantId: "p1",
+        view: {
+          seats,
+          hand: {
+            number: 3,
+            seats: seats.map((seat) => ({
+              seatNumber: seat.seatNumber,
+              participantId: seat.participantId,
+              ...(seat.participantId === "p1" ? { holeCards: ["As", "Ah"] } : {})
+            }))
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("style=\"--deal-index:0\"");
+    expect(html).toContain("style=\"--deal-index:1\"");
+    expect(html).toContain("style=\"--deal-index:2\"");
+    expect(html).toContain("style=\"--deal-index:3\"");
+    expect(html).toContain("style=\"--deal-index:10\"");
+    expect(html).toContain("style=\"--deal-index:11\"");
+  });
 });

@@ -67,4 +67,14 @@ describe("SeatRing CSS", () => {
     expect(css).toContain("animation: winner-smile-pop 3s");
     expect(css).toContain("animation: winner-seat-glow 3s");
   });
+
+  it("deals cards from a central deck with staggered one-by-one motion", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    expect(css).toContain(".poker-client-shell .deal-sequence .poker-card.is-dealing");
+    expect(css).toContain(".poker-client-shell .deal-sequence .card-back.is-dealing");
+    expect(css).toContain("animation: deal-card-from-deck");
+    expect(css).toContain("translate3d(var(--deal-from-x, 0px), var(--deal-from-y, -42px), 0)");
+    expect(css).toContain("@keyframes deal-card-from-deck");
+  });
 });

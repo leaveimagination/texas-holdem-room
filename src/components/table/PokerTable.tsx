@@ -39,6 +39,8 @@ export function PokerTable({
 }) {
   const board = readBoard(view);
   const pot = readPot(view);
+  const handNumber = readHandNumber(view);
+  const boardDealOffset = readBoardDealOffset(view);
   const currentBet = readCurrentBet(view);
   const settings = readSettings(view);
   const tableStatus = readTableStatus(view);
@@ -64,7 +66,10 @@ export function PokerTable({
         <span>{settings.bigBlind ? "BB view" : "Virtual chips"}</span>
       </div>
 
-      <div className="felt-stage">
+      <div
+        className={["felt-stage", handNumber ? "deal-sequence" : ""].filter(Boolean).join(" ")}
+        data-hand-number={handNumber ?? undefined}
+      >
         <SeatRing
           view={view}
           localParticipantId={localParticipantId}
@@ -88,8 +93,12 @@ export function PokerTable({
             </div>
           ) : null}
           {board.length > 0 ? (
-            <div className="board is-featured-board" aria-label="Board">
-              {board.map((card, index) => <PlayingCard card={card} dealIndex={index} key={`${card}-${index}`} />)}
+            <div
+              className="board is-featured-board"
+              aria-label="Board"
+              style={{ "--board-deal-offset": boardDealOffset } as React.CSSProperties}
+            >
+              {board.map((card, index) => <PlayingCard card={card} dealIndex={boardDealOffset + index} key={`${handNumber ?? "hand"}-${card}-${index}`} />)}
             </div>
           ) : null}
           {actorId ? <p className="actor-callout is-live">{actorName ?? "Player"} to act</p> : null}
@@ -220,6 +229,24 @@ function readBoard(view: unknown): string[] {
   const board = hand?.board;
 
   return Array.isArray(board) ? board.filter((card): card is string => typeof card === "string") : [];
+}
+
+function readHandNumber(view: unknown): number | null {
+  const hand = readObject(readObject(view)?.hand);
+  return typeof hand?.number === "number" ? hand.number : null;
+}
+
+function readBoardDealOffset(view: unknown): number {
+  const hand = readObject(readObject(view)?.hand);
+  const handSeats = hand?.seats;
+  if (!Array.isArray(handSeats)) {
+    return 0;
+  }
+
+  return handSeats
+    .map(readObject)
+    .filter((seat) => typeof seat?.seatNumber === "number" && typeof seat?.participantId === "string")
+    .length * 2;
 }
 
 function readCurrentBet(view: unknown): number {
