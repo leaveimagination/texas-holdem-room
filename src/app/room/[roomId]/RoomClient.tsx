@@ -301,7 +301,7 @@ function getParticipantId(roomId: string): string | null {
   return window.localStorage.getItem(`holdem:${roomId}:participantId`);
 }
 
-function readVisibleParticipantId(view: unknown): string | null {
+export function readVisibleParticipantId(view: unknown): string | null {
   if (typeof view !== "object" || view === null || !("hand" in view)) {
     return null;
   }
@@ -311,7 +311,7 @@ function readVisibleParticipantId(view: unknown): string | null {
     return null;
   }
 
-  const visibleSeat = (hand as { seats: unknown[] }).seats.find((seat) => {
+  const visibleSeats = (hand as { seats: unknown[] }).seats.filter((seat) => {
     return (
       typeof seat === "object" &&
       seat !== null &&
@@ -321,6 +321,11 @@ function readVisibleParticipantId(view: unknown): string | null {
     );
   });
 
+  if (visibleSeats.length !== 1) {
+    return null;
+  }
+
+  const visibleSeat = visibleSeats[0];
   if (typeof visibleSeat !== "object" || visibleSeat === null || !("participantId" in visibleSeat)) {
     return null;
   }

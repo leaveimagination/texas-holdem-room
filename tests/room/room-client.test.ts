@@ -3,7 +3,7 @@ import { createElement } from "react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
-import { RoomClient, TableEventToast } from "@/app/room/[roomId]/RoomClient";
+import { RoomClient, TableEventToast, readVisibleParticipantId } from "@/app/room/[roomId]/RoomClient";
 
 describe("RoomClient", () => {
   it("shows the join flow as a modal over the table", () => {
@@ -34,6 +34,19 @@ describe("RoomClient", () => {
     expect(html).toContain("Invite");
     expect(html).toContain("/room/room_share");
     expect(html).not.toContain("?host=");
+  });
+
+  it("does not infer local identity from showdown snapshots with multiple visible hands", () => {
+    const participantId = readVisibleParticipantId({
+      hand: {
+        seats: [
+          { participantId: "hero", holeCards: ["Ah", "Ad"] },
+          { participantId: "bot2", holeCards: ["Kh", "Kd"] }
+        ]
+      }
+    });
+
+    expect(participantId).toBeNull();
   });
 
   it("keeps join controls disabled until the realtime connection is ready", () => {
