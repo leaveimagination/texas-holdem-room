@@ -309,6 +309,44 @@ describe("createGameServer", () => {
     expect(room?.hand?.number).toBe(2);
     expect(room?.hand?.finished).toBe(false);
   });
+
+  it("automatically starts the next hand after a busted player rebuys", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createFinishedHeadsUpRoomWithBustedPlayer());
+
+    const recordBuyIn = vi.fn().mockResolvedValue(undefined);
+    const { url } = await startTestServer(liveRooms, validAuth, { recordHand: vi.fn(), recordBuyIn });
+    const playerSocket = connect(url);
+
+    await waitForOpen(playerSocket);
+
+    const joined = nextMessage(playerSocket);
+    playerSocket.send(
+      JSON.stringify({ type: "join_room", roomId, participantToken: "p2-token", displayName: "Player 2" })
+    );
+    await joined;
+
+    const firstMessage = nextMessage(playerSocket);
+    playerSocket.send(JSON.stringify({ type: "rebuy", roomId, participantToken: "p2-token", amount: 1000 }));
+
+    const nextHandSnapshot = await firstMessage;
+    expect(nextHandSnapshot).toMatchObject({
+      type: "room_snapshot",
+      payload: {
+        status: "playing",
+        hand: {
+          number: 2,
+          finished: false
+        }
+      }
+    });
+    expect(recordBuyIn).toHaveBeenCalledWith(roomId, "p2", 1000);
+
+    const room = await liveRooms.getRoom(roomId);
+    expect(room?.hand?.number).toBe(2);
+    expect(room?.hand?.finished).toBe(false);
+    expect(room?.hand?.actorId).toBeTruthy();
+  });
 });
 
 function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
@@ -327,6 +365,43 @@ function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
       cumulativeBuyIn: 1000,
       status: "ready"
     }))
+  };
+}
+
+function createFinishedHeadsUpRoomWithBustedPlayer(): RoomState {
+  const ready = createReadyHeadsUpRoomState();
+  return {
+    ...ready,
+    status: "playing",
+    handCounter: 1,
+    buttonSeat: 1,
+    seats: ready.seats.map((seat) =>
+      seat.participantId === "p1"
+        ? { ...seat, chips: 2000, status: "active" as const }
+        : { ...seat, chips: 0, status: "all-in" as const }
+    ),
+    hand: {
+      id: `${roomId}-1`,
+      number: 1,
+      street: "river",
+      board: [],
+      deck: [],
+      actorId: "p1",
+      betting: {
+        street: "river",
+        currentBet: 1000,
+        minRaise: 20,
+        actorId: "p1",
+        players: [
+          { id: "p1", stack: 2000, committed: 1000, streetCommitted: 1000, folded: false, allIn: false },
+          { id: "p2", stack: 0, committed: 1000, streetCommitted: 1000, folded: false, allIn: true }
+        ]
+      },
+      holeCardsByParticipantId: {},
+      actions: [],
+      finished: true,
+      winners: ["p1"]
+    }
   };
 }
 

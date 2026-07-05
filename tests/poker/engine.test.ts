@@ -231,6 +231,21 @@ describe("engine", () => {
     expect(showdown.seats.map((seat) => seat.chips)).toEqual([150, 100, 0]);
   });
 
+  it("settles a heads-up preflop all-in, runs out the board, and leaves the busted player ready to rebuy", () => {
+    const acesOverKingsDeck = "Kc As Kd Ah 2c 7d 9h 3s 4d 5d 6d 8d Td Jd Qd Ad"
+      .split(" ")
+      .map(parseCard);
+    const started = startHand(createReadyHeadsUpState([100, 100]), acesOverKingsDeck);
+    const p1AllIn = applyPlayerAction(started, { type: "all-in", playerId: "p1" });
+    const showdown = applyPlayerAction(p1AllIn, { type: "call", playerId: "p2" });
+
+    expect(showdown.hand?.finished).toBe(true);
+    expect(showdown.hand?.board.map(serializeCard)).toEqual(["2c", "7d", "9h", "3s", "4d"]);
+    expect(showdown.hand?.winners).toEqual(["p1"]);
+    expect(showdown.seats.map((seat) => seat.chips)).toEqual([200, 0]);
+    expect(showdown.seats.map((seat) => seat.status)).toEqual(["active", "all-in"]);
+  });
+
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
     const started = startHand(createReadyHeadsUpState([5, 15]), fixedDeck);
 

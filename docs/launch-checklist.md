@@ -32,7 +32,10 @@ Expected hits should be limited to guardrail-only documentation, internal mode i
 - `npm test`
 - `npm run typecheck`
 - `npm run test:e2e`
+- `LONG_RUN_SECONDS=600 ACTION_DELAY_MS=0 npm run test:long-run`
 - `npm run build`
+
+Use `docs/qa-test-checklist.md` for the full poker-room regression matrix. For release candidates, run the long-run simulation at `LONG_RUN_SECONDS=3600`.
 
 If end-to-end tests or build need local Redis, Postgres, browser binaries, or environment variables, record the exact missing dependency and rerun after the dependency is available.
 

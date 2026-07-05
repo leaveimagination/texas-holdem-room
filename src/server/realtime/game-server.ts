@@ -177,6 +177,7 @@ async function handleIncomingMessage(
         updatedRoom = rebuy(room, session.participantId, message.amount);
         await roomRepository.recordBuyIn(room.roomId, session.participantId, message.amount);
         systemNotice = `${displayNameForParticipant(updatedRoom, session.participantId)} added ${message.amount} chips`;
+        updatedRoom = startNextHandIfReady(updatedRoom);
         break;
       case "handle_disconnect":
         if (!session.host) {
