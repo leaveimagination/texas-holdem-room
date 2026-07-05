@@ -167,7 +167,7 @@ describe("SeatRing", () => {
     expect(html).toContain("hero-seat-cluster");
   });
 
-  it("shows each player's latest street action on their own seat", () => {
+  it("does not render noisy floating labels for routine street actions", () => {
     const html = renderToStaticMarkup(
       createElement(SeatRing, {
         bigBlind: 20,
@@ -191,9 +191,8 @@ describe("SeatRing", () => {
       })
     );
 
-    expect(html).toContain("seat-last-action");
-    expect(html).toContain("Raise 4 BB");
-    expect(html).toContain("Call 1 BB");
+    expect(html).not.toContain("Raise 4 BB");
+    expect(html).not.toContain("Call 1 BB");
   });
 
   it("marks all-in actions with a dedicated animation class", () => {
