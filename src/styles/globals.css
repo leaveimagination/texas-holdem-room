@@ -956,6 +956,15 @@ main {
   animation: showdown-panel-hold 3.2s ease-out both;
 }
 
+.poker-client-shell .is-runout-reveal .board.is-runout-board .poker-card.is-dealing {
+  --card-deal-duration: 780ms;
+  --card-deal-stagger: 420ms;
+}
+
+.poker-client-shell .is-runout-reveal .showdown-overlay {
+  animation-delay: 1800ms;
+}
+
 .poker-client-shell .showdown-kicker {
   min-width: 170px;
   border: 1px solid rgba(255, 218, 112, 0.5);
@@ -1028,6 +1037,10 @@ main {
   gap: 2px;
   filter: drop-shadow(0 12px 10px rgba(0, 0, 0, 0.42));
   animation: collect-pot-to-seat 1.65s cubic-bezier(0.18, 0.72, 0.2, 1) 600ms both;
+}
+
+.poker-client-shell .is-runout-reveal .collect-pot-flight {
+  animation-delay: 3000ms;
 }
 
 .poker-client-shell .collect-pot-flight span {

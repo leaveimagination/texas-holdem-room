@@ -3,7 +3,7 @@ import { createElement } from "react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
-import { RoomClient, TableEventToast, readVisibleParticipantId } from "@/app/room/[roomId]/RoomClient";
+import { HAND_RESULT_ANIMATION_MS, RoomClient, TableEventToast, readVisibleParticipantId } from "@/app/room/[roomId]/RoomClient";
 
 describe("RoomClient", () => {
   it("shows the join flow as a modal over the table", () => {
@@ -47,6 +47,10 @@ describe("RoomClient", () => {
     });
 
     expect(participantId).toBeNull();
+  });
+
+  it("keeps hand results visible long enough for slow all-in runout animations", () => {
+    expect(HAND_RESULT_ANIMATION_MS).toBeGreaterThanOrEqual(6000);
   });
 
   it("keeps join controls disabled until the realtime connection is ready", () => {

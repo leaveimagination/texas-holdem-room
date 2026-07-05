@@ -354,4 +354,36 @@ describe("PokerTable", () => {
     expect(html).toContain("Villain");
     expect(html).toContain("collect-pot-burst");
   });
+
+  it("marks all-in runout boards with a slower one-by-one reveal cadence", () => {
+    const html = renderToStaticMarkup(
+      createElement(PokerTable, {
+        localParticipantId: "p1",
+        localDisplayName: "Hero",
+        playerControls: true,
+        view: {
+          status: "playing",
+          settings: { bigBlind: 20 },
+          seats: [
+            { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
+            { seatNumber: 2, displayName: "Villain", chips: 880, status: "all-in", occupied: true }
+          ],
+          hand: {
+            number: 10,
+            finished: true,
+            pot: 240,
+            board: ["Ah", "Kd", "7c", "2s", "9d"],
+            seats: [
+              { seatNumber: 1, participantId: "p1", holeCards: ["As", "Ad"] },
+              { seatNumber: 2, participantId: "p2", holeCards: ["Kh", "Kc"] }
+            ],
+            winners: ["p1"]
+          }
+        }
+      })
+    );
+
+    expect(html).toContain("felt-stage deal-sequence is-runout-reveal");
+    expect(html).toContain("board is-featured-board is-runout-board");
+  });
 });

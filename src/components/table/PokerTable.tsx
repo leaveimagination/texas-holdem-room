@@ -55,6 +55,7 @@ export function PokerTable({
   const resolvedLegalActions = snapshotLegalActions ?? legalActions;
   const insuranceOffer = readInsuranceOffer(view);
   const showdown = readShowdown(view);
+  const isRunoutReveal = Boolean(showdown && board.length >= 4);
   const collectPot = readCollectPot(view, localParticipantId, localDisplayName);
 
   return (
@@ -69,7 +70,7 @@ export function PokerTable({
       </div>
 
       <div
-        className={["felt-stage", handNumber ? "deal-sequence" : ""].filter(Boolean).join(" ")}
+        className={["felt-stage", handNumber ? "deal-sequence" : "", isRunoutReveal ? "is-runout-reveal" : ""].filter(Boolean).join(" ")}
         data-hand-number={handNumber ?? undefined}
       >
         <SeatRing
@@ -96,7 +97,7 @@ export function PokerTable({
           ) : null}
           {board.length > 0 ? (
             <div
-              className="board is-featured-board"
+              className={["board", "is-featured-board", isRunoutReveal ? "is-runout-board" : ""].filter(Boolean).join(" ")}
               aria-label="Board"
               style={{ "--board-deal-offset": boardDealOffset } as React.CSSProperties}
             >

@@ -7,6 +7,8 @@ import { PokerTable } from "@/components/table/PokerTable";
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 
+export const HAND_RESULT_ANIMATION_MS = 6200;
+
 export function RoomClient({ roomId }: { roomId: string }) {
   const { connected, error, messages, send } = useRoomSocket(roomId);
   const [displayName, setDisplayName] = useState("Player");
@@ -32,7 +34,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
 
     setVisibleHandResult(latestHandResult);
-    const timeout = window.setTimeout(() => setVisibleHandResult(null), 3600);
+    const timeout = window.setTimeout(() => setVisibleHandResult(null), HAND_RESULT_ANIMATION_MS);
     return () => window.clearTimeout(timeout);
   }, [latestHandResult]);
 

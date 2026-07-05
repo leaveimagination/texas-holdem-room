@@ -46,4 +46,14 @@ describe("PlayingCard", () => {
     expect(css).toContain("animation-delay: calc(var(--deal-index, 0) * var(--card-deal-stagger))");
     expect(css).toContain("@keyframes deal-card");
   });
+
+  it("uses an even slower all-in runout cadence for public board cards", () => {
+    const css = readFileSync(join(process.cwd(), "src/styles/globals.css"), "utf8");
+
+    expect(css).toContain(".poker-client-shell .is-runout-reveal .board.is-runout-board .poker-card.is-dealing");
+    expect(css).toContain("--card-deal-duration: 780ms");
+    expect(css).toContain("--card-deal-stagger: 420ms");
+    expect(css).toContain(".poker-client-shell .is-runout-reveal .showdown-overlay");
+    expect(css).toContain("animation-delay: 1800ms");
+  });
 });
