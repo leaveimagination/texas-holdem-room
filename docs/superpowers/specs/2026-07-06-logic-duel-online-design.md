@@ -1,7 +1,7 @@
 # Logic Duel Online Spec
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 This file is the entry point for the Logic Duel online multiplayer spec. The detailed contract is split into focused sub-specs so agents can load only the sections needed for a task.
 
@@ -18,6 +18,7 @@ The source of truth is the full spec set in `docs/superpowers/specs/logic-duel-o
 - [04-verification.md](logic-duel-online/04-verification.md): testing strategy, conformance cases, manual verification, acceptance criteria.
 - [05-decisions-and-roadmap.md](logic-duel-online/05-decisions-and-roadmap.md): decision log, open questions, future extensions.
 - [06-traceability-and-plan-slices.md](logic-duel-online/06-traceability-and-plan-slices.md): requirement traceability, implementation slices, review checkpoints.
+- [07-operations-and-invariants.md](logic-duel-online/07-operations-and-invariants.md): runtime invariants, fixtures, observability, deployment and cleanup.
 
 ## Global Constraints
 
@@ -38,6 +39,7 @@ The source of truth is the full spec set in `docs/superpowers/specs/logic-duel-o
 - WebSocket/server work: read `02-protocol-visibility-and-security.md`, `01-game-rules-and-state.md`, and relevant verification cases.
 - Frontend work: read `03-frontend-ux.md`, `02-protocol-visibility-and-security.md`, and relevant verification cases.
 - Implementation planning: read `06-traceability-and-plan-slices.md` after the relevant domain specs.
+- Deployment or final hardening: read `07-operations-and-invariants.md`.
 - Final review: read every file in the spec set.
 
 ## Update Rule

@@ -1,7 +1,7 @@
 # Logic Duel Online - Overview And Agent Contract
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -17,6 +17,7 @@ This document is the source of truth for the first online multiplayer version of
 - UI contract: `Interface`, `UX Requirements`, `Accessibility And Responsive Requirements`
 - Verification contract: `Testing Strategy`, `Conformance Cases`, `Manual Verification`, `Acceptance Criteria`
 - Traceability contract: `Requirement Traceability`, `Implementation Slices`, `Review Checkpoints`
+- Operations contract: `Runtime Invariants`, `Fixtures`, `Observability`, `Deployment`, `Cleanup`
 - History: `Decision Log`, `Open Questions`, `Future Extensions`
 
 Task-specific agents should load the relevant section plus `Global Constraints` rather than the entire spec when possible.
@@ -135,6 +136,7 @@ Version 1 will not support:
 | Always | Validate all client actions server-side. |
 | Always | Run automated tests before claiming completion. |
 | Always | Record manual two-client verification in the final implementation summary. |
+| Always | Preserve runtime invariants listed in `07-operations-and-invariants.md`. |
 | Ask first | Add any dependency beyond `ws` and Node built-ins. |
 | Ask first | Introduce a frontend framework or build step. |
 | Ask first | Add persistence, accounts, chat, spectators, AI, or more than two players. |
@@ -203,6 +205,7 @@ Create:
 - `logic-duel/test/rooms.test.js`: room state/action tests.
 - `logic-duel/test/integration.test.js`: WebSocket flow tests.
 - `logic-duel/README.md`: local run, test, and deploy notes.
+- `logic-duel/scripts/manual-checklist.js`: optional helper that prints manual verification steps.
 
 Responsibilities:
 
@@ -212,6 +215,7 @@ Responsibilities:
 - `rooms.js` owns authoritative mutations and calls pure helpers.
 - `server.js` owns transport, connection maps, static files, and broadcasting.
 - `public/app.js` must not contain authoritative rules.
+- `README.md` owns user-facing local run and deploy instructions, but must not redefine game or protocol rules.
 
 
 ## Code Style

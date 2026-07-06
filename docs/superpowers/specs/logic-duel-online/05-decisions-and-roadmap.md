@@ -1,7 +1,7 @@
 # Logic Duel Online - Decisions And Roadmap
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -16,6 +16,7 @@ Source set: `docs/superpowers/specs/logic-duel-online/`
 - 2026-07-07: Make spec English-only because code-facing contracts are canonical and the user no longer needs Chinese.
 - 2026-07-07: Harden spec using agent-oriented PRD/SRS practices: six core areas, three-tier boundaries, conformance cases, and spec index.
 - 2026-07-07: Split the spec into focused files and add traceability so implementation agents can load only relevant contracts.
+- 2026-07-07: Add operations, invariants, and fixtures as a separate contract so deployment and correctness checks do not depend on scattered prose.
 
 
 ## Open Questions

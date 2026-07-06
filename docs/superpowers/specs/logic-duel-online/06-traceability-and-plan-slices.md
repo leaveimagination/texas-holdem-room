@@ -1,7 +1,7 @@
 # Logic Duel Online - Traceability And Plan Slices
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -20,6 +20,7 @@ Source set: `docs/superpowers/specs/logic-duel-online/`
 | R09 | UI exposes legal actions and room state clearly. | `03-frontend-ux.md` | `public/index.html`, `public/styles.css`, `public/app.js` | Manual verification steps 4-16 |
 | R10 | Accessibility and responsive constraints hold. | `03-frontend-ux.md` | `public/index.html`, `public/styles.css`, `public/app.js` | Manual viewport and keyboard checks |
 | R11 | Automated and manual verification gates are documented and pass. | `04-verification.md` | `package.json`, `test/*.test.js`, `README.md` | `npm test`, manual verification |
+| R12 | Runtime invariants, health, logging, and cleanup are defined. | `07-operations-and-invariants.md` | `server.js`, `src/rooms.js`, `test/*.test.js`, `README.md` | C16, C17 |
 
 Every implementation task should name the requirement IDs and conformance cases it satisfies.
 
@@ -35,7 +36,8 @@ Use these slices when creating an implementation plan. Each slice should be inde
 | S04 WebSocket server | HTTP static server, `/ws`, connection mapping, broadcasting, integration flows. | `00-overview-and-agent-contract.md`, `02-protocol-visibility-and-security.md`, `04-verification.md` | `server.js`, integration tests. |
 | S05 Frontend shell | HTML structure, connection forms, room state rendering, action controls. | `03-frontend-ux.md`, `02-protocol-visibility-and-security.md` | `public/index.html`, `public/app.js`, `public/styles.css`. |
 | S06 Frontend gameplay | Question actions, guess form, history, reconnect, final reveal, responsive polish. | `03-frontend-ux.md`, `04-verification.md` | Playable UI passing manual checks. |
-| S07 Docs and final verification | README, commands, manual checklist run, final acceptance. | `00-overview-and-agent-contract.md`, `04-verification.md` | `README.md`, final verification evidence. |
+| S07 Operations | Health endpoint, room cleanup, invariant tests, deploy notes. | `07-operations-and-invariants.md`, `04-verification.md` | `server.js`, `src/rooms.js`, operations tests, README deploy notes. |
+| S08 Docs and final verification | README, commands, manual checklist run, final acceptance. | `00-overview-and-agent-contract.md`, `04-verification.md`, `07-operations-and-invariants.md` | `README.md`, final verification evidence. |
 
 ## Review Checkpoints
 
@@ -58,5 +60,6 @@ When information appears to belong in more than one file, use this ownership rul
 - Tests, conformance IDs, manual verification, acceptance: `04-verification.md`.
 - Decisions, non-blocking questions, roadmap: `05-decisions-and-roadmap.md`.
 - Requirement-to-test-to-task mapping: `06-traceability-and-plan-slices.md`.
+- Runtime invariants, fixtures, logging, health checks, cleanup, deployment notes: `07-operations-and-invariants.md`.
 
 If two files conflict, stop and update the canonical owner first, then update references in other files.

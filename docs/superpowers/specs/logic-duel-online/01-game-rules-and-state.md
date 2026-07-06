@@ -1,7 +1,7 @@
 # Logic Duel Online - Game Rules And State
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -88,6 +88,8 @@ Allowed `HistoryEntry.type` values:
 ```
 
 Do not include opponent `hand` values in any `RoomView` during `waiting` or `playing`.
+
+Runtime invariants that involve these models are canonical in `07-operations-and-invariants.md`.
 
 
 ## Game Model

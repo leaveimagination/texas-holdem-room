@@ -1,7 +1,7 @@
 # Logic Duel Online - Verification
 
 Date: 2026-07-07
-Status: v3.2, split executable engineering contract
+Status: v3.3, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -15,6 +15,7 @@ Unit tests:
 - Shuffle/deal shape using injectable deterministic shuffle where needed.
 - Hand sorting.
 - Question answer functions.
+- Fixture-based question answers from `07-operations-and-invariants.md`.
 - Guess validation.
 - Win detection.
 - Turn switching.
@@ -55,6 +56,8 @@ Regression rule:
 | C13 | Reconnect | Playing room, player socket closed | Same credentials `reconnect` | `reconnected`, same seat restored, no third seat. |
 | C14 | Full room | Waiting room has two players | Third user `joinRoom` | Error `ROOM_FULL`. |
 | C15 | Finished action | Finished room | Any `askQuestion` | Error `GAME_FINISHED`, state unchanged. |
+| C16 | Runtime invariants | Any valid room mutation | Apply action | Invariants from `07-operations-and-invariants.md` still hold. |
+| C17 | Health endpoint | Server running | `GET /healthz` | Status 200 with JSON `{ "ok": true }`. |
 
 
 ## Manual Verification
@@ -89,10 +92,12 @@ Version 1 is complete only when:
 - `npm install` works in `logic-duel/`.
 - `npm start` serves the app and WebSocket endpoint.
 - `npm test` passes.
+- Runtime invariant tests pass.
 - Two clients can create, join, start, play, reconnect, and finish a game.
 - Server remains authoritative for all game state.
 - Opponent hands and unused tiles are not sent before finish.
 - All listed conformance cases pass manually or through automated tests.
 - UI is usable on desktop and at 360px width.
 - README documents run, test, and deploy basics.
+- Server exposes `GET /healthz` for deploy health checks.
 - Final summary includes automated test output and manual verification result.
