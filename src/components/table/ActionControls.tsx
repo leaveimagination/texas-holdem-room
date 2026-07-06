@@ -72,11 +72,11 @@ export function ActionControls({
   const sliderProgress = Math.round(((selectedRaiseAmount - sliderBounds.min) / Math.max(sliderBounds.max - sliderBounds.min, 1)) * 100);
   const activeActorId = actorId ?? "pending-player";
   const hasActiveTurn = Boolean(actorId);
-  const showBettingControls = hasActiveTurn && (tableStatus ?? "playing") === "playing";
+  const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
+  const showBettingControls = hasActiveTurn && isPlayerTurn && (tableStatus ?? "playing") === "playing";
   const isAwaitingLegalActions = showBettingControls && actions.length === 0;
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
   const actionButtons = buildActionButtons(actions, visibleActions);
-  const isPlayerTurn = Boolean(playerControls && localParticipantId && actorId && localParticipantId === actorId);
   const canUsePlayerActions = connected && playerControls && (!hasActiveTurn || isPlayerTurn);
   const canRebuyNow = canStartRoom || (tableStatus ?? "lobby") !== "playing";
   const showRebuyModal = Boolean(playerControls && canRebuyNow && typeof heroStack === "number" && heroStack <= 0);

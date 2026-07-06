@@ -15,7 +15,7 @@ test("room page shows join flow and table surface", async ({ page }) => {
   });
 
   await expect(page.getByLabel("Nickname")).toBeVisible();
-  await expect(page.getByText("Table")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Table" })).toBeVisible();
   await expect(page.getByText("No pot yet")).toHaveCount(0);
   await expect(page.getByText("Board waiting")).toHaveCount(0);
   await expect(page.getByText("Waiting for deal")).toHaveCount(0);

@@ -16,6 +16,10 @@ describe("ActionControls", () => {
 
     expect(html).toContain("Waiting for another player");
     expect(html).toMatch(/<button[^>]*disabled=""/);
+    expect(html).toContain("bet-console is-waiting");
+    expect(html).not.toContain("bet-console is-facing-bet");
+    expect(html).not.toContain("1 BB");
+    expect(html).not.toContain("type=\"range\"");
   });
 
   it("shows a turn prompt when the local participant is the actor", () => {
