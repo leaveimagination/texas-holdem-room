@@ -1,16 +1,16 @@
 :root {
   color-scheme: light;
-  --bg: #f5f1e8;
-  --surface: #fffdf7;
-  --panel: #fdf7e7;
-  --ink: #1d2730;
-  --muted: #61707d;
-  --line: #d9d0bf;
-  --blue: #1c6fb8;
-  --red: #bb342f;
-  --green: #22745b;
-  --yellow: #8a6500;
-  --shadow: 0 12px 28px rgba(40, 32, 20, 0.12);
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --panel: #eef3f7;
+  --ink: #202833;
+  --muted: #667383;
+  --line: #cfd8e3;
+  --blue: #256fb4;
+  --red: #bc3b45;
+  --green: #24765f;
+  --yellow: #86680f;
+  --shadow: 0 12px 28px rgba(25, 36, 50, 0.12);
 }
 
 * {
@@ -258,7 +258,7 @@ textarea {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid #f0b84e;
+  outline: 3px solid #d4a72c;
   outline-offset: 2px;
 }
 
