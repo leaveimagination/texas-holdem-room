@@ -1,305 +1,595 @@
-# Logic Duel Online Design
+# Logic Duel Online Spec
 
-Date: 2026-07-06
-Status: v2.1, bilingual implementation-ready draft
+Date: 2026-07-07
+Status: v3, English-only executable engineering contract
 
-Language note: English is the canonical contract for code-facing names, message types, field names, and error codes. The Chinese section mirrors the product and engineering intent for review and planning. When this spec changes, update both sections in the same commit.
+## Spec Index
+
+This document is the source of truth for the first online multiplayer version of Logic Duel.
+
+- Product intent: `Objective`, `Users And Journeys`, `Scope`, `Out Of Scope`
+- Agent contract: `Spec Maintenance`, `Three-Tier Boundaries`, `Commands`, `Project Structure`, `Code Style`, `Git Workflow`
+- Game contract: `Game Model`, `Question Cards`, `State Machine`, `Room And Connection Flow`
+- Network contract: `WebSocket Protocol`, `RoomView Contract`, `Error Codes`
+- Safety contract: `Visibility Rules`, `Visibility Matrix`, `Security And Fair Play`
+- UI contract: `Interface`, `UX Requirements`, `Accessibility And Responsive Requirements`
+- Verification contract: `Testing Strategy`, `Conformance Cases`, `Manual Verification`, `Acceptance Criteria`
+- History: `Decision Log`, `Open Questions`, `Future Extensions`
+
+Task-specific agents should load the relevant section plus `Global Constraints` rather than the entire spec when possible.
 
 ## Spec Maintenance
 
-This spec is the source of truth for the first online multiplayer version. Keep it updated as the implementation reveals better decisions or hidden edge cases.
+This spec is a living source of truth. Implementation, tests, plans, and reviews must reconcile back to it.
 
 Update rules:
 
-- If implementation discovers an ambiguous behavior, update this spec before coding the behavior.
-- If tests expose a mismatch between intended and implemented behavior, update either the test or the spec before changing production code.
-- If a feature is intentionally deferred, record it in `Future Extensions` or `Out Of Scope` instead of leaving it implied.
-- If a protocol message changes, update `WebSocket Protocol` in the same change as the code.
-- If verification finds a gap, add an acceptance criterion or test requirement before marking the feature complete.
+- If implementation discovers ambiguous behavior, update this spec before coding through the ambiguity.
+- If tests expose a mismatch between intended and implemented behavior, update either the test or this spec before changing production code.
+- If a feature is intentionally deferred, record it in `Out Of Scope` or `Future Extensions`.
+- If a public protocol, data model, error code, visibility rule, or game rule changes, update this spec in the same change.
+- If manual or automated verification finds a gap, add an acceptance criterion or conformance case before marking work complete.
+- This spec is English-only. Code-facing names, protocol values, error codes, and file paths are canonical as written.
 
-## Goal
+## Objective
 
-Build an online multiplayer browser game inspired by the deduction tabletop game "Logic Duel". The first version should let two players create or join a room, play a complete hidden-information deduction match in real time, and run locally with a deployment-friendly Node.js structure.
+Build a deployable browser-based online multiplayer game inspired by the deduction tabletop game "Logic Duel". Version 1 lets two players create or join a room, play a complete real-time hidden-information deduction match, refresh and reconnect from the same browser, and finish with both hands revealed.
+
+Success means a player can send a room code to a friend, both can complete a match in separate browser tabs or machines connected to the same deployed server, and the server never exposes hidden opponent information before the game ends.
+
+## Users And Journeys
+
+Primary users:
+
+- Host player: creates a room, shares the room code, starts the match, and plays.
+- Guest player: joins by room code and plays.
+- Future maintainer/agent: implements and verifies behavior from this spec without relying on conversation memory.
+
+Primary host journey:
+
+1. Open the app.
+2. Enter a display name.
+3. Create a room.
+4. Copy/share the room code.
+5. Wait for a guest.
+6. Start the game once two players are present.
+7. Ask questions or submit guesses on own turns.
+8. See the final reveal and winner.
+
+Primary guest journey:
+
+1. Open the app.
+2. Enter a display name and room code.
+3. Join the room.
+4. Wait for the host to start.
+5. Ask questions or submit guesses on own turns.
+6. Refresh during a match and reconnect to the same seat.
+7. See the final reveal and winner.
+
+Failure journeys:
+
+- Invalid room code returns a stable `ROOM_NOT_FOUND` error without clearing entered name.
+- Full room returns `ROOM_FULL`.
+- Disconnected WebSocket shows disconnected state and attempts same-browser reconnect.
+- Out-of-turn action is rejected with `OUT_OF_TURN` and leaves state unchanged.
 
 ## Scope
 
-The first version supports two-player rooms only. Players enter a nickname, create a room to receive a room code, or join an existing room by code. The room owner starts the game once two players are present.
+Version 1 supports:
 
-The app does not include accounts, matchmaking, persistent statistics, chat, spectators, AI opponents, or public lobby browsing. These are intentionally outside the first version so hidden information and real-time gameplay can be reliable.
+- Two-player rooms.
+- Nickname-based seats.
+- Create room and join by room code.
+- Host-controlled game start.
+- Server-authoritative game state.
+- Real-time updates through WebSocket.
+- Same-browser reconnect using local storage.
+- In-memory rooms with inactivity expiry.
+- Custom question deck inspired by deduction mechanics.
+- Automated unit and integration tests.
+- Manual two-client verification.
 
 ## Out Of Scope
 
-The first version will not support:
+Version 1 will not support:
 
 - Three- or four-player variants.
 - Public matchmaking, room lists, or invite discovery.
-- User accounts, passwords, or persistent profiles.
-- Cross-device reconnect.
-- Spectator mode.
-- Chat, emoji reactions, or table talk tooling.
+- User accounts, passwords, persistent profiles, or cross-device reconnect.
+- Chat, reactions, spectator mode, or table-talk tooling.
 - Server persistence after process restart.
-- Anti-cheat beyond server-side hidden information and action validation.
-- A copy of the commercial card deck or exact commercial rulebook text.
+- Database storage.
+- Shuffle fairness proof or cryptographic audit.
+- Strong anti-cheat beyond server-side hidden information and action validation.
+- Copying commercial card text, commercial rules text, official art, logos, or trade dress.
+- AI opponents.
+
+## Global Constraints
+
+- The app lives in a standalone `logic-duel/` directory.
+- Frontend uses plain HTML, CSS, and JavaScript; no frontend build step.
+- Backend uses Node.js HTTP plus WebSocket.
+- Server owns all authoritative state.
+- Clients render only filtered `RoomView` data.
+- Never send opponent hands or unused tiles to any client before `state === "finished"`.
+- Tests must cover game core, room actions, protocol validation, visibility filtering, and invalid actions.
+- Do not modify unrelated existing project files.
+- Do not copy commercial game text or assets.
+
+## Three-Tier Boundaries
+
+| Tier | Rule |
+|---|---|
+| Always | Update this spec when public contracts change. |
+| Always | Keep game rules pure and testable outside WebSocket transport. |
+| Always | Validate all client actions server-side. |
+| Always | Run automated tests before claiming completion. |
+| Always | Record manual two-client verification in the final implementation summary. |
+| Ask first | Add any dependency beyond `ws` and Node built-ins. |
+| Ask first | Introduce a frontend framework or build step. |
+| Ask first | Add persistence, accounts, chat, spectators, AI, or more than two players. |
+| Ask first | Change canonical colors, tile counts, hand size, room expiry, or protocol message names. |
+| Ask first | Split this spec into multiple files. |
+| Never | Commit secrets or tokens. |
+| Never | Let clients compute authoritative answers, wins, or hidden opponent state. |
+| Never | Send raw `Room` to a client. |
+| Never | Remove failing tests to make progress. |
+| Never | Copy copyrighted commercial card text, rulebook text, art, logos, or trade dress. |
+
+## Tech Stack
+
+Runtime:
+
+- Node.js 20 or newer.
+- npm for scripts and dependency installation.
+- `ws` for WebSocket support, unless a different dependency is explicitly approved.
+- Node built-in `node:test` and `assert/strict` for automated tests.
+
+Frontend:
+
+- Plain HTML, CSS, and JavaScript.
+- Browser APIs only: WebSocket, localStorage, DOM APIs, Clipboard API where available.
+- No bundler, transpiler, React/Vue/Svelte, Tailwind, or CSS preprocessor in version 1.
+
+Deployment target:
+
+- Any Node host that supports WebSockets and `PORT`, such as Render, Railway, Fly.io, or a VPS.
+- Local development must work with `npm start`.
+
+## Commands
+
+Commands run from `logic-duel/` after implementation exists:
+
+| Purpose | Command | Expected |
+|---|---|---|
+| Install | `npm install` | Installs dependencies without errors. |
+| Start dev server | `npm start` | Starts HTTP/WebSocket server on `PORT` or `3000`. |
+| Run tests | `npm test` | Runs all Node tests and exits 0. |
+| Run unit tests | `npm run test:unit` | Runs pure game/protocol/room unit tests. |
+| Run integration tests | `npm run test:integration` | Runs WebSocket integration tests. |
+| Manual verify | `npm run verify:manual` | Prints manual checklist or runs a local smoke helper if implemented. |
+
+Before `logic-duel/` exists, planning and spec work are done from the repository root.
+
+## Project Structure
+
+Create:
+
+- `logic-duel/package.json`: scripts, dependency metadata, Node engine guidance.
+- `logic-duel/server.js`: HTTP server, static file serving, WebSocket connection lifecycle.
+- `logic-duel/src/game-core.js`: pure tile, deal, question, guess, and turn rules.
+- `logic-duel/src/questions.js`: custom question deck definitions and answer functions.
+- `logic-duel/src/protocol.js`: message validation, error helpers, `RoomView` filtering.
+- `logic-duel/src/rooms.js`: room lifecycle, seats, reconnect, action validation, state transitions.
+- `logic-duel/public/index.html`: single playable game surface.
+- `logic-duel/public/styles.css`: responsive layout and visual styling.
+- `logic-duel/public/app.js`: browser state, WebSocket client, rendering, local storage reconnect.
+- `logic-duel/test/game-core.test.js`: pure game tests.
+- `logic-duel/test/questions.test.js`: question answer tests.
+- `logic-duel/test/protocol.test.js`: validation and view filtering tests.
+- `logic-duel/test/rooms.test.js`: room state/action tests.
+- `logic-duel/test/integration.test.js`: WebSocket flow tests.
+- `logic-duel/README.md`: local run, test, and deploy notes.
+
+Responsibilities:
+
+- `game-core.js` must not import WebSocket, HTTP, DOM, filesystem, or room storage.
+- `questions.js` must not know about rooms or players beyond receiving a hand.
+- `protocol.js` owns external message shape and filtered views.
+- `rooms.js` owns authoritative mutations and calls pure helpers.
+- `server.js` owns transport, connection maps, static files, and broadcasting.
+- `public/app.js` must not contain authoritative rules.
+
+## Code Style
+
+JavaScript style:
+
+- Use CommonJS modules for Node files unless implementation planning explicitly switches to ESM.
+- Prefer small pure functions with explicit arguments.
+- Use `const` by default, `let` only for reassignment.
+- Use plain objects and arrays for state.
+- Use stable string constants for protocol types and error codes.
+- Throw or return structured errors from server-side validation; never rely on UI-only checks.
+- Keep functions under roughly 80 lines when reasonable.
+- No minification, obfuscation, generated code, or bundled artifacts.
+
+Naming:
+
+- Room codes are uppercase alphanumeric strings.
+- Colors are exactly `red` and `blue`.
+- Room states are exactly `waiting`, `playing`, and `finished`.
+- Message types and error codes are canonical as listed in this spec.
+
+UI style:
+
+- Use readable labels and stable layout dimensions.
+- Do not build a marketing landing page.
+- Do not use large explanatory feature text inside the app.
+- Prefer compact controls, visible turn state, and scannable history.
+
+## Git Workflow
+
+- Use branch prefix `codex/` for implementation branches unless the user requests otherwise.
+- Keep spec changes in dedicated commits when they are not inseparable from implementation.
+- During implementation, commit after each independently testable task.
+- Before final completion, include the verification commands and manual verification result in the final summary.
+- Do not stage or commit unrelated existing workspace files.
 
 ## Architecture
 
-The app lives in a new `logic-duel/` directory.
+The backend serves static files and hosts a WebSocket endpoint. It owns rooms, players, deck order, hands, question cards, turn state, history, reconnect tokens, and results.
 
-The backend is a Node.js server that serves static frontend assets and hosts a WebSocket endpoint. It owns all authoritative game state: rooms, players, deck order, hands, question cards, turn state, history, and win/loss results.
+The frontend renders `RoomView`, sends user actions, stores reconnect credentials in local storage, and displays inline errors. It must not receive or infer hidden opponent data from server payloads before finish.
 
-The frontend is plain HTML, CSS, and JavaScript. It renders the current player's visible state, sends user actions over the WebSocket, and never receives the opponent's hidden tiles until the game ends.
-
-No build step is required for the frontend. `npm start` starts the server, and users open the local URL in a browser. The server will read a `PORT` environment variable so it can run locally or on common Node hosting platforms that support WebSockets.
-
-## File Layout
-
-The first implementation should use this layout unless a better reason appears during planning:
-
-- `logic-duel/package.json`: scripts and dependencies.
-- `logic-duel/server.js`: HTTP server and WebSocket wiring.
-- `logic-duel/src/game-core.js`: pure game rules with no network or DOM dependencies.
-- `logic-duel/src/rooms.js`: room lifecycle, player seats, reconnect token handling, and server-side action validation.
-- `logic-duel/src/protocol.js`: message names, payload validation helpers, and view shaping helpers.
-- `logic-duel/public/index.html`: game surface.
-- `logic-duel/public/styles.css`: layout and visual styling.
-- `logic-duel/public/app.js`: WebSocket client and DOM rendering.
-- `logic-duel/test/*.test.js`: Node test suite.
-
-The pure game core should be usable from tests without starting a server.
+State is in memory for version 1. A process restart loses rooms. This is acceptable and must be documented in `README.md`.
 
 ## Data Model
 
-Use plain JavaScript objects. The exact implementation may include helper functions, but the externally meaningful fields should remain stable.
+Use plain JavaScript objects.
 
 `Tile`:
 
-- `number`: integer from 0 to 9.
-- `color`: `red` or `blue`.
+```js
+{
+  number: 0,        // integer 0..9
+  color: "red"     // "red" | "blue"
+}
+```
 
 `Player`:
 
-- `id`: server-generated stable id for the seat.
-- `name`: trimmed display name, 1 to 24 visible characters.
-- `token`: reconnect secret stored by the joining browser.
-- `isOwner`: boolean.
-- `connected`: boolean.
-- `hand`: array of 5 `Tile` objects after the game starts.
+```js
+{
+  id: "player_...",
+  name: "Alice",
+  token: "secret reconnect token",
+  isOwner: true,
+  connected: true,
+  hand: []          // 5 Tile objects after start
+}
+```
 
 `QuestionCard`:
 
-- `id`: stable string.
-- `text`: display text safe to show to both players.
-- `params`: optional structured parameters used by the answer function.
-- `answerType`: `number`, `boolean`, `tileNumber`, `tileColor`, or `text`.
+```js
+{
+  id: "count-color-red",
+  text: "How many red tiles do you have?",
+  params: { color: "red" },
+  answerType: "number"
+}
+```
+
+Allowed `answerType` values:
+
+- `number`
+- `boolean`
+- `tileNumber`
+- `tileColor`
+- `text`
 
 `HistoryEntry`:
 
-- `id`: monotonically increasing integer within the room.
-- `type`: `question`, `guess`, `system`, or `result`.
-- `actorId`: player id, when an entry belongs to a player action.
-- `text`: public display text.
-- `createdAt`: server timestamp in milliseconds.
+```js
+{
+  id: 1,
+  type: "question",
+  actorId: "player_...",
+  text: "Alice asked: How many red tiles do you have? Answer: 2.",
+  createdAt: 1783450000000
+}
+```
+
+Allowed `HistoryEntry.type` values:
+
+- `question`
+- `guess`
+- `system`
+- `result`
 
 `Room`:
 
-- `code`: short uppercase room code.
-- `state`: `waiting`, `playing`, or `finished`.
-- `players`: array of up to 2 `Player` objects.
-- `ownerId`: player id.
-- `activePlayerId`: player id during `playing`.
-- `questionDeck`: unrevealed `QuestionCard` array.
-- `questionMarket`: up to 6 revealed `QuestionCard` objects.
-- `history`: ordered `HistoryEntry` array.
-- `winnerId`: player id after a correct guess.
-- `createdAt`: server timestamp in milliseconds.
-- `updatedAt`: server timestamp in milliseconds.
+```js
+{
+  code: "ABCD",
+  state: "waiting",
+  players: [],
+  ownerId: "player_...",
+  activePlayerId: null,
+  questionDeck: [],
+  questionMarket: [],
+  history: [],
+  winnerId: null,
+  createdAt: 1783450000000,
+  updatedAt: 1783450000000
+}
+```
 
-Do not include opponent `hand` values in a client's room view during `waiting` or `playing`.
+Do not include opponent `hand` values in any `RoomView` during `waiting` or `playing`.
 
 ## Game Model
 
-Tiles consist of two colored sets, `red` and `blue`, of the numbers 0 through 9, for 20 total tiles. Each player receives 5 tiles. A player's hand is sorted by ascending number, with `red` before `blue` as the fixed color tiebreaker for duplicate numbers.
+Tiles:
 
-At game start, the server shuffles tiles, deals hands, removes unused tiles from play, shuffles question cards, and reveals six public question cards. The active player may ask one revealed question or submit a complete guess of the opponent's five tiles.
+- Two color sets: `red` and `blue`.
+- Numbers: 0 through 9 in each color.
+- Total tiles: 20.
+- Players: exactly 2.
+- Hand size: 5 tiles each.
+- Unused tiles: 10 tiles removed from player visibility for version 1.
 
-Asking a question causes the server to calculate the answer from the opponent's hidden hand, add the public result to history, discard the used question card, reveal a replacement if available, and pass the turn.
+Sorting:
 
-Guessing requires the player to submit five ordered tile guesses, each with a number and color. A correct guess ends the game and reveals both hands. An incorrect guess is recorded publicly and the turn passes.
+- Hands sort by ascending `number`.
+- For equal `number`, `red` sorts before `blue`.
+- Sorting is server-side and deterministic.
 
-## Game Rules Details
+Start:
 
-Room setup:
+1. Shuffle 20 tiles.
+2. Deal 5 tiles to player A and 5 to player B.
+3. Sort both hands.
+4. Keep unused tiles server-side only.
+5. Shuffle question deck.
+6. Reveal up to 6 question cards into `questionMarket`.
+7. Set `activePlayerId` to room owner unless changed by explicit future rule.
+8. Add system history entry.
 
-- Room codes are generated by the server and should be easy to read aloud, for example 4 to 6 uppercase letters or digits.
-- A room accepts at most two player seats.
-- The owner can start only when exactly two seats are occupied.
+Turn actions:
 
-Turn rules:
+- Ask one visible question card.
+- Submit one complete ordered guess of opponent hand.
 
-- Only the active player may ask a question or submit a guess.
-- Asking a question always targets the opponent in the two-player version.
-- A used question card is removed from `questionMarket`.
-- If `questionDeck` still has cards, draw one replacement so the market returns to 6 cards.
-- If the deck is empty, continue with fewer visible question cards.
-- After a question or incorrect guess, `activePlayerId` changes to the opponent.
-- After a correct guess, the room enters `finished` and no further game actions are accepted.
+Question action:
 
-Guess rules:
+1. Validate room is `playing`.
+2. Validate actor is active player.
+3. Validate `cardId` is in `questionMarket`.
+4. Evaluate answer against opponent hand.
+5. Add public question history.
+6. Remove used question card.
+7. Draw replacement from `questionDeck` if available.
+8. Pass turn to opponent.
+9. Broadcast filtered views.
 
-- A guess must include exactly five ordered tiles.
-- Each guessed tile must have a valid number and color.
-- Duplicate guesses are allowed because the real tile set has duplicate numbers across colors.
-- A guess is correct only if all five positions match both number and color.
-- An incorrect guess should reveal only that the guess was incorrect, plus the public guessed sequence if useful for history.
+Guess action:
+
+1. Validate room is `playing`.
+2. Validate actor is active player.
+3. Validate exactly 5 guessed tiles.
+4. Validate each tile has integer `number` 0..9 and `color` `red` or `blue`.
+5. Compare ordered guess against opponent hand.
+6. If correct, set `state` to `finished`, set `winnerId`, add result history, reveal both hands in views.
+7. If incorrect, add public guess history, pass turn, keep hands hidden.
 
 ## Question Cards
 
-The first version includes a playable custom question set rather than copying a commercial rulebook. Card types should be deterministic, easy to answer from a hand, and useful for deduction.
+The first deck is custom. It must not copy commercial card text.
+
+Minimum deck size:
+
+- At least 24 cards.
+- The deck may repeat card families with different parameters.
 
 Initial card families:
 
 - Count tiles matching a color.
-- Count odd or even numbers.
-- Count numbers greater than or less than a threshold.
-- Report the sum of all numbers.
-- Report whether a specific number is present.
-- Report the number at a specific position.
-- Report the color at a specific position.
+- Count odd numbers.
+- Count even numbers.
+- Count numbers greater than a threshold.
+- Count numbers less than a threshold.
+- Sum all numbers.
+- Check whether a specific number is present.
+- Report number at a 1-based position.
+- Report color at a 1-based position.
 - Report whether any adjacent tiles are consecutive.
-- Report the count of tiles within a numeric range.
+- Count tiles within an inclusive numeric range.
 
-Each card has a stable id, display text, and answer function. The server computes answers; clients only display card text and public results.
+Answer display:
 
-The initial deck should have at least 24 cards so multiple games do not feel too repetitive. It can include repeated card families with different parameters, for example "How many numbers are 0-4?" and "How many numbers are 5-9?" as separate cards.
+- `boolean`: display `Yes` or `No`.
+- `number`: display decimal number.
+- `tileNumber`: display decimal number.
+- `tileColor`: display `red` or `blue`.
+- `text`: display short text.
 
-Question answer style:
-
-- Boolean answers display as `Yes` or `No`.
-- Numeric answers display as a number.
-- Position questions use 1-based positions in UI text.
-- The server stores answer values structurally and also records a human-readable `text` in history.
+Question answer functions must be deterministic and testable with fixed hands.
 
 ## Room And Connection Flow
 
-A player can create a room or join by code. On first connection, the server assigns a player id and the frontend stores a reconnect token in local storage. If the same browser refreshes, it may reconnect to the same seat while the room is still active.
+Room creation:
 
-A room has these states:
+- Client sends `createRoom` with name.
+- Server validates name.
+- Server creates a room with one owner player.
+- Server returns `roomCreated` with room code, player id, reconnect token, and filtered view.
 
-- `waiting`: one or two players are present, game has not started.
-- `playing`: two players are playing a match.
-- `finished`: a winner exists and hidden hands are revealed.
+Join:
 
-Only the room owner can start the match. If a player disconnects during a match, the other player sees a disconnected status. The game state remains in memory so a browser refresh can recover. Cross-device account-based recovery is out of scope.
+- Client sends `joinRoom` with room code and name.
+- Server validates room exists, state is `waiting`, and seats are available.
+- Server returns `roomJoined`.
+- Server broadcasts `roomUpdated` to both players.
 
-Rooms are in memory for the first version. Waiting and finished rooms expire after 2 hours of inactivity. Playing rooms expire after 2 hours only if both players are disconnected.
+Reconnect:
+
+- Frontend stores `{ roomCode, playerId, token }` in local storage after create/join.
+- On page load, if stored credentials exist, client attempts `reconnect`.
+- Server accepts reconnect if room exists and token matches player seat.
+- Reconnect does not create a new seat.
+- If a second tab reconnects with same token, latest socket becomes active for that seat; previous socket may be closed or marked stale.
+
+Disconnect:
+
+- Server marks player `connected: false` when socket closes.
+- Room remains in memory.
+- Opponent sees disconnected state.
+- Disconnected player may reconnect with valid token.
+
+Expiry:
+
+- Waiting rooms expire after 2 hours of inactivity.
+- Finished rooms expire after 2 hours of inactivity.
+- Playing rooms expire after 2 hours only if both players are disconnected.
+- `updatedAt` changes on create, join, reconnect, start, ask, guess, and disconnect.
 
 ## State Machine
 
-Allowed actions by room state:
+| State | Action | Allowed When | Result |
+|---|---|---|---|
+| none | `createRoom` | Valid name | Create `waiting` room. |
+| waiting | `joinRoom` | Room exists and has one seat open | Add second player. |
+| waiting | `startGame` | Actor is owner and exactly two players connected or seated | Enter `playing`. |
+| waiting | `askQuestion` | Never | Error `GAME_NOT_STARTED`. |
+| waiting | `submitGuess` | Never | Error `GAME_NOT_STARTED`. |
+| playing | `joinRoom` | Never for new seat | Error `ROOM_FULL` or `GAME_ALREADY_STARTED`. |
+| playing | `reconnect` | Valid token | Restore socket for seat. |
+| playing | `startGame` | Never | Error `GAME_ALREADY_STARTED`. |
+| playing | `askQuestion` | Actor is active player and card is available | Add answer, replace card, pass turn. |
+| playing | `submitGuess` | Actor is active player and guess is valid | Finish on correct, pass turn on incorrect. |
+| playing | disconnect | Socket closes | Mark player disconnected. |
+| finished | `reconnect` | Valid token | Return final view. |
+| finished | `askQuestion` | Never | Error `GAME_FINISHED`. |
+| finished | `submitGuess` | Never | Error `GAME_FINISHED`. |
+| finished | `startGame` | Never | Error `GAME_FINISHED`. |
 
-`waiting`:
-
-- `createRoom`: allowed before a room exists.
-- `joinRoom`: allowed until the room has two players.
-- `startGame`: allowed only for the owner when two players are present.
-- `askQuestion`: rejected.
-- `submitGuess`: rejected.
-
-`playing`:
-
-- `joinRoom`: rejected if it would create a third seat; reconnect is allowed with a valid token.
-- `startGame`: rejected.
-- `askQuestion`: allowed only for the active player.
-- `submitGuess`: allowed only for the active player.
-- `leave` or disconnect: marks player disconnected but keeps room state.
-
-`finished`:
-
-- `askQuestion`: rejected.
-- `submitGuess`: rejected.
-- `startGame`: rejected for the finished match.
-- `createRoom`: allowed as a separate new room.
-- Reconnect is allowed so players can see the result.
-
-Every rejected action returns an `error` message and leaves authoritative state unchanged.
+Rejected actions leave authoritative room state unchanged except for optional error history, which version 1 should not add.
 
 ## WebSocket Protocol
 
-Messages are JSON objects. Every client-to-server message has:
+Transport:
 
-- `type`: string action name.
-- `requestId`: client-generated string so responses can be correlated.
-- `payload`: object.
+- WebSocket URL: same host as page, path `/ws`.
+- Message encoding: UTF-8 JSON text frames.
+- Invalid JSON returns `INVALID_MESSAGE` when possible, then may close the socket if parsing repeatedly fails.
 
-Every server-to-client message has:
-
-- `type`: string event name.
-- `requestId`: copied from the triggering request when applicable.
-- `payload`: object.
-
-Client-to-server message types and payloads:
-
-- `createRoom`: payload `{ "name": "Alice" }`
-- `joinRoom`: payload `{ "roomCode": "ABCD", "name": "Bob" }`
-- `reconnect`: payload `{ "roomCode": "ABCD", "playerId": "...", "token": "..." }`
-- `startGame`: payload `{ "roomCode": "ABCD" }`
-- `askQuestion`: payload `{ "roomCode": "ABCD", "cardId": "sum-all" }`
-- `submitGuess`: payload `{ "roomCode": "ABCD", "tiles": [{ "number": 1, "color": "red" }] }`
-
-Example full client message:
+Client envelope:
 
 ```json
 {
   "type": "askQuestion",
   "requestId": "req-17",
-  "payload": {
-    "roomCode": "ABCD",
-    "cardId": "sum-all"
-  }
+  "payload": {}
 }
 ```
 
-Server-to-client message types and payloads:
-
-- `roomCreated`: returns `{ "roomCode": "...", "playerId": "...", "token": "...", "view": RoomView }`
-- `roomJoined`: returns `{ "roomCode": "...", "playerId": "...", "token": "...", "view": RoomView }`
-- `reconnected`: returns `{ "view": RoomView }`
-- `roomUpdated`: broadcasts `{ "view": RoomView }` to each connected player, with each view filtered for that player.
-- `actionAccepted`: returns `{ "message": "..." }` for actions whose result is mainly visible through `roomUpdated`.
-- `error`: returns `{ "code": "OUT_OF_TURN", "message": "It is not your turn." }`
-
-Example full server error:
+Server envelope:
 
 ```json
 {
-  "type": "error",
+  "type": "roomUpdated",
   "requestId": "req-17",
-  "payload": {
-    "code": "OUT_OF_TURN",
-    "message": "It is not your turn."
-  }
+  "payload": {}
 }
 ```
 
-`RoomView` is the only room state shape clients render. It includes:
+Envelope rules:
 
-- `code`
-- `state`
-- `self`: current player id, name, owner flag, connection flag, and full hand if dealt.
-- `opponent`: opponent id, name, connection flag, tile count, and full hand only when `state` is `finished`.
-- `isOwner`
-- `isActivePlayer`
-- `activePlayerName`
-- `questionMarket`
-- `history`
-- `winnerName`
-- `errorMessage`, optional transient UI hint
+- `type` is required.
+- `requestId` is required for client action messages and copied into direct responses.
+- `payload` must be an object.
+- Unknown `type` returns `INVALID_MESSAGE`.
 
-The client must render only `RoomView`; it must not depend on raw `Room`.
+Client-to-server messages:
+
+| Type | Payload |
+|---|---|
+| `createRoom` | `{ "name": "Alice" }` |
+| `joinRoom` | `{ "roomCode": "ABCD", "name": "Bob" }` |
+| `reconnect` | `{ "roomCode": "ABCD", "playerId": "player_...", "token": "..." }` |
+| `startGame` | `{ "roomCode": "ABCD" }` |
+| `askQuestion` | `{ "roomCode": "ABCD", "cardId": "sum-all" }` |
+| `submitGuess` | `{ "roomCode": "ABCD", "tiles": [{ "number": 1, "color": "red" }] }` |
+
+Server-to-client messages:
+
+| Type | Payload |
+|---|---|
+| `roomCreated` | `{ "roomCode": "ABCD", "playerId": "player_...", "token": "...", "view": RoomView }` |
+| `roomJoined` | `{ "roomCode": "ABCD", "playerId": "player_...", "token": "...", "view": RoomView }` |
+| `reconnected` | `{ "view": RoomView }` |
+| `roomUpdated` | `{ "view": RoomView }` |
+| `actionAccepted` | `{ "message": "..." }` |
+| `error` | `{ "code": "OUT_OF_TURN", "message": "It is not your turn." }` |
+
+Broadcast rules:
+
+- After join, start, ask, guess, reconnect, and disconnect, server sends `roomUpdated` to connected players.
+- `roomUpdated` payload must be independently filtered per receiving player.
+- Direct responses may be followed by `roomUpdated`.
+
+## RoomView Contract
+
+`RoomView` is the only room state shape rendered by the client.
+
+During `waiting`:
+
+```js
+{
+  code: "ABCD",
+  state: "waiting",
+  self: {
+    id: "player_1",
+    name: "Alice",
+    isOwner: true,
+    connected: true,
+    hand: null
+  },
+  opponent: {
+    id: "player_2",
+    name: "Bob",
+    connected: true,
+    tileCount: 0,
+    hand: null
+  },
+  isOwner: true,
+  isActivePlayer: false,
+  activePlayerName: null,
+  questionMarket: [],
+  history: [],
+  winnerName: null
+}
+```
+
+During `playing`:
+
+- `self.hand` contains 5 full tiles.
+- `opponent.hand` is `null`.
+- `opponent.tileCount` is `5`.
+- `questionMarket` contains public card objects.
+- `history` contains public history only.
+
+During `finished`:
+
+- `self.hand` contains own full hand.
+- `opponent.hand` contains opponent full hand.
+- `winnerName` is set.
+
+Client code must not depend on raw `Room`.
 
 ## Error Codes
 
-Use stable error codes so tests and UI can target behavior without matching prose:
+Stable error codes:
 
 - `INVALID_MESSAGE`
 - `NAME_REQUIRED`
@@ -316,598 +606,270 @@ Use stable error codes so tests and UI can target behavior without matching pros
 - `INVALID_RECONNECT`
 - `PLAYER_NOT_IN_ROOM`
 
-Error messages should be short and human-readable.
+Error behavior:
+
+- Error messages are short and human-readable.
+- Errors do not mutate game state.
+- UI displays the latest error inline without leaving the room.
+
+## Input Validation
+
+Names:
+
+- Trim whitespace.
+- Require 1 to 24 visible characters.
+- Reject empty names with `NAME_REQUIRED`.
+- Escape names when rendering in HTML.
+
+Room codes:
+
+- Canonical room codes are 4 to 6 uppercase alphanumeric characters.
+- Normalize entered room codes by trimming and uppercasing.
+
+Guesses:
+
+- Must be an array of exactly 5 tiles.
+- Each tile must have `number` integer 0..9.
+- Each tile must have `color` exactly `red` or `blue`.
+- Reject invalid shape with `INVALID_GUESS`.
+
+Question cards:
+
+- `cardId` must be a string.
+- `cardId` must exist in `questionMarket`.
+- Stale or missing cards return `CARD_NOT_AVAILABLE`.
 
 ## Visibility Rules
 
 The server sends each player a filtered view:
 
-- The player sees their own full hand.
-- The player sees only the opponent's tile count before the game ends.
-- Both players see public question cards, turn state, room state, public history, and game result.
-- Both hands are revealed only after the game finishes.
+- Player sees own full hand after deal.
+- Player sees only opponent name, connection state, and tile count before finish.
+- Player never sees unused tiles before finish.
+- Both players see public question market, turn state, room state, public history, and result.
+- Both hands are revealed only after finish.
 
-All client actions are validated server-side. A client cannot ask a missing card, act out of turn, start without two players, guess with malformed tiles, or join a full room.
+All hidden-information protection must be enforced server-side.
 
 ## Visibility Matrix
 
-During `waiting`:
+| Data | Waiting self | Waiting opponent | Playing self | Playing opponent | Finished both |
+|---|---:|---:|---:|---:|---:|
+| Room code | yes | yes | yes | yes | yes |
+| Own name | yes | yes | yes | yes | yes |
+| Opponent name | if present | if present | yes | yes | yes |
+| Own hand | no | no | yes | no | yes |
+| Opponent hand | no | no | no | no | yes |
+| Opponent tile count | 0 | 0 | yes | yes | yes |
+| Unused tiles | no | no | no | no | no |
+| Question market | no | no | yes | yes | yes |
+| Public history | yes | yes | yes | yes | yes |
+| Winner | no | no | no | no | yes |
 
-- A player can see their own name, opponent name if present, room code, owner status, and connection state.
-- No hands or question cards exist yet.
-
-During `playing`:
-
-- A player can see their own full hand.
-- A player can see the opponent's name, connection state, and tile count.
-- A player cannot see opponent tile numbers, colors, or removed unused tiles.
-- Both players can see question market, public history, active player, and failed guess history.
-
-During `finished`:
-
-- Both players can see both full hands, winner, history, and final result.
-
-Server logs may contain full state during local development, but production-facing client messages must not leak hidden state.
+Server logs may contain full state during local development, but client messages must not leak hidden state.
 
 ## Interface
 
 The first screen is the playable game surface, not a landing page.
 
-The layout has four main areas:
+Layout:
 
-- Room panel: nickname, room code, players, connection state, start/new game controls.
-- Table panel: current turn, six public question cards, and action feedback.
-- Player panel: own hand, opponent placeholder tiles, and ordered guess controls.
-- History panel: public questions, answers, failed guesses, final result, and a local notes textarea.
+- Room panel: name input, room code input, create/join controls, copy room code, players, connection state, start button.
+- Table panel: current turn, question cards, selected action feedback.
+- Player panel: own hand, opponent placeholder tiles, ordered guess controls.
+- History panel: public questions, answers, failed guesses, result, local notes.
 
-The visual style should feel like a clean tabletop tool: compact, readable, and focused on deduction. Cards and tiles should have stable dimensions so the interface does not shift during play. Desktop browsers are the primary target; the layout should remain usable on narrow screens.
+States:
+
+- Not connected: show name, create, and join controls.
+- Waiting: show room code, seats, and start readiness.
+- Playing: show turn, question cards, own hand, opponent placeholders, guess form, history.
+- Finished: show winner, both hands, history, and new room option.
 
 ## UX Requirements
 
-The UI should make the legal next action obvious:
+- Disable start until two players are seated.
+- Disable start for non-owner.
+- Disable question cards and guess submission when not active player.
+- Make active player name visible.
+- Show both players' connection state.
+- Keep room code copyable.
+- Preserve local notes across normal re-renders.
+- Keep latest error visible until next successful action or dismissal.
+- Show final reveal area after finish.
+- Do not rely on long instructional paragraphs.
 
-- Disable start until two players are present or show a clear reason.
-- Disable question cards and guess submission when it is not the player's turn.
-- Show whose turn it is using player names.
-- Show connection state for both players.
-- Keep the room code copyable.
-- Preserve the local notes textarea across normal re-renders.
-- Show a final reveal area when the game ends.
+## Accessibility And Responsive Requirements
 
-The UI should not use instructional paragraphs to explain every control. Labels, disabled states, tooltips, and concise status text should carry the interaction.
+- All buttons and inputs must have accessible labels.
+- Question cards must be keyboard-focusable buttons.
+- Disabled controls must use actual `disabled` where applicable.
+- Color cannot be the only indicator of tile color; include text labels or symbols.
+- Layout must remain usable at 360px viewport width.
+- Text must not overflow fixed controls.
+- Dynamic history updates should not steal focus from active form controls.
 
 ## Error Handling
 
-The server returns structured error messages for invalid actions. The frontend displays concise inline messages and keeps the user in the room.
+Expected errors:
 
-Expected error cases include invalid room code, duplicate or full room, missing nickname, start attempted by a non-owner, start attempted before two players join, out-of-turn actions, stale question card selection, malformed guesses, and disconnected WebSocket.
+- Invalid JSON or envelope.
+- Missing or invalid name.
+- Invalid room code.
+- Joining a full or started room.
+- Starting as non-owner.
+- Starting before two players are seated.
+- Acting out of turn.
+- Selecting a stale question card.
+- Submitting malformed guess.
+- Losing WebSocket connection.
+- Reconnect token mismatch.
 
-The client should try to reconnect automatically after short connection drops. If reconnect fails, it should keep the room code visible so the player can retry manually.
+Client behavior:
+
+- Display inline error.
+- Keep current form values when possible.
+- Attempt reconnect with stored credentials after transient disconnect.
+- If reconnect fails, show create/join controls and keep room code visible if known.
 
 ## Security And Fair Play
 
-The first version is designed for friendly games, not hostile public play. Still, the server must preserve hidden information and reject invalid actions.
-
 Minimum safeguards:
 
-- Never send opponent hands or unused tiles to a client before `finished`.
 - Treat all client payloads as untrusted.
-- Validate room code, player seat, reconnect token, turn ownership, card availability, and guess shape server-side.
-- Generate reconnect tokens with enough entropy for casual use.
-- Do not let a second tab with the same token create a third seat.
+- Never send opponent hands before finish.
+- Never send unused tiles to clients.
+- Validate player seat and token for every room action.
+- Generate reconnect tokens with enough entropy for friendly games.
+- Escape user names in HTML.
+- Do not use `innerHTML` for untrusted user-provided text unless escaped first.
 
 Known limitations:
 
-- A player can inspect their own browser state and messages.
-- In-memory state disappears if the server restarts.
-- There is no account identity, ban system, replay audit, or cryptographic proof of shuffle fairness.
+- Players can inspect their own browser state and network messages.
+- In-memory state disappears on process restart.
+- There is no account identity, moderation, ban system, replay audit, or cryptographic shuffle proof.
+- Friendly-game anti-cheat is acceptable for version 1.
 
-## Testing
+## Testing Strategy
 
-Core game logic should be isolated from WebSocket transport and covered with automated tests before implementation code is added.
+Use Node's built-in test runner.
 
-Required unit coverage:
+Unit tests:
 
-- Tile creation, shuffle/deal shape, and sorted hand order.
-- Question card answer functions.
-- Guess validation and win detection.
-- Turn switching after question and failed guess.
-- Visibility filtering that hides opponent hands during play.
+- Tile creation.
+- Shuffle/deal shape using injectable deterministic shuffle where needed.
+- Hand sorting.
+- Question answer functions.
+- Guess validation.
+- Win detection.
+- Turn switching.
+- Room state transitions.
+- Error code returns.
+- Visibility filtering.
 
-Required integration coverage:
+Integration tests:
 
-- Create room, join room, start game.
-- Ask a question and receive synchronized public history.
-- Submit incorrect and correct guesses.
-- Reject invalid out-of-turn or malformed actions.
+- WebSocket create/join/start.
+- Ask question and receive synchronized history.
+- Incorrect guess and turn pass.
+- Correct guess and final reveal.
+- Reconnect after socket close.
+- Reject invalid JSON, malformed message, out-of-turn action, stale card, full room.
 
-Manual verification should include opening two browser tabs, creating a room in one tab, joining from the other, completing several turns, refreshing one tab, and finishing a game.
+Regression rule:
+
+- Any implementation bug found during manual testing must get an automated test before or with the fix when reasonably testable.
+
+## Conformance Cases
+
+| Case | Setup | Action | Expected |
+|---|---|---|---|
+| Create room | Connected socket, valid name | `createRoom` | `roomCreated`, state `waiting`, owner true, token returned. |
+| Join room | Waiting room with one player | Guest `joinRoom` | `roomJoined`, both players receive `roomUpdated`. |
+| Start too early | Waiting room with one player | Owner `startGame` | Error `NEED_TWO_PLAYERS`, state unchanged. |
+| Non-owner start | Waiting room with two players | Guest `startGame` | Error `NOT_ROOM_OWNER`, state unchanged. |
+| Start game | Waiting room with two players | Owner `startGame` | State `playing`, each self view has 5 sorted tiles, market has 6 cards. |
+| Hidden opponent hand | Playing room | Inspect player A `RoomView` | A sees own hand, opponent hand is `null`, opponent tile count is 5. |
+| Ask question | Playing room, player A active, card visible | A `askQuestion` | History adds answer, card replaced if deck nonempty, active player becomes B. |
+| Out-of-turn ask | Playing room, player B active | A `askQuestion` | Error `OUT_OF_TURN`, history and active player unchanged. |
+| Stale card | Card already used | Active player asks old `cardId` | Error `CARD_NOT_AVAILABLE`, state unchanged. |
+| Malformed guess | Playing room, active player | Guess has 4 tiles | Error `INVALID_GUESS`, state unchanged. |
+| Incorrect guess | Playing room, active player | Submit valid wrong guess | History records incorrect guess, turn passes, hands remain hidden. |
+| Correct guess | Playing room, active player | Submit exact opponent hand | State `finished`, winner set, both hands visible. |
+| Reconnect | Playing room, player socket closed | Same credentials `reconnect` | `reconnected`, same seat restored, no third seat. |
+| Full room | Waiting room has two players | Third user `joinRoom` | Error `ROOM_FULL`. |
+| Finished action | Finished room | Any `askQuestion` | Error `GAME_FINISHED`, state unchanged. |
+
+## Manual Verification
+
+Run from `logic-duel/`:
+
+1. `npm install`
+2. `npm test`
+3. `npm start`
+4. Open first browser tab at local server URL.
+5. Create room as Alice.
+6. Copy room code.
+7. Open second browser tab or another browser.
+8. Join room as Bob.
+9. Verify Alice can start and Bob cannot start.
+10. Start game.
+11. Verify each tab sees only its own hand.
+12. Ask at least two questions across both players.
+13. Submit one incorrect guess.
+14. Refresh one tab and verify reconnect to same seat.
+15. Submit a correct guess using server-known hand during local testing or a debug-assisted test path if available.
+16. Verify final reveal shows both hands and winner.
+17. Stop server.
+
+The final implementation summary must record whether each step passed.
 
 ## Acceptance Criteria
 
-The first version is complete when all of these are true:
+Version 1 is complete only when:
 
-- `npm install` and `npm start` work inside `logic-duel/`.
-- Two browser tabs can create and join a room by code.
-- The owner cannot start until two players are present.
-- Starting a game deals each player 5 sorted tiles and reveals 6 question cards.
-- Each tab sees its own hand and does not see the opponent hand during play.
-- The active player can ask a visible question and both tabs see the public answer in history.
-- Used question cards leave the market and are replaced while the deck has cards.
-- The active player can submit an incorrect guess, see it recorded, and the turn passes.
-- The active player can submit a correct guess, the game finishes, winner is shown, and both hands are revealed.
-- Out-of-turn, malformed, stale-card, and full-room actions are rejected with stable error codes.
-- Refreshing one tab during a match can reconnect to the same seat using local storage.
-- Automated tests cover the required unit and integration behaviors.
-- Manual two-tab verification has been run and recorded in the final implementation summary.
+- `npm install` works in `logic-duel/`.
+- `npm start` serves the app and WebSocket endpoint.
+- `npm test` passes.
+- Two clients can create, join, start, play, reconnect, and finish a game.
+- Server remains authoritative for all game state.
+- Opponent hands and unused tiles are not sent before finish.
+- All listed conformance cases pass manually or through automated tests.
+- UI is usable on desktop and at 360px width.
+- README documents run, test, and deploy basics.
+- Final summary includes automated test output and manual verification result.
 
 ## Decision Log
 
-- 2026-07-06: Choose a standalone `logic-duel/` app instead of modifying the existing `demo/` app, because the game is a separate product surface.
-- 2026-07-06: Choose Node.js plus WebSocket so the game can support real-time rooms and remain deployable on common Node hosts.
-- 2026-07-06: Limit v1 to two players so hidden information, turn flow, and reconnect behavior can be made solid before adding variants.
-- 2026-07-06: Use an original question deck inspired by deduction mechanics instead of copying commercial card text.
-- 2026-07-06: Use in-memory rooms for v1 to keep setup simple; persistence is deferred.
-- 2026-07-06: Use same-browser reconnect tokens, not accounts, for lightweight refresh recovery.
+- 2026-07-06: Use standalone `logic-duel/` app instead of modifying existing `demo/`.
+- 2026-07-06: Use Node.js plus WebSocket for real-time rooms and deployability.
+- 2026-07-06: Limit version 1 to two players.
+- 2026-07-06: Use an original custom question deck instead of commercial card text.
+- 2026-07-06: Use in-memory rooms for version 1.
+- 2026-07-06: Use same-browser reconnect tokens instead of accounts.
+- 2026-07-07: Make spec English-only because code-facing contracts are canonical and the user no longer needs Chinese.
+- 2026-07-07: Harden spec using agent-oriented PRD/SRS practices: six core areas, three-tier boundaries, conformance cases, and spec index.
+
+## Open Questions
+
+None blocking version 1 implementation.
+
+Non-blocking choices for implementation planning:
+
+- Whether to add a small debug-only helper for manual correct-guess verification.
+- Whether room codes should avoid ambiguous characters such as `0`, `O`, `1`, and `I`.
+- Whether failed guess history should display the full guessed sequence or only that a guess was attempted. Current default: display the public guessed sequence.
 
 ## Future Extensions
 
-Likely follow-up improvements include three- or four-player variants, AI opponent mode, shareable deployment, persistent room links, spectator mode with delayed reveal rules, better reconnect across devices, and a fuller question deck.
-
----
-
-# 逻辑对决线上版设计
-
-日期：2026-07-06
-状态：v2.1，双语实现就绪草案
-
-语言说明：英文部分是面向代码的权威契约，尤其是消息类型、字段名、错误码和协议结构。中文部分用于产品、设计和工程意图审阅。之后更新 spec 时，两种语言必须在同一次提交中同步更新。
-
-## Spec 维护规则
-
-这份 spec 是线上多人第一版的事实来源。实现过程中发现更好的决策、隐藏边界或歧义时，应持续更新它。
-
-更新规则：
-
-- 如果实现时发现行为不明确，先更新 spec，再写对应行为。
-- 如果测试暴露“预期”和“实现”不一致，先决定是改测试还是改 spec，再改生产代码。
-- 如果某个功能决定延后，要写进“未来扩展”或“范围外”，不要让它停留在默认假设里。
-- 如果协议消息变化，必须在同一个变更里更新 `WebSocket Protocol`。
-- 如果验证时发现缺口，要先补验收标准或测试要求，再宣称功能完成。
-
-## 目标
-
-构建一个受桌游“逻辑对决”启发的线上多人浏览器游戏。第一版应允许两名玩家创建或加入房间，实时进行一局完整的隐藏信息推理对局，并能在本地以便于部署的 Node.js 结构运行。
-
-## 范围
-
-第一版只支持双人房间。玩家输入昵称，可以创建房间获得房间码，也可以通过房间码加入已有房间。房主在两名玩家都入座后开始游戏。
-
-应用不包含账号、匹配、持久化统计、聊天、观战、AI 对手或公开大厅。这些能力刻意不放进第一版，以便先把隐藏信息和实时玩法做可靠。
-
-## 范围外
-
-第一版不支持：
-
-- 三人或四人变体。
-- 公开匹配、房间列表或邀请发现。
-- 用户账号、密码或持久化个人资料。
-- 跨设备重连。
-- 观战模式。
-- 聊天、表情互动或桌边聊天工具。
-- 服务端重启后的状态持久化。
-- 超出“服务端隐藏信息和动作校验”之外的反作弊。
-- 商业卡牌完整文本或商业规则书原文复制。
-
-## 架构
-
-应用放在新的 `logic-duel/` 目录中。
-
-后端是一个 Node.js 服务，同时提供静态前端资源和 WebSocket 端点。它拥有所有权威游戏状态：房间、玩家、牌堆顺序、手牌、问题卡、回合状态、历史记录和胜负结果。
-
-前端使用纯 HTML、CSS 和 JavaScript。它渲染当前玩家可见的状态，通过 WebSocket 发送用户动作，并且在游戏结束前永远不会收到对手隐藏牌。
-
-前端不需要构建步骤。`npm start` 启动服务，用户在浏览器打开本地 URL。服务端读取 `PORT` 环境变量，以便本地运行或部署到常见支持 WebSocket 的 Node 托管平台。
-
-## 文件结构
-
-第一版实现默认使用以下结构，除非实现计划阶段出现更好的理由：
-
-- `logic-duel/package.json`：脚本和依赖。
-- `logic-duel/server.js`：HTTP 服务和 WebSocket 接线。
-- `logic-duel/src/game-core.js`：纯游戏规则，不依赖网络或 DOM。
-- `logic-duel/src/rooms.js`：房间生命周期、玩家座位、重连 token、服务端动作校验。
-- `logic-duel/src/protocol.js`：消息名、payload 校验辅助、视图过滤辅助。
-- `logic-duel/public/index.html`：游戏主界面。
-- `logic-duel/public/styles.css`：布局和视觉样式。
-- `logic-duel/public/app.js`：WebSocket 客户端和 DOM 渲染。
-- `logic-duel/test/*.test.js`：Node 测试套件。
-
-纯游戏核心必须能在不启动服务器的情况下被测试直接调用。
-
-## 数据模型
-
-使用普通 JavaScript 对象。实现中可以加入辅助函数，但对外有意义的字段应保持稳定。
-
-`Tile`：
-
-- `number`：0 到 9 的整数。
-- `color`：`red` 或 `blue`。
-
-`Player`：
-
-- `id`：服务端生成的座位稳定 id。
-- `name`：清理后的显示名，1 到 24 个可见字符。
-- `token`：加入房间的浏览器保存的重连密钥。
-- `isOwner`：布尔值。
-- `connected`：布尔值。
-- `hand`：游戏开始后持有的 5 张 `Tile`。
-
-`QuestionCard`：
-
-- `id`：稳定字符串。
-- `text`：可安全展示给双方的文本。
-- `params`：可选结构化参数，供答案函数使用。
-- `answerType`：`number`、`boolean`、`tileNumber`、`tileColor` 或 `text`。
-
-`HistoryEntry`：
-
-- `id`：房间内单调递增整数。
-- `type`：`question`、`guess`、`system` 或 `result`。
-- `actorId`：当记录来自玩家动作时，对应玩家 id。
-- `text`：公开显示文本。
-- `createdAt`：服务端毫秒时间戳。
-
-`Room`：
-
-- `code`：短的大写房间码。
-- `state`：`waiting`、`playing` 或 `finished`。
-- `players`：最多 2 个 `Player`。
-- `ownerId`：房主玩家 id。
-- `activePlayerId`：`playing` 状态下当前行动玩家 id。
-- `questionDeck`：未揭示的 `QuestionCard` 数组。
-- `questionMarket`：最多 6 张已揭示 `QuestionCard`。
-- `history`：有序 `HistoryEntry` 数组。
-- `winnerId`：正确猜测后的获胜玩家 id。
-- `createdAt`：服务端毫秒时间戳。
-- `updatedAt`：服务端毫秒时间戳。
-
-在 `waiting` 或 `playing` 阶段，不得把对手 `hand` 放进任何客户端房间视图。
-
-## 游戏模型
-
-数字牌由两套颜色 `red` 和 `blue` 组成，每套数字 0 到 9，共 20 张。每名玩家获得 5 张。玩家手牌按数字升序排列；相同数字时，`red` 固定排在 `blue` 前面。
-
-游戏开始时，服务端洗数字牌、发手牌、移除未使用牌、洗问题卡，并揭示 6 张公共问题卡。当前玩家可以询问一张已揭示问题卡，或提交一次对手 5 张牌的完整猜测。
-
-询问问题时，服务端根据对手隐藏手牌计算答案，将公开结果加入历史，弃掉已用问题卡，如果还有牌则补一张，然后切换回合。
-
-猜测时，玩家必须提交 5 张有序牌，每张包含数字和颜色。猜对则游戏结束并揭示双方手牌；猜错则公开记录本次尝试并切换回合。
-
-## 游戏规则细节
-
-房间设置：
-
-- 房间码由服务端生成，应便于读出来，例如 4 到 6 位大写字母或数字。
-- 一个房间最多接受两个玩家座位。
-- 只有正好两个座位都有人时，房主才能开始。
-
-回合规则：
-
-- 只有当前行动玩家可以询问问题或提交猜测。
-- 双人版本中，问题总是针对对手。
-- 已使用的问题卡从 `questionMarket` 移除。
-- 如果 `questionDeck` 还有卡，补一张使市场回到 6 张。
-- 如果牌堆已空，则继续使用更少数量的可见问题卡。
-- 询问问题或猜错后，`activePlayerId` 切换为对手。
-- 猜对后，房间进入 `finished`，不再接受任何游戏动作。
-
-猜测规则：
-
-- 猜测必须包含正好 5 张有序牌。
-- 每张猜测牌必须有合法数字和颜色。
-- 允许数字重复，因为真实牌组中不同颜色可以有相同数字。
-- 只有 5 个位置的数字和颜色全部匹配时才算正确。
-- 猜错时只公开“猜错”结果，并可在历史中展示本次公开猜测序列。
-
-## 问题卡
-
-第一版内置一套可玩的自定义问题卡，不复制商业规则书。卡牌类型应是确定性的、能从手牌中直接计算，并且对推理有帮助。
-
-初始牌组类型：
-
-- 统计某种颜色的牌数。
-- 统计奇数或偶数数量。
-- 统计大于或小于某阈值的数字数量。
-- 报告所有数字之和。
-- 报告某个数字是否存在。
-- 报告某个位置的数字。
-- 报告某个位置的颜色。
-- 报告是否存在相邻连续数字。
-- 报告某个数字区间内的牌数。
-
-每张卡有稳定 id、展示文本和答案函数。服务端计算答案；客户端只展示卡牌文本和公开结果。
-
-初始牌组至少应有 24 张卡，避免多局过于重复。可以用同一类型搭配不同参数，例如“0-4 有几张？”和“5-9 有几张？”作为两张不同卡。
-
-答案展示规则：
-
-- 布尔答案展示为 `Yes` 或 `No`。
-- 数字答案展示为数字。
-- 位置问题在 UI 文本中使用从 1 开始的位置。
-- 服务端结构化存储答案值，同时在历史里记录人类可读的 `text`。
-
-## 房间与连接流程
-
-玩家可以创建房间或通过房间码加入。首次连接时，服务端分配 player id，前端把 reconnect token 存到 local storage。如果同一个浏览器刷新，并且房间仍然活跃，可以用 token 重连回原座位。
-
-房间有以下状态：
-
-- `waiting`：已有一名或两名玩家，游戏未开始。
-- `playing`：两名玩家正在对局。
-- `finished`：已有胜者，隐藏手牌已揭示。
-
-只有房主可以开始游戏。如果玩家在对局中断线，另一名玩家能看到断线状态。游戏状态保留在内存中，使浏览器刷新可以恢复。跨设备账号式恢复不在范围内。
-
-第一版房间保存在内存中。等待和结束房间 2 小时无活动后过期。进行中房间只有在双方都断线 2 小时后才过期。
-
-## 状态机
-
-按房间状态允许的动作：
-
-`waiting`：
-
-- `createRoom`：房间不存在前允许。
-- `joinRoom`：房间未满时允许。
-- `startGame`：仅房主且已有两名玩家时允许。
-- `askQuestion`：拒绝。
-- `submitGuess`：拒绝。
-
-`playing`：
-
-- `joinRoom`：如果会创建第三个座位则拒绝；有效 token 重连允许。
-- `startGame`：拒绝。
-- `askQuestion`：仅当前行动玩家允许。
-- `submitGuess`：仅当前行动玩家允许。
-- `leave` 或断线：标记玩家断线，但保留房间状态。
-
-`finished`：
-
-- `askQuestion`：拒绝。
-- `submitGuess`：拒绝。
-- `startGame`：对已结束对局拒绝。
-- `createRoom`：可创建另一个新房间。
-- 重连允许，便于玩家查看结果。
-
-所有被拒绝的动作都返回 `error` 消息，并且不改变权威状态。
-
-## WebSocket 协议
-
-消息是 JSON 对象。每个客户端到服务端消息都有：
-
-- `type`：字符串动作名。
-- `requestId`：客户端生成的字符串，用于关联响应。
-- `payload`：对象。
-
-每个服务端到客户端消息都有：
-
-- `type`：字符串事件名。
-- `requestId`：适用时复制触发请求的 request id。
-- `payload`：对象。
-
-客户端到服务端消息类型和 payload：
-
-- `createRoom`：payload `{ "name": "Alice" }`
-- `joinRoom`：payload `{ "roomCode": "ABCD", "name": "Bob" }`
-- `reconnect`：payload `{ "roomCode": "ABCD", "playerId": "...", "token": "..." }`
-- `startGame`：payload `{ "roomCode": "ABCD" }`
-- `askQuestion`：payload `{ "roomCode": "ABCD", "cardId": "sum-all" }`
-- `submitGuess`：payload `{ "roomCode": "ABCD", "tiles": [{ "number": 1, "color": "red" }] }`
-
-完整客户端消息示例：
-
-```json
-{
-  "type": "askQuestion",
-  "requestId": "req-17",
-  "payload": {
-    "roomCode": "ABCD",
-    "cardId": "sum-all"
-  }
-}
-```
-
-服务端到客户端消息类型和 payload：
-
-- `roomCreated`：返回 `{ "roomCode": "...", "playerId": "...", "token": "...", "view": RoomView }`
-- `roomJoined`：返回 `{ "roomCode": "...", "playerId": "...", "token": "...", "view": RoomView }`
-- `reconnected`：返回 `{ "view": RoomView }`
-- `roomUpdated`：向每个已连接玩家广播 `{ "view": RoomView }`，每个玩家收到的 view 都按自身权限过滤。
-- `actionAccepted`：返回 `{ "message": "..." }`，用于结果主要通过 `roomUpdated` 体现的动作。
-- `error`：返回 `{ "code": "OUT_OF_TURN", "message": "It is not your turn." }`
-
-完整服务端错误示例：
-
-```json
-{
-  "type": "error",
-  "requestId": "req-17",
-  "payload": {
-    "code": "OUT_OF_TURN",
-    "message": "It is not your turn."
-  }
-}
-```
-
-`RoomView` 是客户端唯一用于渲染的房间状态形状。它包含：
-
-- `code`
-- `state`
-- `self`：当前玩家 id、名字、房主标记、连接标记，以及发牌后的完整手牌。
-- `opponent`：对手 id、名字、连接标记、牌数，并且只有 `state` 为 `finished` 时包含完整手牌。
-- `isOwner`
-- `isActivePlayer`
-- `activePlayerName`
-- `questionMarket`
-- `history`
-- `winnerName`
-- `errorMessage`：可选临时 UI 提示。
-
-客户端必须只渲染 `RoomView`，不能依赖原始 `Room`。
-
-## 错误码
-
-使用稳定错误码，使测试和 UI 不需要匹配提示文案：
-
-- `INVALID_MESSAGE`
-- `NAME_REQUIRED`
-- `ROOM_NOT_FOUND`
-- `ROOM_FULL`
-- `NOT_ROOM_OWNER`
-- `NEED_TWO_PLAYERS`
-- `GAME_ALREADY_STARTED`
-- `GAME_NOT_STARTED`
-- `GAME_FINISHED`
-- `OUT_OF_TURN`
-- `CARD_NOT_AVAILABLE`
-- `INVALID_GUESS`
-- `INVALID_RECONNECT`
-- `PLAYER_NOT_IN_ROOM`
-
-错误消息应简短、可读。
-
-## 可见性规则
-
-服务端给每个玩家发送过滤后的视图：
-
-- 玩家能看到自己的完整手牌。
-- 游戏结束前，玩家只能看到对手牌数。
-- 双方都能看到公共问题卡、回合状态、房间状态、公共历史和游戏结果。
-- 只有游戏结束后，双方手牌才会同时揭示。
-
-所有客户端动作都必须由服务端校验。客户端不能询问不存在的卡、不能越权行动、不能在不足两人时开始、不能提交畸形猜测、不能加入已满房间。
-
-## 可见性矩阵
-
-`waiting` 阶段：
-
-- 玩家可见自己的名字、对手名字（若存在）、房间码、房主状态和连接状态。
-- 此时还没有手牌和问题卡。
-
-`playing` 阶段：
-
-- 玩家可见自己的完整手牌。
-- 玩家可见对手名字、连接状态和牌数。
-- 玩家不可见对手牌的数字、颜色或已移除未使用牌。
-- 双方都可见问题市场、公共历史、当前行动玩家和失败猜测历史。
-
-`finished` 阶段：
-
-- 双方都可见双方完整手牌、胜者、历史和最终结果。
-
-本地开发时服务端日志可以包含完整状态，但面向生产的客户端消息不得泄露隐藏状态。
-
-## 界面
-
-第一屏就是可玩的游戏桌面，不做落地页。
-
-布局包含四个主要区域：
-
-- 房间面板：昵称、房间码、玩家、连接状态、开始/新游戏控制。
-- 桌面面板：当前回合、6 张公共问题卡、动作反馈。
-- 玩家面板：自己的手牌、对手占位牌、按顺序填写的猜测控件。
-- 历史面板：公开问题、答案、失败猜测、最终结果和本地笔记区。
-
-视觉风格应像一个清爽的桌游工具台：紧凑、易读、专注推理。卡牌和数字牌要有稳定尺寸，避免操作时布局跳动。优先桌面浏览器体验，但窄屏也应可用。
-
-## 用户体验要求
-
-UI 应让合法下一步动作非常明显：
-
-- 两名玩家未到齐时禁用开始按钮，或显示明确原因。
-- 非当前回合时禁用问题卡和猜测提交。
-- 用玩家名字显示当前轮到谁。
-- 显示双方连接状态。
-- 房间码应便于复制。
-- 本地笔记区在正常重新渲染时不得丢失内容。
-- 游戏结束时显示最终揭示区域。
-
-UI 不应依赖大段说明文字解释所有控件。优先用标签、禁用状态、工具提示和简短状态文本承载交互。
-
-## 错误处理
-
-服务端对非法动作返回结构化错误消息。前端显示简短行内提示，并让用户留在房间中。
-
-预期错误包括：无效房间码、重复或满员房间、昵称缺失、非房主开始、未满两人开始、越权行动、过期问题卡选择、畸形猜测和 WebSocket 断开。
-
-客户端应在短暂连接中断后自动尝试重连。如果重连失败，应保留房间码可见，方便玩家手动重试。
-
-## 安全与公平性
-
-第一版面向友好对局，不面向强对抗公网环境。即便如此，服务端也必须保护隐藏信息并拒绝非法动作。
-
-最低保护：
-
-- `finished` 前绝不向客户端发送对手手牌或未使用牌。
-- 把所有客户端 payload 当作不可信输入。
-- 服务端校验房间码、玩家座位、重连 token、回合归属、卡牌可用性和猜测形状。
-- 用足够熵生成重连 token，满足友好场景。
-- 同一 token 的第二个标签页不能创建第三个座位。
-
-已知限制：
-
-- 玩家可以检查自己浏览器里的状态和网络消息。
-- 服务端重启会丢失内存状态。
-- 没有账号身份、封禁系统、回放审计或洗牌公平性的密码学证明。
-
-## 测试
-
-核心游戏逻辑应与 WebSocket 传输隔离，并在写实现代码前用自动化测试覆盖。
-
-必须覆盖的单元测试：
-
-- 数字牌创建、洗牌/发牌形状、手牌排序。
-- 问题卡答案函数。
-- 猜测校验和胜负判断。
-- 询问问题和猜错后的回合切换。
-- 对局中隐藏对手手牌的可见性过滤。
-
-必须覆盖的集成测试：
-
-- 创建房间、加入房间、开始游戏。
-- 询问问题并收到同步公共历史。
-- 提交错误猜测和正确猜测。
-- 拒绝越权或畸形动作。
-
-手动验证应包括：打开两个浏览器标签页，一个创建房间，另一个加入，完成若干回合，刷新其中一个标签页，并完成一局游戏。
-
-## 验收标准
-
-第一版完成必须满足以下所有条件：
-
-- 在 `logic-duel/` 中 `npm install` 和 `npm start` 可用。
-- 两个浏览器标签页可以通过房间码创建和加入同一房间。
-- 两名玩家未到齐时，房主不能开始。
-- 开始游戏后，每名玩家获得 5 张排序后的牌，并揭示 6 张问题卡。
-- 每个标签页能看到自己的手牌，并且在对局中看不到对手手牌。
-- 当前行动玩家可以询问一张可见问题卡，两个标签页都能在历史中看到公开答案。
-- 已使用问题卡离开市场，并在牌堆有卡时补牌。
-- 当前行动玩家可以提交错误猜测，历史记录该行为，并切换回合。
-- 当前行动玩家可以提交正确猜测，游戏结束，显示胜者，并揭示双方手牌。
-- 越权、畸形、过期卡牌和满房间动作都用稳定错误码拒绝。
-- 对局中刷新一个标签页可以通过 local storage 重连回同一座位。
-- 自动化测试覆盖要求的单元和集成行为。
-- 最终实现总结中记录已完成双标签页手动验证。
-
-## 决策日志
-
-- 2026-07-06：选择独立 `logic-duel/` 应用，而不是修改现有 `demo/`，因为这是独立产品界面。
-- 2026-07-06：选择 Node.js + WebSocket，因为游戏需要实时房间，并且可部署到常见 Node 托管平台。
-- 2026-07-06：v1 限制为双人，以便先把隐藏信息、回合流和重连做扎实。
-- 2026-07-06：使用原创问题牌组，借鉴推理机制，但不复制商业卡牌文本。
-- 2026-07-06：v1 使用内存房间，降低设置复杂度；持久化延后。
-- 2026-07-06：使用同浏览器重连 token，而不是账号系统，以轻量支持刷新恢复。
-
-## 未来扩展
-
-可能的后续改进包括三人或四人变体、AI 对手、可分享部署、持久房间链接、带延迟揭示规则的观战模式、跨设备重连，以及更完整的问题牌组。
+- Three- or four-player variants.
+- AI opponent.
+- Public deployment with share links.
+- Persistent room links.
+- Database-backed rooms.
+- Cross-device reconnect.
+- Spectator mode with delayed or finished-only reveal.
+- Fuller custom question deck.
+- Replay export.
+- Cryptographic shuffle proof.
