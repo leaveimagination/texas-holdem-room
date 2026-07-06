@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FanDo 一键录音总结 Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="recording-console">
+        <header class="hero">
+          <p class="eyebrow">FanDo Meeting Recorder</p>
+          <h1>一键录音，自动生成飞书纪要</h1>
+          <p class="subtitle">
+            Demo 使用模拟录音和模拟飞书创建流程，真实版本会接入电脑麦克风、讯飞 ASR 和 FanDo 飞书工具。
+          </p>
+        </header>
+
+        <section class="control-panel" aria-label="录音控制">
+          <button class="record-button" id="recordButton" type="button">
+            开始录音
+          </button>
+          <div class="state-row">
+            <span class="state-dot" id="stateDot"></span>
+            <span id="stateLabel">未开始</span>
+            <strong id="durationLabel">00:00</strong>
+          </div>
+          <div class="meter" id="meter" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </section>
+
+        <section class="progress-card" aria-label="处理进度">
+          <h2>自动处理链路</h2>
+          <ol class="steps" id="steps">
+            <li data-step="record">录音</li>
+            <li data-step="asr">讯飞转写 + 说话人区分</li>
+            <li data-step="summary">生成会议总结</li>
+            <li data-step="feishu">创建飞书文档</li>
+          </ol>
+        </section>
+
+        <section class="result-grid">
+          <article class="result-card">
+            <h2>飞书文档</h2>
+            <div id="docResult" class="placeholder">录音结束后自动创建。</div>
+          </article>
+
+          <article class="result-card">
+            <h2>会议摘要</h2>
+            <div id="summaryResult" class="placeholder">等待会议纪要生成。</div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./discussion-core.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
