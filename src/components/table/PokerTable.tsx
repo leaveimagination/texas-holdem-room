@@ -53,6 +53,7 @@ export function PokerTable({
   const showHostControls = hostControls || readHostControls(view);
   const snapshotLegalActions = readLegalActions(view);
   const resolvedLegalActions = snapshotLegalActions ?? legalActions;
+  const isSettlementHold = Boolean(readObject(view)?.handResult);
   const insuranceOffer = readInsuranceOffer(view);
   const showdown = readShowdown(view);
   const isRunoutReveal = Boolean(showdown && board.length >= 4);
@@ -104,16 +105,16 @@ export function PokerTable({
               {board.map((card, index) => <PlayingCard card={card} dealIndex={boardDealOffset + index} key={`${handNumber ?? "hand"}-${card}-${index}`} />)}
             </div>
           ) : null}
-          {actorId ? <p className="actor-callout is-live">{actorName ?? "Player"} to act</p> : null}
+          {actorId && !isSettlementHold ? <p className="actor-callout is-live">{actorName ?? "Player"} to act</p> : null}
         </div>
         {showdown ? <ShowdownOverlay showdown={showdown} /> : null}
         {collectPot ? <CollectPotBurst collectPot={collectPot} /> : null}
       </div>
 
       <ActionControls
-        legalActions={resolvedLegalActions}
-        actorId={actorId}
-        actorName={actorName}
+        legalActions={isSettlementHold ? { actions: [] } : resolvedLegalActions}
+        actorId={isSettlementHold ? null : actorId}
+        actorName={isSettlementHold ? null : actorName}
         localParticipantId={localParticipantId}
         heroCards={heroCards}
         heroName={readSeatName(heroSeat)}

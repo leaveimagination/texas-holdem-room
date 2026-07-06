@@ -337,10 +337,16 @@ describe("PokerTable", () => {
             number: 9,
             finished: false,
             pot: 30,
+            actorId: "p1",
             board: [],
             seats: [
               { seatNumber: 1, participantId: "p1", holeCards: ["2c", "3c"] },
               { seatNumber: 2, participantId: "p2" }
+            ],
+            legalActions: [
+              { type: "check" },
+              { type: "bet", minAmountTo: 20, maxAmountTo: 1120 },
+              { type: "all-in", amountTo: 1120 }
             ],
             winners: []
           }
@@ -353,6 +359,10 @@ describe("PokerTable", () => {
     expect(html).toContain("Hero");
     expect(html).toContain("Villain");
     expect(html).toContain("collect-pot-burst");
+    expect(html).not.toContain("YOUR TURN");
+    expect(html).not.toContain(">Check<");
+    expect(html).not.toContain(">Bet<");
+    expect(html).not.toContain(">All in<");
   });
 
   it("marks all-in runout boards with a slower one-by-one reveal cadence", () => {
