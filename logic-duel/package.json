@@ -1,0 +1,20 @@
+{
+  "name": "logic-duel-online",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Online multiplayer Logic Duel implementation",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "test:unit": "node --test test/game-core.test.js test/questions.test.js test/protocol.test.js test/rooms.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "verify:manual": "node scripts/manual-checklist.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
