@@ -1,7 +1,7 @@
 # Logic Duel Online - Protocol Visibility And Security
 
 Date: 2026-07-07
-Status: v3.1, split executable engineering contract
+Status: v3.2, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 

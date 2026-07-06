@@ -1,7 +1,7 @@
 # Logic Duel Online - Overview And Agent Contract
 
 Date: 2026-07-07
-Status: v3.1, split executable engineering contract
+Status: v3.2, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -16,6 +16,7 @@ This document is the source of truth for the first online multiplayer version of
 - Safety contract: `Visibility Rules`, `Visibility Matrix`, `Security And Fair Play`
 - UI contract: `Interface`, `UX Requirements`, `Accessibility And Responsive Requirements`
 - Verification contract: `Testing Strategy`, `Conformance Cases`, `Manual Verification`, `Acceptance Criteria`
+- Traceability contract: `Requirement Traceability`, `Implementation Slices`, `Review Checkpoints`
 - History: `Decision Log`, `Open Questions`, `Future Extensions`
 
 Task-specific agents should load the relevant section plus `Global Constraints` rather than the entire spec when possible.
@@ -138,7 +139,7 @@ Version 1 will not support:
 | Ask first | Introduce a frontend framework or build step. |
 | Ask first | Add persistence, accounts, chat, spectators, AI, or more than two players. |
 | Ask first | Change canonical colors, tile counts, hand size, room expiry, or protocol message names. |
-| Ask first | Split this spec into multiple files. |
+| Ask first | Create new sub-specs, rename existing sub-specs, or move canonical ownership of a section. |
 | Never | Commit secrets or tokens. |
 | Never | Let clients compute authoritative answers, wins, or hidden opponent state. |
 | Never | Send raw `Room` to a client. |

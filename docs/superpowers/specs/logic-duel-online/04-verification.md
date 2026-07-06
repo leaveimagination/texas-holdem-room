@@ -1,7 +1,7 @@
 # Logic Duel Online - Verification
 
 Date: 2026-07-07
-Status: v3.1, split executable engineering contract
+Status: v3.2, split executable engineering contract
 
 Source set: `docs/superpowers/specs/logic-duel-online/`
 
@@ -38,23 +38,23 @@ Regression rule:
 
 ## Conformance Cases
 
-| Case | Setup | Action | Expected |
-|---|---|---|---|
-| Create room | Connected socket, valid name | `createRoom` | `roomCreated`, state `waiting`, owner true, token returned. |
-| Join room | Waiting room with one player | Guest `joinRoom` | `roomJoined`, both players receive `roomUpdated`. |
-| Start too early | Waiting room with one player | Owner `startGame` | Error `NEED_TWO_PLAYERS`, state unchanged. |
-| Non-owner start | Waiting room with two players | Guest `startGame` | Error `NOT_ROOM_OWNER`, state unchanged. |
-| Start game | Waiting room with two players | Owner `startGame` | State `playing`, each self view has 5 sorted tiles, market has 6 cards. |
-| Hidden opponent hand | Playing room | Inspect player A `RoomView` | A sees own hand, opponent hand is `null`, opponent tile count is 5. |
-| Ask question | Playing room, player A active, card visible | A `askQuestion` | History adds answer, card replaced if deck nonempty, active player becomes B. |
-| Out-of-turn ask | Playing room, player B active | A `askQuestion` | Error `OUT_OF_TURN`, history and active player unchanged. |
-| Stale card | Card already used | Active player asks old `cardId` | Error `CARD_NOT_AVAILABLE`, state unchanged. |
-| Malformed guess | Playing room, active player | Guess has 4 tiles | Error `INVALID_GUESS`, state unchanged. |
-| Incorrect guess | Playing room, active player | Submit valid wrong guess | History records incorrect guess, turn passes, hands remain hidden. |
-| Correct guess | Playing room, active player | Submit exact opponent hand | State `finished`, winner set, both hands visible. |
-| Reconnect | Playing room, player socket closed | Same credentials `reconnect` | `reconnected`, same seat restored, no third seat. |
-| Full room | Waiting room has two players | Third user `joinRoom` | Error `ROOM_FULL`. |
-| Finished action | Finished room | Any `askQuestion` | Error `GAME_FINISHED`, state unchanged. |
+| ID | Case | Setup | Action | Expected |
+|---|---|---|---|---|
+| C01 | Create room | Connected socket, valid name | `createRoom` | `roomCreated`, state `waiting`, owner true, token returned. |
+| C02 | Join room | Waiting room with one player | Guest `joinRoom` | `roomJoined`, both players receive `roomUpdated`. |
+| C03 | Start too early | Waiting room with one player | Owner `startGame` | Error `NEED_TWO_PLAYERS`, state unchanged. |
+| C04 | Non-owner start | Waiting room with two players | Guest `startGame` | Error `NOT_ROOM_OWNER`, state unchanged. |
+| C05 | Start game | Waiting room with two players | Owner `startGame` | State `playing`, each self view has 5 sorted tiles, market has 6 cards. |
+| C06 | Hidden opponent hand | Playing room | Inspect player A `RoomView` | A sees own hand, opponent hand is `null`, opponent tile count is 5. |
+| C07 | Ask question | Playing room, player A active, card visible | A `askQuestion` | History adds answer, card replaced if deck nonempty, active player becomes B. |
+| C08 | Out-of-turn ask | Playing room, player B active | A `askQuestion` | Error `OUT_OF_TURN`, history and active player unchanged. |
+| C09 | Stale card | Card already used | Active player asks old `cardId` | Error `CARD_NOT_AVAILABLE`, state unchanged. |
+| C10 | Malformed guess | Playing room, active player | Guess has 4 tiles | Error `INVALID_GUESS`, state unchanged. |
+| C11 | Incorrect guess | Playing room, active player | Submit valid wrong guess | History records incorrect guess, turn passes, hands remain hidden. |
+| C12 | Correct guess | Playing room, active player | Submit exact opponent hand | State `finished`, winner set, both hands visible. |
+| C13 | Reconnect | Playing room, player socket closed | Same credentials `reconnect` | `reconnected`, same seat restored, no third seat. |
+| C14 | Full room | Waiting room has two players | Third user `joinRoom` | Error `ROOM_FULL`. |
+| C15 | Finished action | Finished room | Any `askQuestion` | Error `GAME_FINISHED`, state unchanged. |
 
 
 ## Manual Verification
