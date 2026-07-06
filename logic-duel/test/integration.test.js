@@ -64,6 +64,17 @@ test('GET /healthz reports process and room metrics', async () => {
   });
 });
 
+test('GET / returns the browser app shell', async () => {
+  await withServer(async ({ baseUrl }) => {
+    const response = await fetch(`${baseUrl}/`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /\bid=["']app["']/);
+    assert.match(html, /href=["']styles\.css["']/);
+    assert.match(html, /src=["']app\.js["']/);
+  });
+});
+
 test('websocket clients can create, join, start, ask, and guess with filtered views', async () => {
   await withServer(async ({ wsUrl }) => {
     const alice = await openSocket(wsUrl);
