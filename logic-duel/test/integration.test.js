@@ -4,12 +4,16 @@ const WebSocket = require('ws');
 const { createServer } = require('../server');
 
 async function withServer(testFn, options = {}) {
-  const app = createServer({ enableFixtures: true, ...options });
+  const app = createServer({ enableFixtures: true, logger: { log() {} }, ...options });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const { port } = app.server.address();
   try {
     await testFn({ ...app, baseUrl: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${port}/ws` });
   } finally {
+    for (const client of app.wss.clients) {
+      client.terminate();
+    }
+    await new Promise((resolve) => app.wss.close(resolve));
     await new Promise((resolve, reject) => app.server.close((error) => (error ? reject(error) : resolve())));
   }
 }
@@ -132,5 +136,47 @@ test('websocket clients can create, join, start, ask, and guess with filtered vi
 
     alice.close();
     bob.close();
+  });
+});
+
+test('reconnecting from a second socket keeps the player connected', async () => {
+  await withServer(async ({ store, wsUrl }) => {
+    const first = await openSocket(wsUrl);
+    send(first, 'createRoom', 'req-1', { name: 'Alice' });
+    const created = await nextMessage(first, 'roomCreated');
+
+    const second = await openSocket(wsUrl);
+    send(second, 'reconnect', 'req-2', {
+      roomCode: created.payload.roomCode,
+      playerId: created.payload.playerId,
+      token: created.payload.token
+    });
+    const reconnected = await nextMessage(second, 'reconnected');
+    assert.equal(reconnected.payload.view.self.connected, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const room = store.getRoom(created.payload.roomCode);
+    assert.equal(room.players[0].connected, true);
+    assert.equal(store.getMetrics().activeConnections, 1);
+
+    second.close();
+  });
+});
+
+test('server cleanup interval removes expired rooms', async () => {
+  let now = 1_000;
+  await withServer(async ({ store }) => {
+    store.createRoom({ playerName: 'Alice', now });
+    assert.equal(store.getMetrics().activeRooms, 1);
+    now = 7_202_000;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(store.getMetrics().activeRooms, 0);
+    assert.equal(store.getMetrics().expiredRoomsCleaned, 1);
+  }, {
+    cleanupIntervalMs: 10,
+    storeOptions: {
+      now: () => now,
+      expiryMs: 7_200_000
+    }
   });
 });

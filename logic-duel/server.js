@@ -12,8 +12,19 @@ function createServer(options = {}) {
   const store = options.store || createRoomStore(options.storeOptions || {});
   const enableFixtures = options.enableFixtures || process.env.LOGIC_DUEL_ENABLE_FIXTURES === '1';
   const publicDir = options.publicDir || path.join(__dirname, 'public');
+  const cleanupIntervalMs = options.cleanupIntervalMs ?? 60_000;
+  const logger = options.logger || console;
   const clientsBySocket = new Map();
   const socketsByPlayer = new Map();
+  const cleanupTimer = cleanupIntervalMs > 0
+    ? setInterval(() => {
+        const cleaned = store.cleanupExpiredRooms();
+        for (const roomCode of cleaned) {
+          logger.log(`Expired room ${roomCode}`);
+        }
+      }, cleanupIntervalMs)
+    : null;
+  cleanupTimer?.unref?.();
 
   const server = http.createServer((request, response) => {
     if (request.url === '/healthz') {
@@ -30,6 +41,8 @@ function createServer(options = {}) {
 
     serveStatic(request, response, publicDir);
   });
+
+  serverCleanupOnClose();
 
   const wss = new WebSocket.Server({ server, path: '/ws' });
 
@@ -49,15 +62,18 @@ function createServer(options = {}) {
       if (!session) {
         return;
       }
-      if (socketsByPlayer.get(session.playerId) === socket) {
+      const activeSocket = socketsByPlayer.get(session.playerId);
+      if (activeSocket === socket) {
         socketsByPlayer.delete(session.playerId);
+        store.leaveRoom({ roomCode: session.roomCode, playerId: session.playerId });
+        logger.log(`Room ${session.roomCode} disconnected player ${session.playerId}`);
+        broadcastRoom(session.roomCode);
       }
-      store.leaveRoom({ roomCode: session.roomCode, playerId: session.playerId });
-      broadcastRoom(session.roomCode);
     });
   });
 
   function handleClientMessage(socket, message) {
+    runCleanup();
     const { type, requestId, payload } = message;
     const session = clientsBySocket.get(socket);
     let result;
@@ -65,6 +81,7 @@ function createServer(options = {}) {
     if (type === 'createRoom') {
       result = store.createRoom({ playerName: payload.name, enableFixture: enableFixtures });
       if (result.ok) {
+        logger.log(`Room ${result.roomCode} created; players=1`);
         bindSocket(socket, result.roomCode, result.playerId);
         send(socket, publicEvent('roomCreated', resultPayload(result), requestId));
       } else {
@@ -76,6 +93,7 @@ function createServer(options = {}) {
     if (type === 'joinRoom') {
       result = store.joinRoom({ roomCode: payload.roomCode, playerName: payload.name });
       if (result.ok) {
+        logger.log(`Room ${result.roomCode} joined; players=2`);
         bindSocket(socket, result.roomCode, result.playerId);
         send(socket, publicEvent('roomJoined', resultPayload(result), requestId));
         broadcastRoom(result.roomCode);
@@ -92,6 +110,7 @@ function createServer(options = {}) {
         reconnectToken: payload.token
       });
       if (result.ok) {
+        logger.log(`Room ${result.roomCode} reconnected`);
         bindSocket(socket, result.roomCode, result.playerId);
         send(socket, publicEvent('reconnected', { view: result.view }, requestId));
         broadcastRoom(result.roomCode);
@@ -111,6 +130,9 @@ function createServer(options = {}) {
 
     if (type === 'startGame') {
       result = store.startGame({ roomCode: payload.roomCode, playerId: session.playerId });
+      if (result.ok) {
+        logger.log(`Room ${payload.roomCode} started`);
+      }
     } else if (type === 'askQuestion') {
       result = store.askQuestion({ roomCode: payload.roomCode, playerId: session.playerId, cardId: payload.cardId });
     } else if (type === 'makeGuess' || type === 'submitGuess') {
@@ -126,6 +148,21 @@ function createServer(options = {}) {
 
     send(socket, publicEvent('actionAccepted', { message: 'OK' }, requestId));
     broadcastRoom(payload.roomCode);
+  }
+
+  function runCleanup() {
+    const cleaned = store.cleanupExpiredRooms();
+    for (const roomCode of cleaned) {
+      logger.log(`Expired room ${roomCode}`);
+    }
+  }
+
+  function serverCleanupOnClose() {
+    server.once('close', () => {
+      if (cleanupTimer) {
+        clearInterval(cleanupTimer);
+      }
+    });
   }
 
   function bindSocket(socket, roomCode, playerId) {
