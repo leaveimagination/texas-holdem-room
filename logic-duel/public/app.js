@@ -254,6 +254,7 @@
   }
 
   function guessPanel() {
+    const disabled = !canAct();
     return el('section', { className: 'panel' }, [
       el('h2', {}, ['Guess']),
       el('form', {
@@ -268,27 +269,27 @@
           send('submitGuess', { roomCode: state.roomCode, tiles });
         }
       }, [
-        el('div', { className: 'guess-grid' }, Array.from({ length: 5 }, (_, index) => guessTile(index))),
-        button('Submit Guess', null, { type: 'submit', disabled: !canAct() })
+        el('div', { className: 'guess-grid' }, Array.from({ length: 5 }, (_, index) => guessTile(index, disabled))),
+        button('Submit Guess', null, { type: 'submit', disabled })
       ])
     ]);
   }
 
-  function guessTile(index) {
+  function guessTile(index, disabled) {
     return el('div', { className: 'stack' }, [
-      field(`Tile ${index + 1} number`, numberSelect(`number-${index}`)),
-      field(`Tile ${index + 1} color`, colorSelect(`color-${index}`))
+      field(`Tile ${index + 1} number`, numberSelect(`number-${index}`, disabled)),
+      field(`Tile ${index + 1} color`, colorSelect(`color-${index}`, disabled))
     ]);
   }
 
-  function numberSelect(name) {
-    return el('select', { name, 'aria-label': name }, Array.from({ length: 10 }, (_, number) => (
+  function numberSelect(name, disabled) {
+    return el('select', { name, 'aria-label': name, disabled }, Array.from({ length: 10 }, (_, number) => (
       el('option', { value: String(number) }, [String(number)])
     )));
   }
 
-  function colorSelect(name) {
-    return el('select', { name, 'aria-label': name }, [
+  function colorSelect(name, disabled) {
+    return el('select', { name, 'aria-label': name, disabled }, [
       el('option', { value: 'red' }, ['red']),
       el('option', { value: 'blue' }, ['blue'])
     ]);

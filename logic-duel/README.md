@@ -50,6 +50,9 @@ One player creates a room and becomes owner. A second player joins with the room
 - Health fields: `ok`, `status`, `version`, `uptimeSeconds`, `activeRooms`, `activeConnections`, `expiredRoomsCleaned`
 - Reconnect credentials are returned only to the owning client after create, join, or reconnect.
 - `RoomView` hides opponent hands and unused tiles until the game is finished.
+- Room codes are regenerated on collision instead of overwriting active rooms.
+- Default server guardrails: 1,000 active rooms, 64 KB WebSocket payload limit, and 30 messages per socket per 10 seconds.
+- Expired rooms notify connected clients with `ROOM_EXPIRED` before the socket is closed.
 
 ## Deployment Notes
 

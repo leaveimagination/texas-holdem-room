@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createRoomStore } = require('../src/rooms');
+const { createQuestionDeck } = require('../src/questions');
 
 function createStartedRoom(options = {}) {
   const store = createRoomStore({
@@ -37,6 +38,40 @@ test('createRoom creates a waiting owner seat with a reconnect token', () => {
   assert.equal(result.view.state, 'waiting');
   assert.equal(result.view.self.name, 'Alice');
   assert.equal(result.view.self.isOwner, true);
+});
+
+test('createRoom retries generated room codes instead of overwriting an existing room', () => {
+  const ids = ['DUP1', 'player_a', 'token_a', 'DUP1', 'ROOM2', 'player_b', 'token_b'];
+  const store = createRoomStore({
+    idFactory: () => ids.shift()
+  });
+
+  const first = store.createRoom({ playerName: 'Alice', now: 1_000 });
+  const second = store.createRoom({ playerName: 'Bob', now: 2_000 });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(first.roomCode, 'DUP1');
+  assert.equal(second.roomCode, 'ROOM2');
+  assert.equal(store.getMetrics().activeRooms, 2);
+  assert.equal(store.getRoom(first.roomCode).players[0].name, 'Alice');
+  assert.equal(store.getRoom(second.roomCode).players[0].name, 'Bob');
+});
+
+test('createRoom rejects new rooms after the configured room limit', () => {
+  const ids = ['ROOM1', 'player_a', 'token_a', 'ROOM2', 'player_b', 'token_b'];
+  const store = createRoomStore({
+    idFactory: () => ids.shift(),
+    maxRooms: 1
+  });
+
+  const first = store.createRoom({ playerName: 'Alice', now: 1_000 });
+  const second = store.createRoom({ playerName: 'Bob', now: 2_000 });
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, false);
+  assert.equal(second.error.code, 'ROOM_LIMIT_REACHED');
+  assert.equal(store.getMetrics().activeRooms, 1);
 });
 
 test('joinRoom rejects started rooms with GAME_ALREADY_STARTED', () => {
@@ -83,6 +118,26 @@ test('startGame deals fixture hands, opens up to six questions, and makes owner 
   assert.equal(ownerView.opponent.hand, null);
   assert.equal(guestView.self.hand.length, 5);
   assert.equal(guestView.opponent.hand, null);
+});
+
+test('startGame shuffles question cards with injectable Fisher-Yates rng', () => {
+  const store = createRoomStore({
+    idFactory: (() => {
+      const ids = ['ROOM1', 'player_a', 'token_a', 'player_b', 'token_b'];
+      return () => ids.shift();
+    })(),
+    rng: () => 0
+  });
+  const created = store.createRoom({ playerName: 'Alice', now: 1_000 });
+  store.joinRoom({ roomCode: created.roomCode, playerName: 'Bob', now: 2_000 });
+
+  const result = store.startGame({ roomCode: created.roomCode, playerId: created.playerId, now: 3_000 });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    store.getRoom(created.roomCode).questionMarket.map((card) => card.id),
+    createQuestionDeck().slice(1, 7).map((card) => card.id)
+  );
 });
 
 test('askQuestion answers, records public history, removes card, and passes turn', () => {

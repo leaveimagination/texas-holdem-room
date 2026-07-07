@@ -13,16 +13,13 @@ function createServer(options = {}) {
   const enableFixtures = options.enableFixtures || process.env.LOGIC_DUEL_ENABLE_FIXTURES === '1';
   const publicDir = options.publicDir || path.join(__dirname, 'public');
   const cleanupIntervalMs = options.cleanupIntervalMs ?? 60_000;
+  const maxPayloadBytes = options.maxPayloadBytes ?? 64 * 1024;
+  const rateLimit = options.rateLimit || { maxMessages: 30, windowMs: 10_000 };
   const logger = options.logger || console;
   const clientsBySocket = new Map();
   const socketsByPlayer = new Map();
   const cleanupTimer = cleanupIntervalMs > 0
-    ? setInterval(() => {
-        const cleaned = store.cleanupExpiredRooms();
-        for (const roomCode of cleaned) {
-          logger.log(`Expired room ${roomCode}`);
-        }
-      }, cleanupIntervalMs)
+    ? setInterval(() => runCleanup(), cleanupIntervalMs)
     : null;
   cleanupTimer?.unref?.();
 
@@ -44,7 +41,7 @@ function createServer(options = {}) {
 
   serverCleanupOnClose();
 
-  const wss = new WebSocket.Server({ server, path: '/ws' });
+  const wss = new WebSocket.Server({ server, path: '/ws', maxPayload: maxPayloadBytes });
 
   wss.on('connection', (socket) => {
     socket.on('message', (data) => {
@@ -53,8 +50,16 @@ function createServer(options = {}) {
         send(socket, parsed.error);
         return;
       }
+      if (!allowMessage(socket)) {
+        send(socket, publicEvent('error', {
+          code: 'RATE_LIMITED',
+          message: 'Too many messages.'
+        }, parsed.message.requestId));
+        return;
+      }
       handleClientMessage(socket, parsed.message);
     });
+    socket.on('error', () => {});
 
     socket.on('close', () => {
       const session = clientsBySocket.get(socket);
@@ -155,6 +160,26 @@ function createServer(options = {}) {
     for (const roomCode of cleaned) {
       logger.log(`Expired room ${roomCode}`);
     }
+    notifyExpiredRooms(cleaned);
+  }
+
+  function notifyExpiredRooms(roomCodes) {
+    for (const roomCode of roomCodes) {
+      for (const [socket, session] of [...clientsBySocket.entries()]) {
+        if (session.roomCode !== roomCode) {
+          continue;
+        }
+        send(socket, publicEvent('error', {
+          code: 'ROOM_EXPIRED',
+          message: 'Room expired.'
+        }));
+        clientsBySocket.delete(socket);
+        if (socketsByPlayer.get(session.playerId) === socket) {
+          socketsByPlayer.delete(session.playerId);
+        }
+        socket.close(4001, 'Room expired');
+      }
+    }
   }
 
   function serverCleanupOnClose() {
@@ -163,6 +188,19 @@ function createServer(options = {}) {
         clearInterval(cleanupTimer);
       }
     });
+  }
+
+  function allowMessage(socket) {
+    const now = Date.now();
+    const windowStartedAt = socket.rateWindowStartedAt || now;
+    if (now - windowStartedAt >= rateLimit.windowMs) {
+      socket.rateWindowStartedAt = now;
+      socket.rateMessageCount = 1;
+      return true;
+    }
+    socket.rateWindowStartedAt = windowStartedAt;
+    socket.rateMessageCount = (socket.rateMessageCount || 0) + 1;
+    return socket.rateMessageCount <= rateLimit.maxMessages;
   }
 
   function bindSocket(socket, roomCode, playerId) {

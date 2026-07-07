@@ -9,7 +9,10 @@ function createRoomStore(options = {}) {
   const rooms = new Map();
   const idFactory = options.idFactory || defaultIdFactory;
   const nowFactory = options.now || Date.now;
+  const rng = options.rng || Math.random;
   const expiryMs = options.expiryMs || DEFAULT_EXPIRY_MS;
+  const roomCodeAttempts = options.roomCodeAttempts || 16;
+  const maxRooms = options.maxRooms || 1_000;
   let expiredRoomsCleaned = 0;
 
   function findRoom(roomCode) {
@@ -21,8 +24,11 @@ function createRoomStore(options = {}) {
     if (!name) {
       return failure('NAME_REQUIRED', 'Name is required.');
     }
+    if (rooms.size >= maxRooms) {
+      return failure('ROOM_LIMIT_REACHED', 'Room limit reached.');
+    }
 
-    const roomCode = nextId(idFactory, 'room').toUpperCase();
+    const roomCode = allocateRoomCode();
     const playerId = nextId(idFactory, 'player');
     const token = nextId(idFactory, 'token');
     const player = {
@@ -137,7 +143,7 @@ function createRoomStore(options = {}) {
       room.players[0].hand = fixture.targetHand.map(cloneTile);
       room.players[1].hand = fixture.actorHand.map(cloneTile);
     } else {
-      const dealt = dealHands(createTiles(), 5);
+      const dealt = dealHands(createTiles(), 5, rng);
       room.players[0].hand = dealt.players[0];
       room.players[1].hand = dealt.players[1];
     }
@@ -146,7 +152,7 @@ function createRoomStore(options = {}) {
     room.phase = 'playing';
     room.activePlayerId = room.ownerId;
     room.turnPlayerId = room.ownerId;
-    room.questionDeck = shuffle(createQuestionDeck().map(publicCard));
+    room.questionDeck = shuffle(createQuestionDeck().map(publicCard), rng);
     room.questionMarket = room.questionDeck.splice(0, 6);
     room.availableQuestions = room.questionMarket;
     addHistory(room, 'system', playerId, 'Game started.', now);
@@ -288,6 +294,16 @@ function createRoomStore(options = {}) {
     getView,
     getMetrics
   };
+
+  function allocateRoomCode() {
+    for (let attempt = 0; attempt < roomCodeAttempts; attempt += 1) {
+      const roomCode = nextId(idFactory, 'room').toUpperCase();
+      if (!rooms.has(roomCode)) {
+        return roomCode;
+      }
+    }
+    throw new Error('Unable to allocate a unique room code.');
+  }
 }
 
 function checkActionRoom(room, playerId) {
@@ -431,8 +447,13 @@ function defaultIdFactory(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 }
 
-function shuffle(items) {
-  return [...items].sort(() => Math.random() - 0.5);
+function shuffle(items, rng = Math.random) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(rng() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
 }
 
 function publicCard(card) {

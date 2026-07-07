@@ -38,14 +38,40 @@ function openSocket(wsUrl) {
   });
 }
 
-function nextMessage(socket, type) {
+function nextMessage(socket, type, timeoutMs = 1_000) {
   const queuedIndex = socket.testMessages.findIndex((message) => !type || message.type === type);
   if (queuedIndex !== -1) {
     const [message] = socket.testMessages.splice(queuedIndex, 1);
     return Promise.resolve(message);
   }
-  return new Promise((resolve) => {
-    socket.testWaiters.push({ type, resolve });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const waiterIndex = socket.testWaiters.findIndex((waiter) => waiter.resolve === resolve);
+      if (waiterIndex !== -1) {
+        socket.testWaiters.splice(waiterIndex, 1);
+      }
+      reject(new Error(`Timed out waiting for ${type || 'message'}`));
+    }, timeoutMs);
+    socket.testWaiters.push({
+      type,
+      resolve: (message) => {
+        clearTimeout(timer);
+        resolve(message);
+      }
+    });
+  });
+}
+
+function waitForClose(socket, timeoutMs = 1_000) {
+  if (socket.readyState === WebSocket.CLOSED) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Timed out waiting for socket close')), timeoutMs);
+    socket.once('close', () => {
+      clearTimeout(timer);
+      resolve();
+    });
   });
 }
 
@@ -177,6 +203,57 @@ test('server cleanup interval removes expired rooms', async () => {
     storeOptions: {
       now: () => now,
       expiryMs: 7_200_000
+    }
+  });
+});
+
+test('server cleanup notifies connected clients when their room expires', async () => {
+  let now = 1_000;
+  await withServer(async ({ store, wsUrl }) => {
+    const alice = await openSocket(wsUrl);
+    send(alice, 'createRoom', 'req-1', { name: 'Alice' });
+    const created = await nextMessage(alice, 'roomCreated');
+    assert.equal(store.getMetrics().activeRooms, 1);
+
+    now = 7_202_000;
+    const expired = await nextMessage(alice, 'error');
+    assert.equal(expired.payload.code, 'ROOM_EXPIRED');
+    await waitForClose(alice);
+    assert.equal(store.getRoom(created.payload.roomCode), null);
+  }, {
+    cleanupIntervalMs: 10,
+    storeOptions: {
+      now: () => now,
+      expiryMs: 7_200_000
+    }
+  });
+});
+
+test('websocket server closes messages above the configured payload limit', async () => {
+  await withServer(async ({ wsUrl }) => {
+    const socket = await openSocket(wsUrl);
+    socket.send('x'.repeat(128));
+    await waitForClose(socket);
+    assert.equal(socket.readyState, WebSocket.CLOSED);
+  }, {
+    maxPayloadBytes: 32
+  });
+});
+
+test('websocket server rate limits repeated messages from one socket', async () => {
+  await withServer(async ({ wsUrl }) => {
+    const socket = await openSocket(wsUrl);
+    send(socket, 'createRoom', 'req-1', { name: 'Alice' });
+    await nextMessage(socket, 'roomCreated');
+
+    send(socket, 'createRoom', 'req-2', { name: 'Bob' });
+    const limited = await nextMessage(socket, 'error');
+    assert.equal(limited.requestId, 'req-2');
+    assert.equal(limited.payload.code, 'RATE_LIMITED');
+  }, {
+    rateLimit: {
+      maxMessages: 1,
+      windowMs: 1_000
     }
   });
 });
