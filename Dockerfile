@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat openssl
+ARG ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories \
+    && apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 

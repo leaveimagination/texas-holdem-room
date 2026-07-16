@@ -29,6 +29,10 @@ describe("production Docker deployment", () => {
     const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
 
     expect(dockerfile).toContain("FROM node:22-alpine AS");
+    expect(dockerfile).toContain("https://mirrors.aliyun.com/alpine");
+    expect(dockerfile.indexOf("https://mirrors.aliyun.com/alpine")).toBeLessThan(
+      dockerfile.indexOf("apk add --no-cache")
+    );
     expect(dockerfile).toContain("npm ci --ignore-scripts --no-audit --no-fund");
     expect(dockerfile).toContain("npx --no-install prisma generate");
     expect(dockerfile).toContain("npm run build");
