@@ -61,6 +61,14 @@ describe("production Docker deployment", () => {
     }
   });
 
+  test("keeps deployment secrets and generated evidence out of Git", () => {
+    const gitignore = readFileSync(join(root, ".gitignore"), "utf8");
+
+    for (const entry of [".env.production", "tmp/", "outputs/"]) {
+      expect(gitignore).toContain(entry);
+    }
+  });
+
   test("publishes only the app and keeps PostgreSQL and Redis internal", () => {
     const rendered = execFileSync(
       "docker",

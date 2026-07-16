@@ -7,4 +7,6 @@ tsconfig.tsbuildinfo
 test-results/
 playwright-report/
 output/
+outputs/
+tmp/
 tmp-dev*.log
