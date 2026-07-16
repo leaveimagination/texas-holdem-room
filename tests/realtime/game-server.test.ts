@@ -58,6 +58,8 @@ describe("SessionRegistry", () => {
 
 describe("createGameServer", () => {
   afterEach(async () => {
+    vi.restoreAllMocks();
+
     await Promise.all([...socketsToClose].map(closeSocket));
     socketsToClose.clear();
 
@@ -311,6 +313,8 @@ describe("createGameServer", () => {
   });
 
   it("includes showdown hole cards in the hand finished event before the next hand snapshot", async () => {
+    vi.spyOn(Math, "random").mockImplementation(seededRandom(1));
+
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createReadyHeadsUpRoomState());
 
@@ -424,6 +428,15 @@ function createReadyHeadsUpRoomState(targetRoomId = roomId): RoomState {
       cumulativeBuyIn: 1000,
       status: "ready"
     }))
+  };
+}
+
+function seededRandom(seed: number): () => number {
+  let value = seed >>> 0;
+
+  return () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    return value / 0x100000000;
   };
 }
 
