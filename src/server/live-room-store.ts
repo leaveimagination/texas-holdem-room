@@ -121,6 +121,9 @@ const HandStateSchema = z
     winners: z.array(z.string())
   })
   .strict();
+const PersistedHandStateSchema = HandStateSchema.extend({
+  startingChipsByParticipantId: z.record(z.string(), z.number().int().nonnegative()).optional()
+});
 const RoomStateSchema = z
   .object({
     roomId: z.string(),
@@ -138,6 +141,14 @@ const RoomStateSchema = z
     sessionSummary: z.array(SessionPlayerResultSchema).nullable()
   })
   .strict();
+const PersistedRoomStateSchema = RoomStateSchema.extend({
+  hand: PersistedHandStateSchema.nullable(),
+  flow: TableFlowStateSchema.optional(),
+  pendingTopUps: z.record(z.string(), PendingTopUpSchema).optional(),
+  endAfterCurrentHand: z.boolean().optional(),
+  sessionEndedAt: z.number().int().nonnegative().nullable().optional(),
+  sessionSummary: z.array(SessionPlayerResultSchema).nullable().optional()
+});
 
 export class LiveRoomStore {
   constructor(private readonly store: KeyValueStore) {}
@@ -155,7 +166,12 @@ export class LiveRoomStore {
       return null;
     }
 
-    const result = RoomStateSchema.safeParse(parsed);
+    const persisted = PersistedRoomStateSchema.safeParse(parsed);
+    if (!persisted.success) {
+      return null;
+    }
+
+    const result = RoomStateSchema.safeParse(normalizePersistedRoom(persisted.data));
     if (!result.success) {
       return null;
     }
@@ -180,4 +196,60 @@ export class LiveRoomStore {
   private key(roomId: string): string {
     return `room:${roomId}`;
   }
+}
+
+function normalizePersistedRoom(input: z.infer<typeof PersistedRoomStateSchema>): unknown {
+  const hand = input.hand
+    ? {
+        ...input.hand,
+        startingChipsByParticipantId:
+          input.hand.startingChipsByParticipantId ??
+          Object.fromEntries(input.hand.betting.players.map((player) => [
+            player.id,
+            player.stack + player.committed
+          ]))
+      }
+    : null;
+  const flow = input.flow ?? legacyFlow(input.status, hand);
+
+  return {
+    ...input,
+    hand,
+    flow,
+    pendingTopUps: input.pendingTopUps ?? {},
+    endAfterCurrentHand: input.endAfterCurrentHand ?? false,
+    sessionEndedAt: input.sessionEndedAt ?? null,
+    sessionSummary: input.sessionSummary ?? null
+  };
+}
+
+function legacyFlow(
+  status: z.infer<typeof RoomStateSchema>["status"],
+  hand: z.infer<typeof HandStateSchema> | null
+): z.infer<typeof TableFlowStateSchema> {
+  if (hand?.finished) {
+    return {
+      phase: "hand-summary",
+      sequence: 0,
+      deadlineAt: 0,
+      nextRunoutStep: null,
+      handResult: null
+    };
+  }
+  if (status === "finished") {
+    return {
+      phase: "session-summary",
+      sequence: 0,
+      deadlineAt: null,
+      nextRunoutStep: null,
+      handResult: null
+    };
+  }
+  return {
+    phase: "betting",
+    sequence: 0,
+    deadlineAt: null,
+    nextRunoutStep: null,
+    handResult: null
+  };
 }

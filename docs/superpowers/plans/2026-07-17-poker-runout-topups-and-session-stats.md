@@ -277,7 +277,7 @@ git commit -m "feat: queue top-ups and finalize room sessions"
 - Consumes: pure `advanceDuePhase()`, `completeHandBoundary()`, `RoomState.flow`, Redis JSON, and the 256-command bound.
 - Produces: `RoomFlowController`, `RoomFlowController.isHandBoundaryDue()`, `RoomCommandCoordinator.run(roomId, operation, source)`, `FlowTimerToken`, and normalized legacy room state.
 
-- [ ] **Step 1: Write failing clock, stale-token, serialization, overflow, and legacy-state tests**
+- [x] **Step 1: Write failing clock, stale-token, serialization, overflow, and legacy-state tests**
 
 ```ts
 const controller = new RoomFlowController(() => 5_000);
@@ -300,13 +300,13 @@ expect(await store.getRoom("legacy-room")).toMatchObject({
 });
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `npx vitest run tests/server/room-flow-controller.test.ts tests/server/room-command-coordinator.test.ts tests/realtime/live-room-store.test.ts`
 
 Expected: FAIL because the controller/coordinator do not exist and strict legacy parsing rejects missing fields.
 
-- [ ] **Step 3: Implement controller/coordinator/normalization**
+- [x] **Step 3: Implement controller/coordinator/normalization**
 
 The controller delegates pure advancement and builds a token from `roomId`, `hand.id`, `flow.sequence`, and `deadlineAt`. Catch-up loops while a deadline is due and stops when the phase no longer changes, `isHandBoundaryDue()` reports the persistence boundary, or the next deadline is in the future. The realtime adapter performs boundary persistence and then calls pure `completeHandBoundary()`.
 
@@ -314,13 +314,13 @@ The coordinator stores one promise tail and external pending count per room. It 
 
 Make new Zod room fields optional during parse, then normalize them before validation. Derive legacy finished hands as expired hand summaries and active unfinished hands as betting. Never synthesize future board cards.
 
-- [ ] **Step 4: Verify controller/store GREEN**
+- [x] **Step 4: Verify controller/store GREEN**
 
 Run: `npx vitest run tests/server/room-flow-controller.test.ts tests/server/room-command-coordinator.test.ts tests/realtime/live-room-store.test.ts && npm run typecheck`
 
 Expected: all controller/store tests pass and no type errors remain.
 
-- [ ] **Step 5: Commit the scheduling slice**
+- [x] **Step 5: Commit the scheduling slice**
 
 ```bash
 git add src/server/room-flow-controller.ts src/server/room-command-coordinator.ts src/server/live-room-store.ts tests/server/room-flow-controller.test.ts tests/server/room-command-coordinator.test.ts tests/realtime/live-room-store.test.ts
