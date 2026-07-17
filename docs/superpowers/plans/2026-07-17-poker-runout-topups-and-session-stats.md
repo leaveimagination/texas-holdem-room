@@ -209,7 +209,7 @@ git commit -m "feat: add cinematic server-side runout flow"
 - Consumes: `PendingTopUp`, `SessionPlayerResult`, hand-summary state, seats, and cumulative buy-in.
 - Produces: `queueTopUp(state, participantId, amount)`, `getApplicableTopUps(state)`, `applyPendingTopUps(state)`, `completeHandBoundary(state, now)`, `requestRoomEnd(state)`, and `finalizeSession(state, now)`.
 
-- [ ] **Step 1: Write failing queue/application/finalization tests**
+- [x] **Step 1: Write failing queue/application/finalization tests**
 
 ```ts
 const first = queueTopUp(activeRoom, "p1", 500);
@@ -240,23 +240,23 @@ expect(final.sessionSummary).toEqual(expect.arrayContaining([
 ]));
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `npx vitest run tests/poker/top-up-and-session.test.ts`
 
 Expected: FAIL because queue and finalization functions do not exist.
 
-- [ ] **Step 3: Implement safe cumulative queueing and finalization**
+- [x] **Step 3: Implement safe cumulative queueing and finalization**
 
 Use `assertSafePositiveChipAmount()` for the submitted amount, aggregate, cumulative buy-in, and request count. The queue key is participant ID and target is always `handCounter + 1`. `getApplicableTopUps()` returns target-hand entries only when their simulated application leaves at least two eligible active seats. `applyPendingTopUps()` applies that returned set atomically in pure state. `completeHandBoundary()` starts the next hand when possible; otherwise it returns to deadline-free `betting`, leaves the previous hand finished and pending top-ups intact, and clears the transient result. `requestRoomEnd()` is idempotent. `finalizeSession()` clears pending entries, computes sorted totals, sets `status`, `sessionEndedAt`, `sessionSummary`, and `flow.phase`.
 
-- [ ] **Step 4: Verify the queue/session slice GREEN**
+- [x] **Step 4: Verify the queue/session slice GREEN**
 
 Run: `npx vitest run tests/poker/top-up-and-session.test.ts tests/poker/engine.test.ts tests/poker/room-modes.test.ts && npm run typecheck`
 
 Expected: focused tests and type checking pass.
 
-- [ ] **Step 5: Commit the rule slice**
+- [x] **Step 5: Commit the rule slice**
 
 ```bash
 git add src/lib/poker/engine.ts tests/poker/top-up-and-session.test.ts

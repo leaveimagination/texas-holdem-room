@@ -182,6 +182,201 @@ export function rebuy(state: RoomState, participantId: string, amount: number): 
   };
 }
 
+export function queueTopUp(state: RoomState, participantId: string, amount: number): RoomState {
+  if (state.status === "finished" || state.flow.phase === "session-summary") {
+    throw new Error("ROOM_FINISHED: the room has already ended");
+  }
+  if (state.mode !== "cash") {
+    throw new Error("TOP_UP_NOT_ALLOWED: adding chips is only available at flexible tables");
+  }
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error("TOP_UP_AMOUNT_INVALID: chip amount must be a positive safe integer");
+  }
+
+  const seat = state.seats.find((candidate) => candidate.participantId === participantId);
+  if (!seat) {
+    throw new Error("TOP_UP_NOT_ALLOWED: participant is not seated");
+  }
+
+  const targetHandNumber = state.handCounter + 1;
+  if (!Number.isSafeInteger(targetHandNumber)) {
+    throw new Error("TOP_UP_AMOUNT_INVALID: target hand number is unsafe");
+  }
+  const existing = state.pendingTopUps[participantId];
+  const existingAmount = existing?.targetHandNumber === targetHandNumber ? existing.amount : 0;
+  const existingRequestCount = existing?.targetHandNumber === targetHandNumber ? existing.requestCount : 0;
+  const pendingAmount = existingAmount + amount;
+  const requestCount = existingRequestCount + 1;
+  if (!Number.isSafeInteger(pendingAmount) || !Number.isSafeInteger(requestCount)) {
+    throw new Error("TOP_UP_AMOUNT_INVALID: pending chip amount is unsafe");
+  }
+
+  return {
+    ...state,
+    pendingTopUps: {
+      ...state.pendingTopUps,
+      [participantId]: {
+        participantId,
+        targetHandNumber,
+        amount: pendingAmount,
+        requestCount
+      }
+    }
+  };
+}
+
+export function getApplicableTopUps(state: RoomState): PendingTopUp[] {
+  const targetHandNumber = state.handCounter + 1;
+  const candidates = Object.values(state.pendingTopUps)
+    .filter((pending) => pending.targetHandNumber === targetHandNumber)
+    .sort((left, right) => seatNumberForParticipant(state, left.participantId) - seatNumberForParticipant(state, right.participantId));
+
+  return canStartNextHandWith(state, candidates) ? candidates : [];
+}
+
+export function applyPendingTopUps(state: RoomState): RoomState {
+  const applicable = getApplicableTopUps(state);
+  if (!canStartNextHandWith(state, applicable)) {
+    return state;
+  }
+  const byParticipantId = new Map(applicable.map((pending) => [pending.participantId, pending]));
+  const seats = state.seats.map((seat) => {
+    if (!seat.participantId) {
+      return seat;
+    }
+    const pending = byParticipantId.get(seat.participantId);
+    if (!pending) {
+      return seat;
+    }
+    const chips = seat.chips + pending.amount;
+    const cumulativeBuyIn = seat.cumulativeBuyIn + pending.amount;
+    if (!Number.isSafeInteger(chips) || !Number.isSafeInteger(cumulativeBuyIn)) {
+      throw new Error("TOP_UP_AMOUNT_INVALID: applying chips would overflow");
+    }
+    return {
+      ...seat,
+      chips,
+      cumulativeBuyIn,
+      status: seat.status === "disconnected" ? "disconnected" as const : "seated" as const
+    };
+  });
+  const pendingTopUps = { ...state.pendingTopUps };
+  for (const pending of applicable) {
+    delete pendingTopUps[pending.participantId];
+  }
+
+  return { ...state, seats, pendingTopUps };
+}
+
+export function completeHandBoundary(state: RoomState, now: number, providedDeck?: Card[]): RoomState {
+  const summaryIsDue =
+    state.flow.phase === "hand-summary" &&
+    state.flow.deadlineAt !== null &&
+    state.flow.deadlineAt <= now;
+  const waitingBetweenHands = state.flow.phase === "betting" && state.hand?.finished === true;
+  if (!summaryIsDue && !waitingBetweenHands) {
+    return state;
+  }
+  if (state.endAfterCurrentHand) {
+    return finalizeSession(state, now);
+  }
+
+  const applicable = getApplicableTopUps(state);
+  if (!canStartNextHandWith(state, applicable)) {
+    return summaryIsDue
+      ? {
+          ...state,
+          flow: {
+            phase: "betting",
+            sequence: state.flow.sequence + 1,
+            deadlineAt: null,
+            nextRunoutStep: null,
+            handResult: null
+          }
+        }
+      : state;
+  }
+
+  const applied = applyPendingTopUps(state);
+  const ready = {
+    ...applied,
+    flow: {
+      phase: "betting" as const,
+      sequence: state.flow.sequence + 1,
+      deadlineAt: null,
+      nextRunoutStep: null,
+      handResult: null
+    }
+  };
+  return startHand(ready, providedDeck, now);
+}
+
+export function requestRoomEnd(state: RoomState): RoomState {
+  if (state.status === "finished" || state.endAfterCurrentHand) {
+    return state;
+  }
+  return { ...state, endAfterCurrentHand: true };
+}
+
+export function finalizeSession(state: RoomState, now: number): RoomState {
+  if (state.status === "finished" && state.flow.phase === "session-summary" && state.sessionSummary) {
+    return state;
+  }
+
+  const players = state.seats
+    .flatMap((seat) => {
+      if (!seat.participantId) {
+        return [];
+      }
+      const initialChips = state.settings.initialChips;
+      const topUpChips = Math.max(0, seat.cumulativeBuyIn - initialChips);
+      return [{
+        participantId: seat.participantId,
+        displayName: seat.displayName ?? seat.participantId,
+        initialChips,
+        topUpChips,
+        finalChips: seat.chips,
+        netChips: seat.chips - initialChips - topUpChips,
+        seatNumber: seat.seatNumber
+      }];
+    })
+    .sort((left, right) => right.netChips - left.netChips || left.seatNumber - right.seatNumber)
+    .map(({ seatNumber: _seatNumber, ...player }) => player);
+
+  return {
+    ...state,
+    status: "finished",
+    pendingTopUps: {},
+    sessionEndedAt: now,
+    sessionSummary: players,
+    flow: {
+      phase: "session-summary",
+      sequence: state.flow.sequence + 1,
+      deadlineAt: null,
+      nextRunoutStep: null,
+      handResult: null
+    }
+  };
+}
+
+function canStartNextHandWith(state: RoomState, pendingTopUps: PendingTopUp[]): boolean {
+  const pendingByParticipantId = new Map(pendingTopUps.map((pending) => [pending.participantId, pending.amount]));
+  return state.seats.filter((seat) => {
+    if (!seat.participantId || seat.status === "empty" || seat.status === "disconnected") {
+      return false;
+    }
+    const pendingAmount = pendingByParticipantId.get(seat.participantId) ?? 0;
+    if (seat.status === "eliminated" && pendingAmount === 0) {
+      return false;
+    }
+    return seat.chips + pendingAmount > 0;
+  }).length >= 2;
+}
+
+function seatNumberForParticipant(state: RoomState, participantId: string): number {
+  return state.seats.find((seat) => seat.participantId === participantId)?.seatNumber ?? Number.MAX_SAFE_INTEGER;
+}
+
 export function markDisconnected(state: RoomState, participantId: string): RoomState {
   const seat = state.seats.find((candidate) => candidate.participantId === participantId);
   if (!seat) {
