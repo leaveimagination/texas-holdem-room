@@ -1,5 +1,4 @@
 import type { Page } from "@playwright/test";
-import { redactForEvidence } from "../evidence/redaction";
 
 export interface SafeWebSocketProjection {
   type: string;
@@ -102,17 +101,25 @@ export async function installBrowserTelemetry(
 
   page.on("console", (message) => {
     if (message.type() === "error") {
-      emitNodeEvent("console-error", { message: sanitizeDiagnosticString(message.text()) });
+      emitNodeEvent("console-error", diagnosticMetadata(
+        "console",
+        "console-error",
+        message.text()
+      ));
     }
   });
-  page.on("pageerror", (error) => emitNodeEvent("page-error", {
-    message: sanitizeDiagnosticString(error.message)
-  }));
-  page.on("requestfailed", (request) => emitNodeEvent("request-failure", {
-    method: request.method(),
-    url: safeUrl(request.url()),
-    failure: sanitizeDiagnosticString(request.failure()?.errorText ?? "unknown")
-  }));
+  page.on("pageerror", (error) => emitNodeEvent(
+    "page-error",
+    diagnosticMetadata("page", "uncaught-exception", error.message)
+  ));
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText ?? "unknown";
+    emitNodeEvent("request-failure", {
+      ...diagnosticMetadata("request", "request-failure", failure),
+      method: request.method(),
+      url: safeUrl(request.url())
+    });
+  });
 
   return {
     async captureDomCheckpoint(checkpoint: string): Promise<TelemetryEvent> {
@@ -360,18 +367,16 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sanitizeDiagnosticString(value: string): string {
-  const structurallyRedacted = redactForEvidence(value);
-  const diagnostic = typeof structurallyRedacted === "string"
-    ? structurallyRedacted
-    : JSON.stringify(structurallyRedacted);
-  return diagnostic
-    .replace(
-      /((?:["']?(?:hole|private)[ _-]?cards?["']?)\s*[:=]\s*)(?:\[[^\]\r\n]*\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\r\n]+)/gi,
-      "$1[PRIVATE CARDS REDACTED]"
-    )
-    .replace(
-      /((?:["']?(?:hostToken|participantToken|token|secret|password|passwd|authorization|api[ _-]?key|cookie|credential)["']?)\s*[:=]\s*)(?:Bearer\s+)?(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\r\n]+)/gi,
-      "$1[REDACTED]"
-    );
+function diagnosticMetadata(
+  source: "console" | "page" | "request",
+  type: "console-error" | "uncaught-exception" | "request-failure",
+  diagnostic: string
+): Record<string, unknown> {
+  return {
+    source,
+    type,
+    severity: "error",
+    originalLength: diagnostic.length,
+    diagnostic: "[REDACTED]"
+  };
 }

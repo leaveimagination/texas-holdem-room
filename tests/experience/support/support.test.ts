@@ -132,7 +132,7 @@ describe("experience support", () => {
     expect(JSON.stringify(captured)).not.toContain("rawFrame");
   });
 
-  it("sanitizes arbitrary console and page-error diagnostics before they reach the sink", async () => {
+  it("captures only allowlisted metadata for arbitrary console and page-error diagnostics", async () => {
     const handlers = new Map<string, (value: unknown) => void>();
     const captured: TelemetryEvent[] = [];
     const page = {
@@ -146,31 +146,66 @@ describe("experience support", () => {
       captured.push(event);
     });
 
-    handlers.get("console")?.({
-      type: () => "error",
-      text: () => 'participantToken=console-secret credential="console-credential" holeCards=["As","Kh"]'
-    });
-    handlers.get("pageerror")?.(new Error(
-      "Authorization: Bearer page-bearer privateCards=[Qd,Qc] password=page-password"
-    ));
+    const diagnostics = [
+      "participant token is p-secret; private cards are As Ah",
+      "holeCards=As,Ah and hole cards are Kd Qc",
+      "CrEdEnTiAl=MiXeD-Secret PrIvAtEcArDs=Qs,Jh",
+      "participantToken%3Dencoded-secret%26holeCards%3D7s%2C8h",
+      "password=line-secret\nholeCards=9c,\nTd"
+    ];
+    for (const diagnostic of diagnostics) {
+      handlers.get("console")?.({
+        type: () => "error",
+        text: () => diagnostic
+      });
+      handlers.get("pageerror")?.(new Error(diagnostic));
+    }
     await telemetry.flush();
 
-    expect(captured.map(({ kind }) => kind)).toEqual(["console-error", "page-error"]);
+    expect(captured).toHaveLength(diagnostics.length * 2);
+    for (const [index, event] of captured.entries()) {
+      const diagnostic = diagnostics[Math.floor(index / 2)];
+      const consoleEvent = index % 2 === 0;
+      expect(event).toMatchObject({
+        kind: consoleEvent ? "console-error" : "page-error",
+        details: {
+          actor: "host",
+          source: consoleEvent ? "console" : "page",
+          type: consoleEvent ? "console-error" : "uncaught-exception",
+          severity: "error",
+          originalLength: diagnostic.length,
+          diagnostic: "[REDACTED]"
+        }
+      });
+      expect(Object.keys(event.details).sort()).toEqual([
+        "actor",
+        "diagnostic",
+        "originalLength",
+        "severity",
+        "source",
+        "type"
+      ]);
+    }
     const serialized = JSON.stringify(captured);
     for (const secret of [
-      "console-secret",
-      "console-credential",
+      "p-secret",
+      "private cards are As Ah",
+      "holeCards=As,Ah",
+      "Kd Qc",
+      "MiXeD-Secret",
+      "Qs,Jh",
+      "encoded-secret",
+      "7s%2C8h",
+      "line-secret",
+      "9c",
+      "Td",
       "As",
-      "Kh",
-      "page-bearer",
-      "Qd",
-      "Qc",
-      "page-password"
+      "Ah"
     ]) {
       expect(serialized).not.toContain(secret);
     }
     expect(serialized).toContain("[REDACTED]");
-    expect(serialized).toContain("[PRIVATE CARDS REDACTED]");
+    expect(serialized).not.toContain("message");
   });
 
   it("passes the DOM checkpoint through the serialized page.evaluate argument boundary", async () => {
