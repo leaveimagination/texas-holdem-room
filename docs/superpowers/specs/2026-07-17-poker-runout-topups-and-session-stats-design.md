@@ -4,6 +4,22 @@
 
 Approved direction: the server is the single authoritative clock for showdown, all-in runout, hand settlement, queued top-ups, and room ending. Clients render the current server phase and never invent or skip dealing state locally.
 
+This document is the source of truth for the implementation. If code, tests, or an existing protocol assumption conflicts with it, stop and update this document before coding through the ambiguity. Implementation is ready to begin only after the requirement trace, automated checks, adversarial review, and browser acceptance checks in this document are all represented in the implementation plan.
+
+## Spec Index
+
+| Concern | Canonical section |
+| --- | --- |
+| Product outcome and exclusions | Goals, Non-Goals, Users and Primary Journeys |
+| Server lifecycle | Authoritative State Model, State Machine, Cinematic Timing Contract |
+| Scheduling and recovery | Room Flow Controller and Scheduling, Failure Handling and Concurrency |
+| Chip requests | Queued Top-Ups |
+| Results and persistence | Hand Statistics, Session Statistics, Persistence and Backward Compatibility |
+| Wire contract and secrecy | Protocol Additions, Error Contract, Visibility and Hidden Information |
+| Browser behavior | UI Design |
+| Implementation scope | Toolchain and Commands, Global Engineering Constraints, Expected File Boundaries |
+| Proof of completion | Test Strategy, Conformance Matrix, Acceptance Criteria |
+
 ## Goals
 
 1. When betting is locked by an all-in, reveal every non-folded hand, visibly deal every remaining community card at a cinematic pace, and only then determine winners.
@@ -18,6 +34,23 @@ Approved direction: the server is the single authoritative clock for showdown, a
 - No run-it-twice or configurable animation-speed controls.
 - No changes to tournament rebuy rules. The persistent add-chips control is for flexible cash tables only.
 - No cancellation or editing of individual queued requests. Multiple requests accumulate; a room ending before application cancels the aggregate automatically.
+
+## Users and Primary Journeys
+
+- **Seated cash player:** plays the current hand, may queue one or more virtual-chip additions at any time, sees the aggregate target hand, and sees exact per-hand and final results.
+- **Host:** plays or observes, may declare the current hand final, and sees the same durable room summary as every other client.
+- **Spectator:** cannot act or queue chips, but observes only information that is legal for the current authoritative phase.
+- **Reconnect/restart client:** receives a participant-filtered snapshot after overdue phases are caught up under the room coordinator.
+
+The primary journey is: play or all-in -> authoritative showdown/runout -> exact two-second hand summary -> apply queued top-ups -> next hand. The final journey replaces the last step with cancellation of unapplied top-ups and a durable session summary.
+
+## Three-Tier Boundaries
+
+| Tier | Contract |
+| --- | --- |
+| Always | Use test-first behavior changes; serialize state changes per room; persist a transition before broadcasting it; derive every client view through visibility filtering; use safe-integer chip arithmetic; keep the design, tests, and protocol types synchronized. |
+| Ask first | Add a runtime dependency; change any confirmed duration; change top-up target/application semantics; make a breaking client protocol change; alter the database model beyond the nullable session-summary field and the deterministic buy-in identifier; expand beyond private virtual-chip rooms. |
+| Never | Reveal future deck cards, folded cards, tokens, or unfiltered room state; apply queued chips during an active hand; skip the hand-summary phase; abort an active final hand; add money, cash-out, prizes, redemption, public matchmaking, or external-value behavior. |
 
 ## Confirmed Product Decisions
 
@@ -48,6 +81,35 @@ The implementation is divided into five bounded units.
 5. **Table UI**: renders the authoritative phase, permanent lower-left add-chips control, central two-second hand summary, and final full-screen room summary.
 
 The existing `RoomState.status` values remain unchanged. `status` continues to describe the room lifecycle (`lobby`, `playing`, `paused`, or `finished`); a separate flow object describes the current hand-presentation phase.
+
+## Toolchain and Commands
+
+The implementation uses Node.js 22, TypeScript 5.8, Next.js 15.3, React 19.1, `ws` 8.18, Zod 3.25, Prisma 6.10, PostgreSQL, Redis, Vitest 3.2, and Playwright 1.53. Do not add a new runtime dependency for scheduling, serialization, or UI state.
+
+```bash
+npm ci
+npm run prisma:generate
+npm test
+npm run typecheck
+npm run test:e2e
+npm run build
+LONG_RUN_SECONDS=600 ACTION_DELAY_MS=0 npm run test:long-run
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+`npm test` and `npm run typecheck` are the fast checks after every coherent slice. The full unit suite, type check, Playwright suite, production build, ten-minute long-run simulation, Docker health check, desktop `1440x900` browser flow, and mobile `390x844` browser flow all block final handoff. A discovered behavior regression must first be reproduced by a failing automated test.
+
+## Global Engineering Constraints
+
+- Keep pure poker transitions independent of WebSocket, Redis, Prisma, React, and wall-clock globals.
+- Inject the clock and timer functions into scheduling code; unit tests must not wait for real cinematic durations.
+- Store deadlines as Unix epoch milliseconds and compare timer tokens before every advancement.
+- Limit the WebSocket server to a 16 KiB message payload. All client message schemas remain strict.
+- Allow at most 256 queued external client commands per room. Reject later client commands with `SERVER_BUSY`; deadline callbacks still enter the same serialized queue so presentation cannot deadlock under client spam.
+- Validate submitted and accumulated chip amounts with `Number.isSafeInteger`; validate `requestCount` before incrementing it.
+- Save the authoritative live-room snapshot before emitting a phase/card/result event. Persistence effects that must be idempotent complete before the corresponding live-state marker is cleared.
+- Keep user-visible copy in private-room and virtual-chip language. Existing internal `rebuy` and `buy-in` identifiers may remain for backward compatibility.
+- Commit one coherent, passing slice at a time. Do not stage `.superpowers/`, generated `.next/` output, environment files, or unrelated worktree changes.
 
 ## Authoritative State Model
 
@@ -277,6 +339,25 @@ Server events added:
 
 `room_snapshot` remains authoritative. Events drive transient animation and notices, while reconnecting clients can reconstruct the current screen from the snapshot alone. Additive fields preserve compatibility with a browser that loaded the previous client bundle; it may omit new presentation but cannot send an illegal action because the server rejects it.
 
+## Error Contract
+
+The additive error payload is `{ code: RealtimeErrorCode; message: string }`. Existing clients may continue reading only `message`. New or changed paths use these canonical codes:
+
+```ts
+type RealtimeErrorCode =
+  | "INVALID_MESSAGE"
+  | "ROOM_NOT_FOUND"
+  | "INVALID_PARTICIPANT_TOKEN"
+  | "INVALID_HOST_TOKEN"
+  | "PRESENTATION_IN_PROGRESS"
+  | "TOP_UP_NOT_ALLOWED"
+  | "TOP_UP_AMOUNT_INVALID"
+  | "ROOM_FINISHED"
+  | "SERVER_BUSY";
+```
+
+Every rejection leaves live state and durable state unchanged. Presentation actions use `PRESENTATION_IN_PROGRESS`; tournament, spectator, or otherwise ineligible chip requests use `TOP_UP_NOT_ALLOWED`; unsafe or overflowing chip arithmetic uses `TOP_UP_AMOUNT_INVALID`; and a bounded coordinator that cannot accept more work uses `SERVER_BUSY`. Authentication failures never identify which token field or database record matched.
+
 ## Visibility and Hidden Information
 
 - Before `showdown-reveal`, each player sees only their own hole cards; spectators see none.
@@ -395,6 +476,22 @@ Server events added:
 - Desktop `1440x900` and mobile `390x844` layouts preserve the lower-left utility, hero area, and action console without overlap.
 - The long-run simulation verifies chip conservation adjusted for recorded insurance delta and applied top-ups.
 
+## Conformance Matrix
+
+| Case | Setup | Action | Required result |
+| --- | --- | --- | --- |
+| Four-way preflop all-in | Four live players, incomplete board | Last legal action locks betting | Phase becomes `showdown-reveal`; no board card, pot award, or winner is exposed. |
+| Stale runout timer | Current sequence is newer than callback token | Invoke callback | No state, persistence, or broadcast changes. |
+| Restart mid-flop | Flop card 1 deadline expired; card 2 deadline is future | Join room | Catch-up reveals only due cards and schedules the future absolute deadline. |
+| Top-up during betting | Seated cash player has positive stack | Submit 500, then 300 | Current stack is unchanged; pending total is 800 for the next hand; both requests notify the room. |
+| Top-up/application race | A request and hand-summary deadline enter the room queue | Execute both orders | Request targets imminent hand only if serialized first; response/event states the chosen target. |
+| Host ends during hand | Active hand is unfinished | Valid host sends `end_room` twice | One idempotent final-hand flag/event; hand completes; no following hand starts. |
+| Unauthorized end | Non-host token | Send `end_room` | `INVALID_HOST_TOKEN`; room state is byte-for-byte unchanged. |
+| Spectator top-up | Joined but unseated client | Send `rebuy` | `TOP_UP_NOT_ALLOWED`; no pending entry or notice. |
+| Side-pot result | Unequal all-ins create main and side pots | Settle river | Each `PotAward` names its own eligible players and awards; every dealt-in player's signed net is exact. |
+| Finalization failure | Final hand summary expires and room write fails | Advance deadline | Remain in final hand summary; do not emit `room_finished`; retry is safe. |
+| Hidden-information probe | Client reconnects before a future runout step | Request snapshot | No future board card, folded card, server deck, or token is serialized. |
+
 ## Acceptance Criteria
 
 1. A four-way preflop all-in visibly shows all four live hands, then all five community cards in the documented order and timing, before any result is visible.
@@ -405,3 +502,23 @@ Server events added:
 6. The central hand-result card is visible for exactly 2 seconds before the next transition.
 7. A host end request never interrupts an active hand, prevents a following hand, cancels unapplied top-ups, persists `endedAt` and the final summary, and shows every participant's initial chips, top-ups, final chips, and total net chips.
 8. Tournament behavior, insurance eligibility, hidden-card security, hand history, and private-room/virtual-chip product boundaries remain intact.
+
+## Decision Log
+
+| Date | Decision | Reason |
+| --- | --- | --- |
+| 2026-07-17 | Use a server-authoritative presentation state machine with absolute deadlines. | All clients must observe the same cinematic sequence and recover after reconnect/restart. |
+| 2026-07-17 | Queue and accumulate chip requests for the next hand. | The active hand must remain unchanged while players may request chips at any time. |
+| 2026-07-17 | Show a central per-hand card for exactly two seconds and a persistent final summary. | Matches the approved layout A and separates transient hand feedback from room totals. |
+| 2026-07-17 | Store the final room summary as nullable validated JSON. | Preserves results beyond Redis TTL without adding a query-heavy analytics model. |
+| 2026-07-17 | Reuse the existing `rebuy` and `end_room` client message names additively. | Avoids a breaking protocol migration while changing cash-table semantics safely. |
+
+There are no open product questions for implementation. Any newly discovered ambiguity, protocol mismatch, or persistence invariant must be recorded in this log and resolved in the spec before implementation continues.
+
+## Spec Maintenance and Review Gates
+
+- The design file, implementation plan, shared types, and conformance tests must use the same phase, event, error-code, and field names.
+- Update this design first when an implementation discovery changes a contract; include the design and test adjustment in the same coherent commit.
+- Before each commit, run the focused red/green test plus `npm run typecheck` when public types changed.
+- Before final handoff, run every command and manual browser check listed under Toolchain and Commands, then perform the adversarial hidden-information/auth/concurrency review.
+- Critical or important review findings block completion. Known environmental blockers must be reported with the exact failed command and must not be represented as a passing check.
