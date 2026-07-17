@@ -245,6 +245,8 @@ Each transition increments `flow.sequence`, saves the state, and broadcasts a ne
 beginShowdown(room, now): RoomState
 advanceDuePhase(room, now): RoomState
 catchUpDuePhases(room, now): RoomState
+isHandBoundaryDue(room, now): boolean
+completeHandBoundary(room, now): RoomState
 ```
 
 The game server owns one timer for each room that has a non-null `deadlineAt`. A timer callback carries a token made from `roomId`, `hand.id`, `flow.sequence`, and `deadlineAt`. Under the per-room command coordinator it reloads the newest state and advances only if the token still matches. Stale or duplicate callbacks are no-ops.
@@ -272,6 +274,8 @@ Submitting a request does not change `Seat.chips` or `Seat.cumulativeBuyIn`. The
 > Lin queued 500 chips for hand 19; 800 chips pending in total.
 
 Immediately before a hand starts, the engine simulates the queued additions to determine whether at least two eligible active seats will exist. If not, requests remain pending. If a hand can start, all pending entries targeting that hand are applied in the same serialized transition, `cumulativeBuyIn` is incremented, and `top_up_applied` events are broadcast before `hand_started`.
+
+When the two-second hand summary expires but fewer than two players can start even after simulated queued additions, `completeHandBoundary()` returns to `flow.phase = "betting"` with `deadlineAt = null`, keeps the previous hand marked finished, clears the transient `flow.handResult`, and leaves queued additions unchanged. This is the waiting-between-hands form of `betting`, so the result card does not remain indefinitely. A later accepted top-up reruns the same readiness check; if it makes a hand possible, persistence, application, and `startHand()` occur in that serialized command.
 
 Each aggregate uses a deterministic database record ID derived from `(roomId, participantId, targetHandNumber)`. `RoomRepository` upserts this record, so retrying after a crash cannot create duplicate buy-in rows. Database upserts complete before the room snapshot clears the pending entries. A retry after a partial failure repeats the same upsert safely.
 
@@ -512,6 +516,7 @@ Every rejection leaves live state and durable state unchanged. Presentation acti
 | 2026-07-17 | Show a central per-hand card for exactly two seconds and a persistent final summary. | Matches the approved layout A and separates transient hand feedback from room totals. |
 | 2026-07-17 | Store the final room summary as nullable validated JSON. | Preserves results beyond Redis TTL without adding a query-heavy analytics model. |
 | 2026-07-17 | Reuse the existing `rebuy` and `end_room` client message names additively. | Avoids a breaking protocol migration while changing cash-table semantics safely. |
+| 2026-07-17 | Reuse deadline-free `betting` as the waiting-between-hands phase when fewer than two players can start. | Preserves the approved phase contract, removes the transient result after two seconds, and lets a later queued top-up start the next hand without inventing an extra lifecycle state. |
 
 There are no open product questions for implementation. Any newly discovered ambiguity, protocol mismatch, or persistence invariant must be recorded in this log and resolved in the spec before implementation continues.
 
