@@ -1,5 +1,15 @@
 import process from "node:process";
-import { applyInsuranceDecision, applyPlayerAction, claimSeat, createInitialRoomState, rebuy, startHand, type RoomState } from "../src/lib/poker/engine";
+import {
+  advanceDuePhase,
+  applyInsuranceDecision,
+  applyPlayerAction,
+  claimSeat,
+  completeHandBoundary,
+  createInitialRoomState,
+  rebuy,
+  startHand,
+  type RoomState
+} from "../src/lib/poker/engine";
 import { getLegalActions } from "../src/lib/poker/betting";
 import type { BettingAction, LegalAction } from "../src/lib/poker/types";
 
@@ -69,9 +79,11 @@ async function main(): Promise<void> {
 
       if (state.hand?.insuranceOffer?.status === "pending") {
         decideInsurance();
+      } else if (state.flow.phase === "showdown-reveal" || state.flow.phase === "runout") {
+        advancePresentation();
       } else if (!state.hand || state.hand.finished) {
         handleFinishedHand();
-        startNextHand();
+        completeFinishedHand();
       } else {
         takeBotAction();
       }
@@ -112,6 +124,37 @@ function handleFinishedHand(): void {
       note(`${seat.participantId} rebuy 2000`);
     }
   }
+}
+
+function advancePresentation(): void {
+  const deadline = state.flow.deadlineAt;
+  if (deadline === null) {
+    throw new Error(`Presentation phase ${state.flow.phase} is missing a deadline`);
+  }
+
+  const advanced = advanceDuePhase(state, deadline);
+  if (advanced === state || advanced.flow.sequence === state.flow.sequence) {
+    throw new Error(`Presentation phase ${state.flow.phase} did not advance`);
+  }
+  state = advanced;
+}
+
+function completeFinishedHand(): void {
+  if (!state.hand?.finished) {
+    startNextHand();
+    return;
+  }
+
+  const completedHandNumber = state.hand.number;
+  const boundaryAt = state.flow.deadlineAt ?? Date.now();
+  const completed = completeHandBoundary(state, boundaryAt);
+  if (completed === state || completed.hand?.number === completedHandNumber) {
+    throw new Error(`Hand ${completedHandNumber} boundary did not advance`);
+  }
+
+  state = completed;
+  stats.handsStarted += 1;
+  note(`hand ${state.hand?.number} started button=${state.buttonSeat} actor=${state.hand?.actorId}`);
 }
 
 function decideInsurance(): void {
@@ -232,6 +275,13 @@ function verifyState(room: RoomState): void {
     const offer = room.hand.insuranceOffer;
     if (!seenParticipants.has(offer.offeredTo) || offer.coverage <= 0 || offer.premium <= 0) {
       throw new Error(`Invalid pending insurance offer ${JSON.stringify(offer)}`);
+    }
+    return;
+  }
+
+  if (room.flow.phase === "showdown-reveal" || room.flow.phase === "runout") {
+    if (room.flow.deadlineAt === null) {
+      throw new Error(`Presentation phase ${room.flow.phase} is missing a deadline`);
     }
     return;
   }
