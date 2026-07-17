@@ -22,7 +22,7 @@ writeFileSync(
     "SITE_TEST_POSTGRES_PORT=45432",
     "SITE_TEST_REDIS_PORT=46379",
     "SITE_TEST_IMAGE=example.test/holdem@sha256:fixture",
-    "SITE_TEST_RUN_ID=run-001"
+    "SITE_TEST_RUN_ID=run-01"
   ].join("\n"),
   "utf8"
 );
@@ -126,7 +126,7 @@ describe("production Docker deployment", () => {
       [
         "compose",
         "--project-name",
-        "holdem-site-run-001",
+        "holdem-site-run-01",
         "--env-file",
         envPath,
         "-f",
@@ -152,7 +152,7 @@ describe("production Docker deployment", () => {
       volumes?: Record<string, { labels?: Record<string, string> }>;
     };
 
-    expect(config.name).toBe("holdem-site-run-001");
+    expect(config.name).toBe("holdem-site-run-01");
     expect(config.services.app.image).toBe("example.test/holdem@sha256:fixture");
     expect(config.services.app.ports).toEqual([
       expect.objectContaining({ host_ip: "127.0.0.1", published: "43100", target: 3000 })
@@ -164,13 +164,13 @@ describe("production Docker deployment", () => {
       expect.objectContaining({ host_ip: "127.0.0.1", published: "46379", target: 6379 })
     ]);
     for (const service of Object.values(config.services)) {
-      expect(service.labels?.["com.texas-holdem.site-test-run"]).toBe("run-001");
+      expect(service.labels?.["com.texas-holdem.site-test-run"]).toBe("run-01");
     }
     expect(config.volumes?.["postgres-data"]?.labels?.["com.texas-holdem.site-test-run"]).toBe(
-      "run-001"
+      "run-01"
     );
     expect(config.volumes?.["redis-data"]?.labels?.["com.texas-holdem.site-test-run"]).toBe(
-      "run-001"
+      "run-01"
     );
   });
 });

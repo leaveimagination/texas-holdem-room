@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import {
   EnvironmentCleanupError,
+  SITE_TEST_MAX_RUN_ID_LENGTH,
   createSiteTestRunIdentity
 } from "../../scripts/site-test/contracts";
 import {
@@ -26,11 +27,17 @@ const rootDirectory = join(process.cwd(), "fixture-root");
 
 describe("site test run identity", () => {
   test("sanitizes the run ID into an exact isolated Compose project and run label", () => {
-    expect(createSiteTestRunIdentity("  Run_2026/07:Alpha  ")).toEqual({
-      runId: "run-2026-07-alpha",
-      projectName: "holdem-site-run-2026-07-alpha",
-      runLabel: "run-2026-07-alpha"
+    expect(createSiteTestRunIdentity("  Run_26  ")).toEqual({
+      runId: "run-26",
+      projectName: "holdem-site-run-26",
+      runLabel: "run-26"
     });
+  });
+
+  test("bounds run IDs so exact fixture ownership markers fit the nickname limit", () => {
+    expect(SITE_TEST_MAX_RUN_ID_LENGTH).toBe(6);
+    expect(`SITE-${"r".repeat(SITE_TEST_MAX_RUN_ID_LENGTH)}-smoke-player`).toHaveLength(24);
+    expect(() => createSiteTestRunIdentity("run-2026-07-alpha")).toThrow(/at most 6 characters/i);
   });
 
   test("rejects a run ID that has no safe characters", () => {
@@ -236,8 +243,8 @@ describe("isolated Docker site test stack", () => {
     const snapshot = await stack.start();
 
     expect(snapshot).toMatchObject({
-      runId: "run-001",
-      projectName: "holdem-site-run-001",
+      runId: "run-01",
+      projectName: "holdem-site-run-01",
       image: imageName,
       imageId,
       ports: { app: 43100, postgres: 45432, redis: 46379 }
@@ -256,7 +263,7 @@ describe("isolated Docker site test stack", () => {
       args: [
         "compose",
         "--project-name",
-        "holdem-site-run-001",
+        "holdem-site-run-01",
         "-f",
         join(rootDirectory, "docker-compose.prod.yml"),
         "-f",
@@ -278,7 +285,7 @@ describe("isolated Docker site test stack", () => {
       SITE_TEST_POSTGRES_PORT: "45432",
       SITE_TEST_REDIS_PORT: "46379",
       SITE_TEST_IMAGE: imageName,
-      SITE_TEST_RUN_ID: "run-001"
+      SITE_TEST_RUN_ID: "run-01"
     });
   });
 
@@ -332,7 +339,7 @@ describe("isolated Docker site test stack", () => {
       args: [
         "compose",
         "--project-name",
-        "holdem-site-run-001",
+        "holdem-site-run-01",
         "-f",
         join(rootDirectory, "docker-compose.prod.yml"),
         "-f",
@@ -356,7 +363,7 @@ describe("isolated Docker site test stack", () => {
     expect(fixture.calls[0]?.args).toEqual([
       "compose",
       "--project-name",
-      "holdem-site-run-001",
+      "holdem-site-run-01",
       "-f",
       join(rootDirectory, "docker-compose.prod.yml"),
       "-f",
@@ -370,7 +377,7 @@ describe("isolated Docker site test stack", () => {
 
 function createStack(run: DockerProcessRunner): DockerSiteTestStack {
   return new DockerSiteTestStack({
-    runId: "run-001",
+    runId: "run-01",
     rootDirectory,
     image: imageName,
     ports: { app: 43100, postgres: 45432, redis: 46379 },
@@ -440,8 +447,8 @@ interface HealthyContainerOverrides {
 }
 
 function healthyContainers(overrides: HealthyContainerOverrides = {}): DockerContainerInspect[] {
-  const projectName = overrides.projectName ?? "holdem-site-run-001";
-  const runLabel = overrides.runLabel ?? "run-001";
+  const projectName = overrides.projectName ?? "holdem-site-run-01";
+  const runLabel = overrides.runLabel ?? "run-01";
   const baseLabels = {
     "com.docker.compose.project": projectName,
     "com.texas-holdem.site-test-run": runLabel
