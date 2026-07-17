@@ -9,15 +9,13 @@ import { prisma } from "@/server/db";
 
 export class RoomRepository {
   async hasRunMarkerParticipant(roomId: string, runId: string): Promise<boolean> {
-    const participant = await prisma.roomParticipant.findFirst({
-      where: {
-        roomId,
-        displayName: { startsWith: `SITE-${runId}-` }
-      },
-      select: { id: true }
+    const participants = await prisma.roomParticipant.findMany({
+      where: { roomId },
+      select: { displayName: true }
     });
+    const markerPrefix = `SITE-${runId}-`;
 
-    return participant !== null;
+    return participants.some((participant) => participant.displayName.startsWith(markerPrefix));
   }
 
   async deleteExactRoom(roomId: string): Promise<void> {

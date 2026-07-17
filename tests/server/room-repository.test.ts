@@ -5,6 +5,7 @@ const {
   buyInUpsertMock,
   createMock,
   findFirstMock,
+  findManyMock,
   roomUpdateMock,
   transactionMock,
   potDeleteManyMock,
@@ -19,6 +20,7 @@ const {
   buyInUpsertMock: vi.fn(),
   createMock: vi.fn(),
   findFirstMock: vi.fn(),
+  findManyMock: vi.fn(),
   roomUpdateMock: vi.fn(),
   transactionMock: vi.fn(),
   potDeleteManyMock: vi.fn(),
@@ -42,7 +44,8 @@ vi.mock("@/server/db", () => ({
     },
     roomParticipant: {
       create: createMock,
-      findFirst: findFirstMock
+      findFirst: findFirstMock,
+      findMany: findManyMock
     }
   }
 }));
@@ -52,6 +55,7 @@ describe("RoomRepository participant tokens", () => {
     buyInUpsertMock.mockReset();
     createMock.mockReset();
     findFirstMock.mockReset();
+    findManyMock.mockReset();
     roomUpdateMock.mockReset();
     transactionMock.mockReset();
     potDeleteManyMock.mockReset();
@@ -156,17 +160,35 @@ describe("RoomRepository participant tokens", () => {
   });
 
   it("finds an ownership marker only within the exact room and run prefix", async () => {
-    findFirstMock.mockResolvedValue({ id: "participant_1" });
+    findManyMock.mockResolvedValue([
+      { displayName: "Guest" },
+      { displayName: "SITE-run_exact-Alice" }
+    ]);
     const repository = new RoomRepository();
 
     await expect(repository.hasRunMarkerParticipant("room_exact", "run_exact")).resolves.toBe(true);
 
-    expect(findFirstMock).toHaveBeenCalledWith({
-      where: {
-        roomId: "room_exact",
-        displayName: { startsWith: "SITE-run_exact-" }
-      },
-      select: { id: true }
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { roomId: "room_exact" },
+      select: { displayName: true }
+    });
+  });
+
+  it.each([
+    ["run_id", "SITE-runXid-Alice"],
+    ["run%id", "SITE-run-anything-id-Alice"],
+    ["run*id", "SITE-runXid-Alice"],
+    ["run?id", "SITE-runXid-Alice"],
+    ["run[ab]id", "SITE-runaid-Alice"]
+  ])("treats special characters literally when runId is %s", async (runId, differentMarker) => {
+    findManyMock.mockResolvedValue([{ displayName: differentMarker }]);
+    const repository = new RoomRepository();
+
+    await expect(repository.hasRunMarkerParticipant("room_exact", runId)).resolves.toBe(false);
+
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { roomId: "room_exact" },
+      select: { displayName: true }
     });
   });
 
