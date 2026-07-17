@@ -188,6 +188,7 @@ export function ActionControls({
                       <button
                         type="button"
                         className="is-primary-action is-fold-action is-check-fold-action"
+                        data-action-type={button.type}
                         key={button.type}
                         disabled
                       >
@@ -202,6 +203,7 @@ export function ActionControls({
                     <button
                       type="button"
                       className={["is-primary-action", actionToneClass(type)].join(" ")}
+                      data-action-type={type}
                       key={type}
                       onClick={() => sendAction(type)}
                       disabled={!canUsePlayerActions}
@@ -229,13 +231,13 @@ export function ActionControls({
                     <span className="bet-slider-track" aria-hidden="true" />
                   </div>
                   <div className="primary-action-row action-grid action-count-3">
-                    <button type="button" className="is-primary-action is-fold-action" disabled>
+                    <button type="button" className="is-primary-action is-fold-action" data-action-type="fold" disabled>
                       <span>Fold</span>
                     </button>
-                    <button type="button" className="is-primary-action is-call-action" disabled>
+                    <button type="button" className="is-primary-action is-call-action" data-action-type="call" disabled>
                       <span>Call</span>
                     </button>
-                    <button type="button" className="is-primary-action is-raise-action" disabled>
+                    <button type="button" className="is-primary-action is-raise-action" data-action-type="raise" disabled>
                       <span>Raise to</span>
                     </button>
                   </div>
@@ -284,7 +286,7 @@ export function ActionControls({
       ) : null}
 
       {showTopUp ? (
-        <div className="top-up-utility" aria-label="Add chips controls">
+        <div className="top-up-utility" aria-label="Add chips controls" data-pending-top-up={pendingTopUp}>
           <details className="top-up-popover">
             <summary>
               <span>Add chips</span>

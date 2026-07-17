@@ -63,6 +63,7 @@ describe("PokerTable", () => {
         playerControls: true,
         view: {
           status: "playing",
+          flow: { phase: "betting", sequence: 19 },
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 2000, status: "active", occupied: true },
@@ -82,7 +83,14 @@ describe("PokerTable", () => {
     );
 
     expect(html).toContain("deal-sequence");
+    expect(html).toContain("data-flow-phase=\"betting\"");
+    expect(html).toContain("data-flow-sequence=\"19\"");
     expect(html).toContain("data-hand-number=\"12\"");
+    expect(html).toContain("data-board-card-count=\"3\"");
+    expect(html).toContain("data-seat-number=\"1\"");
+    expect(html).toContain("data-participant-id=\"p1\"");
+    expect(html).toContain("data-seat-status=\"active\"");
+    expect(html).toContain("data-local-seat=\"true\"");
     expect(html).toContain("style=\"--board-deal-offset:4\"");
     expect(html).toContain("style=\"--deal-index:4\"");
     expect(html).toContain("style=\"--deal-index:5\"");
@@ -279,6 +287,7 @@ describe("PokerTable", () => {
     expect(html).toContain("collect-pot-burst");
     expect(html).toContain("collect-pot-flight collect-pot-flight-0");
     expect(html).toContain("aria-label=\"Pot collected by Hero\"");
+    expect(html).toContain("data-hand-result-number=\"8\"");
   });
 
   it("does not force a showdown reveal for a fold-win hand with one visible hand", () => {
@@ -365,6 +374,25 @@ describe("PokerTable", () => {
     expect(html).toContain(">Check<");
     expect(html).toContain(">Bet<");
     expect(html).toContain(">All in<");
+  });
+
+  it("marks a visible session result with stable semantic state", () => {
+    const html = renderToStaticMarkup(createElement(PokerTable, {
+      view: {
+        status: "finished",
+        flow: { phase: "session-summary", sequence: 22 },
+        sessionSummary: [{
+          participantId: "p1",
+          displayName: "Hero",
+          initialChips: 1_000,
+          topUpChips: 500,
+          finalChips: 1_700,
+          netChips: 200
+        }]
+      }
+    }));
+
+    expect(html).toContain("data-session-result-state=\"visible\"");
   });
 
   it("marks all-in runout boards with a slower one-by-one reveal cadence", () => {

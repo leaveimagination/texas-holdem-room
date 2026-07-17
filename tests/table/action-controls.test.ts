@@ -194,6 +194,7 @@ describe("ActionControls", () => {
     }));
 
     expect(playerHtml).toContain("Pending +800");
+    expect(playerHtml).toContain("data-pending-top-up=\"800\"");
     expect(playerHtml).toContain("top-up-popover");
     expect(spectatorHtml).not.toContain("top-up-popover");
     expect(tournamentHtml).not.toContain("top-up-popover");
@@ -241,6 +242,9 @@ describe("ActionControls", () => {
     expect(html).toContain("is-call-action");
     expect(html).toContain("is-raise-action");
     expect(html).toContain("class=\"is-primary-action is-fold-action\"");
+    expect(html).toContain("data-action-type=\"fold\"");
+    expect(html).toContain("data-action-type=\"call\"");
+    expect(html).toContain("data-action-type=\"raise\"");
     expect(html).not.toContain("is-secondary-action");
   });
 
@@ -328,6 +332,9 @@ describe("ActionControls", () => {
     expect(html).toContain("<span>Fold</span>");
     expect(html).toContain("<span>Call</span>");
     expect(html).toContain("<span>Raise to</span>");
+    expect(html).toContain("data-action-type=\"fold\"");
+    expect(html).toContain("data-action-type=\"call\"");
+    expect(html).toContain("data-action-type=\"raise\"");
     expect(html).not.toContain("value=\"--\"");
     expect(html).not.toContain(">--<");
     expect(html).toContain("disabled");

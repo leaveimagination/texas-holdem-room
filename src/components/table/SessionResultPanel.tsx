@@ -17,7 +17,7 @@ export function SessionResultPanel({ view }: { view: unknown }) {
 
   return (
     <div className="session-result-overlay">
-      <section className="session-result-panel" aria-label="Session results">
+      <section className="session-result-panel" aria-label="Session results" data-session-result-state="visible">
         <header>
           <span>Room complete</span>
           <h2>Session results</h2>

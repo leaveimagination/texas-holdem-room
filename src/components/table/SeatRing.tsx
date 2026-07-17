@@ -70,6 +70,10 @@ export function SeatRing({
               }
             }}
             aria-label={seat.isActing ? `Seat ${seat.seatNumber} is acting` : seat.occupied ? `Seat ${seat.seatNumber} occupied by ${seat.displayName ?? "player"}` : `Claim seat ${seat.seatNumber}`}
+            data-seat-number={seat.seatNumber}
+            data-participant-id={seat.participantId ?? undefined}
+            data-seat-status={seat.status}
+            data-local-seat={local ? "true" : "false"}
             disabled={seat.occupied || !canClaimSeat}
           >
             {local ? (

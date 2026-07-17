@@ -42,6 +42,7 @@ export function PokerTable({
 }) {
   const board = readBoard(view);
   const pot = readPot(view);
+  const street = readStreet(view);
   const handNumber = readHandNumber(view);
   const boardDealOffset = readBoardDealOffset(view);
   const currentBet = readCurrentBet(view);
@@ -49,6 +50,7 @@ export function PokerTable({
   const tableStatus = readTableStatus(view);
   const tableMode = readTableMode(view);
   const flowPhase = readFlowPhase(view);
+  const flowSequence = readFlowSequence(view);
   const actorId = readActorId(view);
   const actorName = readActorName(view);
   const heroCards = readHeroCards(view, localParticipantId);
@@ -68,7 +70,17 @@ export function PokerTable({
   const roomFinished = tableStatus === "finished" || flowPhase === "session-summary";
 
   return (
-    <section className="table-surface poker-client-shell" aria-label="Table">
+    <section
+      className="table-surface poker-client-shell"
+      aria-label="Table"
+      data-flow-phase={flowPhase ?? undefined}
+      data-flow-sequence={flowSequence ?? undefined}
+      data-hand-number={handNumber ?? undefined}
+      data-board-card-count={board.length}
+      data-street={street ?? undefined}
+      data-pot={pot}
+      data-actor-id={actorId ?? undefined}
+    >
       <div className="poker-client-backdrop" aria-hidden="true" />
       <div className="table-topline table-status-bar" aria-label="Table status">
         <div>
@@ -539,6 +551,11 @@ function readTableStatus(view: unknown): string | null {
   return typeof status === "string" ? status : null;
 }
 
+function readStreet(view: unknown): string | null {
+  const street = readObject(readObject(view)?.hand)?.street;
+  return typeof street === "string" ? street : null;
+}
+
 function readTableMode(view: unknown): "cash" | "tournament" | null {
   const mode = readObject(view)?.mode;
   return mode === "cash" || mode === "tournament" ? mode : null;
@@ -547,6 +564,11 @@ function readTableMode(view: unknown): "cash" | "tournament" | null {
 function readFlowPhase(view: unknown): string | null {
   const phase = readObject(readObject(view)?.flow)?.phase;
   return typeof phase === "string" ? phase : null;
+}
+
+function readFlowSequence(view: unknown): number | null {
+  const sequence = readObject(readObject(view)?.flow)?.sequence;
+  return typeof sequence === "number" ? sequence : null;
 }
 
 function readPendingTopUp(view: unknown, localParticipantId?: string | null): number {

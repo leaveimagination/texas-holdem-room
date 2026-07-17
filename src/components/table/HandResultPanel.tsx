@@ -29,7 +29,7 @@ export function HandResultPanel({ view }: { view: unknown }) {
 
   const namesById = new Map(result.players.map((player) => [player.participantId, player.displayName]));
   return (
-    <section className="hand-result hand-result-card" aria-label="Hand result" role="status">
+    <section className="hand-result hand-result-card" aria-label="Hand result" role="status" data-hand-result-number={result.handNumber}>
       <header className="hand-result-header">
         <div>
           <span>Hand complete</span>
