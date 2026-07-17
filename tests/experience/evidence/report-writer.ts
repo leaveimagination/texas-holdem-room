@@ -44,10 +44,20 @@ export interface WriteExperienceReportInput {
 
 const PLANE_NAMES = ["product", "harness", "environment"] as const;
 
-async function atomicWrite(path: string, contents: string): Promise<void> {
+export interface WriteExperienceReportOptions {
+  signal?: AbortSignal;
+}
+
+async function atomicWrite(
+  path: string,
+  contents: string,
+  signal?: AbortSignal
+): Promise<void> {
   const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(temporaryPath, contents, "utf8");
   try {
+    signal?.throwIfAborted();
+    await writeFile(temporaryPath, contents, { encoding: "utf8", signal });
+    signal?.throwIfAborted();
     await rename(temporaryPath, path);
   } catch (error) {
     await rm(temporaryPath, { force: true });
@@ -226,8 +236,10 @@ function renderHtml(report: RunReport, events: readonly EvidenceEvent[]): string
 }
 
 export async function writeExperienceReport(
-  input: WriteExperienceReportInput
+  input: WriteExperienceReportInput,
+  options: WriteExperienceReportOptions = {}
 ): Promise<RunReport> {
+  options.signal?.throwIfAborted();
   const cases = CaseReportSchema.array()
     .parse(input.cases)
     .map((caseReport) =>
@@ -304,10 +316,19 @@ export async function writeExperienceReport(
   });
 
   await mkdir(input.outputRoot, { recursive: true });
-  await atomicWrite(join(input.outputRoot, "case-manifest.json"), json(rootManifest));
-  await atomicWrite(join(input.outputRoot, "events.json"), json(events));
-  await atomicWrite(join(input.outputRoot, "report.json"), json(report));
-  await atomicWrite(join(input.outputRoot, "report.html"), renderHtml(report, events));
+  options.signal?.throwIfAborted();
+  await atomicWrite(
+    join(input.outputRoot, "case-manifest.json"),
+    json(rootManifest),
+    options.signal
+  );
+  await atomicWrite(join(input.outputRoot, "events.json"), json(events), options.signal);
+  await atomicWrite(join(input.outputRoot, "report.json"), json(report), options.signal);
+  await atomicWrite(
+    join(input.outputRoot, "report.html"),
+    renderHtml(report, events),
+    options.signal
+  );
 
   return report;
 }

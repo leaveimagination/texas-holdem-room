@@ -9,6 +9,7 @@ import {
   EnvironmentStageError,
   SITE_TEST_HARD_DEADLINE_MS,
   SITE_TEST_FINALIZATION_RESERVE_MS,
+  SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS,
   OverallDeadlineError,
   createDefaultSiteTestRunnerDependencies,
   injectProductFailureEvidence,
@@ -350,6 +351,49 @@ describe("full site runner", () => {
     expect(harness.calls).toEqual([]);
   });
 
+  test("enforces a stage timeout for a non-cooperative dependency and starts no later stage", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await createHarness();
+      harness.dependencies.inspectBrowserVersion = async () => {
+        harness.calls.push("browser-version");
+        return await new Promise<string>((resolve) => {
+          // Deliberately ignores the stage AbortSignal and outlives its budget.
+          setTimeout(
+            () => resolve("late Chromium"),
+            SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.browserVersion * 2
+          );
+        });
+      };
+
+      const startedAt = Date.now();
+      const run = runFullSiteTest({
+        selection: parseSiteTestArguments(["--cases=EXP-001"]),
+        dependencies: harness.dependencies
+      });
+      let settledAt: number | undefined;
+      void run.finally(() => {
+        settledAt = Date.now();
+      });
+      await vi.advanceTimersByTimeAsync(
+        SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.browserVersion * 2
+      );
+      const result = await run;
+
+      expect(result).toMatchObject({
+        exitCode: 2,
+        verdict: "INCONCLUSIVE",
+        outputRoot: harness.context.outputRoot
+      });
+      expect((settledAt ?? Infinity) - startedAt).toBeLessThanOrEqual(
+        SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.browserVersion
+      );
+      expect(harness.calls).toEqual(["allocate", "browser-version"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("runs ordered isolated and smoke stages under one 30-minute deadline", async () => {
     const harness = await createHarness();
     const result = await runFullSiteTest({
@@ -450,6 +494,29 @@ describe("full site runner", () => {
     expect(result).toMatchObject({ exitCode: 1, verdict: "FAIL" });
     expect(harness.playwrightGroups).toEqual([["EXP-001"]]);
     expect(harness.calls).not.toContain("playwright:EXP-010");
+  });
+
+  test("classifies a timed-out Playwright group as harness-inconclusive even with product failure evidence", async () => {
+    const harness = await createHarness({
+      evidenceFor: (caseIds) => evidence(caseIds, "FAIL")
+    });
+    harness.dependencies.runPlaywrightGroup = async (input) => {
+      harness.calls.push(`playwright:${input.caseIds.join(",")}`);
+      return {
+        exitCode: 2,
+        stdout: "partial output",
+        stderr: "deadline exceeded",
+        timedOut: true
+      };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(result.report?.results.harness.status).toBe("inconclusive");
   });
 
   test("finalizes partial evidence for injected environment failure before exact cleanup", async () => {
@@ -566,6 +633,17 @@ describe("full site runner", () => {
   test("retains the stack when the current final report write fails", async () => {
     const harness = await createHarness();
     const writeReport = harness.dependencies.writeReport;
+    let retainedFallback:
+      | { resources: readonly { cleanupStatus: string }[]; reason: string }
+      | undefined;
+    harness.dependencies.persistRetainedResources = async (
+      _context,
+      resources,
+      reason
+    ) => {
+      harness.calls.push("persist-retained-resources");
+      retainedFallback = { resources, reason };
+    };
     let writes = 0;
     harness.dependencies.writeReport = async (input, control) => {
       writes += 1;
@@ -580,6 +658,43 @@ describe("full site runner", () => {
 
     expect(result.exitCode).toBe(2);
     expect(harness.calls).not.toContain("cleanup");
+    expect(harness.calls).toContain("persist-retained-resources");
+    expect(retainedFallback?.resources.every(
+      ({ cleanupStatus }) => cleanupStatus === "retained"
+    )).toBe(true);
+    expect(retainedFallback?.reason).toMatch(/final report persistence failed/i);
+  });
+
+  test("preserves run location and the last partial report when the absolute deadline fires", async () => {
+    const harness = await createHarness();
+    const controller = new AbortController();
+    harness.dependencies.withDeadline = async (timeoutMs, task) =>
+      await task(controller.signal, () =>
+        controller.signal.aborted ? 0 : timeoutMs
+      );
+    let groups = 0;
+    harness.dependencies.runPlaywrightGroup = async (input) => {
+      groups += 1;
+      harness.calls.push(`playwright:${input.caseIds.join(",")}`);
+      if (groups === 2) {
+        controller.abort(new OverallDeadlineError(SITE_TEST_HARD_DEADLINE_MS));
+        return { exitCode: 2, stdout: "partial", stderr: "timeout", timedOut: true };
+      }
+      return { exitCode: 0, stdout: "ok", stderr: "", timedOut: false };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001,EXP-010"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 2,
+      verdict: "INCONCLUSIVE",
+      runId: harness.context.runId,
+      outputRoot: harness.context.outputRoot,
+      report: { runId: harness.context.runId }
+    });
   });
 
   test("retains the stack when diagnostics cannot be persisted", async () => {
@@ -752,6 +867,9 @@ async function createHarness(options: HarnessOptions = {}) {
     },
     persistDiagnostics: async () => {
       calls.push("persist-diagnostics");
+    },
+    persistRetainedResources: async () => {
+      calls.push("persist-retained-resources");
     },
     now: () => "2026-07-17T00:01:00.000Z"
   };

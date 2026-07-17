@@ -30,11 +30,18 @@ export interface EvidenceValidationResult {
   artifactCount: number;
 }
 
-async function listFiles(root: string): Promise<string[]> {
+export interface EvidenceValidationOptions {
+  signal?: AbortSignal;
+}
+
+async function listFiles(root: string, signal?: AbortSignal): Promise<string[]> {
   const files: string[] = [];
   const visit = async (directory: string): Promise<void> => {
+    signal?.throwIfAborted();
     const entries = await readdir(directory, { withFileTypes: true });
+    signal?.throwIfAborted();
     for (const entry of entries) {
+      signal?.throwIfAborted();
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) {
         await visit(path);
@@ -252,9 +259,11 @@ function parseReport(report: unknown): ParsedReport {
   };
 }
 
-async function parseJson(path: string): Promise<unknown> {
+async function parseJson(path: string, signal?: AbortSignal): Promise<unknown> {
   try {
-    return JSON.parse(await readFile(path, "utf8"));
+    return JSON.parse(
+      await readFile(path, { encoding: "utf8", signal })
+    );
   } catch (error) {
     throw new Error(`Invalid JSON in ${path}`, { cause: error });
   }
@@ -262,10 +271,14 @@ async function parseJson(path: string): Promise<unknown> {
 
 export async function validateEvidencePack(
   outputRoot: string,
-  knownSecrets: readonly KnownSecret[] = []
+  knownSecrets: readonly KnownSecret[] = [],
+  options: EvidenceValidationOptions = {}
 ): Promise<EvidenceValidationResult> {
+  const { signal } = options;
+  signal?.throwIfAborted();
   const canonicalRoot = await realpath(outputRoot);
-  const files = await listFiles(canonicalRoot);
+  signal?.throwIfAborted();
+  const files = await listFiles(canonicalRoot, signal);
   const secrets = normalizeSecrets(knownSecrets);
   const artifacts: ArtifactRecord[] = [];
   const events: EvidenceEvent[] = [];
@@ -278,18 +291,21 @@ export async function validateEvidencePack(
   let textEntriesScanned = 0;
 
   for (const path of files) {
+    signal?.throwIfAborted();
     const name = basename(path).toLowerCase();
     if (name === "case-manifest.json") {
       manifestCount += 1;
-      parsedManifest = parseManifest(await parseJson(path));
+      parsedManifest = parseManifest(await parseJson(path, signal));
     } else if (name === "events.json") {
       eventStreamCount += 1;
-      const parsed = EvidenceEventSchema.array().min(1).parse(await parseJson(path));
+      const parsed = EvidenceEventSchema.array().min(1).parse(
+        await parseJson(path, signal)
+      );
       assertMonotonicEvents(parsed, path);
       events.push(...parsed);
     } else if (name === "report.json") {
       reportCount += 1;
-      const report = parseReport(await parseJson(path));
+      const report = parseReport(await parseJson(path, signal));
       reports.push(report);
       artifacts.push(...report.artifacts);
       reportEventReferences.push(...report.eventReferences);
@@ -351,6 +367,7 @@ export async function validateEvidencePack(
     }
   }
   for (const event of events) {
+    signal?.throwIfAborted();
     const matchesCase = report.cases.some(
       (caseContext) =>
         event.caseId === caseContext.caseId &&
@@ -373,6 +390,7 @@ export async function validateEvidencePack(
 
   const artifactsById = new Map<string, ArtifactRecord>();
   for (const artifact of artifacts) {
+    signal?.throwIfAborted();
     if (artifactsById.has(artifact.id)) {
       throw new Error(`Duplicate artifact ID: ${artifact.id}`);
     }
@@ -380,12 +398,14 @@ export async function validateEvidencePack(
   }
   const eventsById = new Map<string, EvidenceEvent>();
   for (const event of events) {
+    signal?.throwIfAborted();
     if (eventsById.has(event.id)) {
       throw new Error(`Duplicate evidence event ID: ${event.id}`);
     }
     eventsById.set(event.id, event);
   }
   for (const event of events) {
+    signal?.throwIfAborted();
     for (const artifactId of event.artifactIds) {
       if (!artifactsById.has(artifactId)) {
         throw new Error(`Event references unknown artifact: ${artifactId}`);
@@ -393,6 +413,7 @@ export async function validateEvidencePack(
     }
   }
   for (const reference of reportEventReferences) {
+    signal?.throwIfAborted();
     const event = eventsById.get(reference.id);
     if (!event) {
       throw new Error(
@@ -412,10 +433,12 @@ export async function validateEvidencePack(
   }
 
   for (const artifact of artifacts) {
+    signal?.throwIfAborted();
     const artifactPath = safeArtifactPath(canonicalRoot, artifact.path);
     let stats;
     try {
       stats = await lstat(artifactPath);
+      signal?.throwIfAborted();
     } catch (error) {
       throw new Error(`Missing artifact: ${artifact.path}`, { cause: error });
     }
@@ -423,6 +446,7 @@ export async function validateEvidencePack(
       throw new Error(`Artifact is not a file: ${artifact.path}`);
     }
     const canonicalArtifact = await realpath(artifactPath);
+    signal?.throwIfAborted();
     const fromRoot = relative(canonicalRoot, canonicalArtifact);
     if (isOutsideRoot(fromRoot)) {
       throw new Error(`Artifact path traversal rejected: ${artifact.path}`);
@@ -430,14 +454,16 @@ export async function validateEvidencePack(
   }
 
   for (const path of files) {
+    signal?.throwIfAborted();
     if (path.toLowerCase().endsWith(".zip")) {
       let entries: Record<string, Uint8Array>;
       try {
-        entries = unzipSync(new Uint8Array(await readFile(path)));
+        entries = unzipSync(new Uint8Array(await readFile(path, { signal })));
       } catch (error) {
         throw new Error(`Invalid trace ZIP: ${path}`, { cause: error });
       }
       for (const [entryName, bytes] of Object.entries(entries)) {
+        signal?.throwIfAborted();
         const content = strFromU8(bytes);
         assertNoKnownSecret(content, `${path}!${entryName}`, secrets);
         if (isLikelyText(bytes)) {
@@ -445,7 +471,7 @@ export async function validateEvidencePack(
         }
       }
     } else {
-      const bytes = new Uint8Array(await readFile(path));
+      const bytes = new Uint8Array(await readFile(path, { signal }));
       const content = strFromU8(bytes);
       assertNoKnownSecret(content, path, secrets);
       if (isLikelyText(bytes)) {

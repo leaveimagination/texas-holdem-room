@@ -8,7 +8,8 @@ import {
   EXPERIENCE_THRESHOLDS,
   EvidenceEventSchema,
   type CaseReport,
-  type EvidenceEvent
+  type EvidenceEvent,
+  type RunResourceRecord
 } from "../../tests/experience/evidence/contracts";
 import { redactForEvidence } from "../../tests/experience/evidence/redaction";
 import type {
@@ -22,23 +23,27 @@ import type {
 import { DockerSiteTestStack } from "./docker-stack";
 import { reserveLoopbackPorts } from "./ports";
 import { runProcess } from "./process-runner";
-import { chromium } from "@playwright/test";
 
 const POSTGRES_HEALTH_INJECTION = "postgres-health";
 
-export async function allocateDefaultRun(): Promise<SiteTestRunContext> {
+export async function allocateDefaultRun(
+  control?: SiteTestStageControl
+): Promise<SiteTestRunContext> {
+  control?.signal.throwIfAborted();
   const rootDirectory = process.cwd();
   const runId = randomUUID().replaceAll("-", "").slice(0, 6);
   const outputBase = resolve(rootDirectory, "outputs", "site-test");
   const outputRoot = join(outputBase, runId);
   const caseOutputRoot = join(outputBase, `.case-evidence-${runId}`);
   const [app, postgres, redis] = await reserveLoopbackPorts(3);
+  control?.signal.throwIfAborted();
   const postgresPassword = randomBytes(24).toString("base64url");
   const image = process.env.SITE_TEST_IMAGE?.trim() || "texas-holdem-friends-room:latest";
   await Promise.all([
     mkdir(outputRoot, { recursive: true }),
     mkdir(caseOutputRoot, { recursive: true })
   ]);
+  control?.signal.throwIfAborted();
   return {
     runId,
     rootDirectory,
@@ -101,21 +106,32 @@ export async function writeDefaultMetadata(
 }
 
 export async function inspectDefaultBrowserVersion(
-  _context: SiteTestRunContext,
-  control: SiteTestStageControl
+  context: SiteTestRunContext,
+  control: SiteTestStageControl,
+  run: typeof runProcess = runProcess
 ): Promise<string> {
-  if (control.signal.aborted) {
-    throw control.signal.reason;
+  const script = [
+    'const { chromium } = require("@playwright/test");',
+    "(async () => {",
+    "  let browser;",
+    "  try {",
+    "    browser = await chromium.launch();",
+    "    process.stdout.write(browser.version());",
+    "  } finally {",
+    "    if (browser) await browser.close();",
+    "  }",
+    "})().catch((error) => { console.error(error); process.exitCode = 1; });"
+  ].join("\n");
+  const result = await run(process.execPath, ["-e", script], {
+    cwd: context.rootDirectory,
+    timeoutMs: control.timeoutMs,
+    signal: control.signal
+  });
+  const version = result.stdout.trim();
+  if (version.length === 0) {
+    throw new Error("Chromium version child returned no version");
   }
-  const browser = await chromium.launch({ timeout: control.timeoutMs });
-  try {
-    if (control.signal.aborted) {
-      throw control.signal.reason;
-    }
-    return browser.version();
-  } finally {
-    await browser.close();
-  }
+  return version;
 }
 
 export async function inspectDefaultImage(
@@ -160,7 +176,7 @@ export function createDefaultStack(
     },
     start: async (control) => {
       try {
-        snapshot = await stack.start(control.signal);
+        snapshot = await stack.start(control);
         return snapshot;
       } catch (error) {
         snapshot = stack.recordedSnapshot;
@@ -168,8 +184,8 @@ export function createDefaultStack(
       }
     },
     collectDiagnostics: async (control) =>
-      await stack.collectDiagnostics(control.signal),
-    stop: async (control) => await stack.stop(control.signal)
+      await stack.collectDiagnostics(control),
+    stop: async (control) => await stack.stop(control)
   };
 }
 
@@ -188,30 +204,17 @@ export async function preflightDefaultStack(
   if (injection === POSTGRES_HEALTH_INJECTION) {
     throw new Error("Injected PostgreSQL health failure");
   }
-
-  const { PrismaClient } = await import("@prisma/client");
-  const prisma = new PrismaClient({
-    datasources: { db: { url: context.databaseUrl } }
-  });
-  try {
-    await prisma.$queryRawUnsafe("SELECT 1");
-  } finally {
-    await prisma.$disconnect();
+  const snapshot = _stack.snapshot;
+  if (snapshot === undefined) {
+    throw new Error("Verified Docker health snapshot is unavailable");
   }
-
-  const { default: Redis } = await import("ioredis");
-  const redis = new Redis(context.redisUrl, {
-    lazyConnect: true,
-    connectTimeout: Math.min(5_000, control.timeoutMs),
-    maxRetriesPerRequest: 1
-  });
-  try {
-    await redis.connect();
-    if ((await redis.ping()) !== "PONG") {
-      throw new Error("Redis health check did not return PONG");
+  for (const serviceName of ["postgres", "redis"] as const) {
+    const service = snapshot.services.find(({ service }) => service === serviceName);
+    if (service?.status !== "running" || service.health !== "healthy") {
+      throw new Error(
+        `${serviceName} is not healthy in the verified Docker snapshot`
+      );
     }
-  } finally {
-    redis.disconnect(false);
   }
 }
 
@@ -269,12 +272,14 @@ export async function persistDefaultDiagnostics(
   diagnostics: SiteTestDiagnostics,
   control: SiteTestStageControl
 ): Promise<void> {
+  control.signal.throwIfAborted();
   const root = join(context.outputRoot, "diagnostics");
   const playwrightRoot = join(root, "playwright");
   await Promise.all([
     mkdir(root, { recursive: true }),
     mkdir(playwrightRoot, { recursive: true })
   ]);
+  control.signal.throwIfAborted();
   const safe = redactForEvidence(diagnostics, context.knownSecrets) as SiteTestDiagnostics;
   const writes: Promise<void>[] = [
     writeFile(join(root, "runner.json"), `${JSON.stringify(safe, null, 2)}\n`, {
@@ -304,6 +309,33 @@ export async function persistDefaultDiagnostics(
     );
   });
   await Promise.all(writes);
+}
+
+export async function persistDefaultRetainedResources(
+  context: SiteTestRunContext,
+  resources: readonly RunResourceRecord[],
+  reason: string,
+  control: SiteTestStageControl
+): Promise<void> {
+  control.signal.throwIfAborted();
+  const root = join(context.outputRoot, "diagnostics");
+  await mkdir(root, { recursive: true });
+  control.signal.throwIfAborted();
+  const record = redactForEvidence(
+    {
+      schemaVersion: "1.0",
+      runId: context.runId,
+      recordedAt: new Date().toISOString(),
+      reason,
+      resources
+    },
+    context.knownSecrets
+  );
+  await writeFile(
+    join(root, "retained-resources.json"),
+    `${JSON.stringify(record, null, 2)}\n`,
+    { encoding: "utf8", signal: control.signal }
+  );
 }
 
 function errorMessage(error: unknown): string {

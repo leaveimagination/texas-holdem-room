@@ -21,14 +21,17 @@ import {
   type CollectedCaseEvidence,
   type ProductFailureInjection,
   type SiteTestDiagnostics,
-  type SiteTestRunContext
+  type SiteTestRunContext,
+  type SiteTestStageControl
 } from "./runner-contracts";
 
 export async function injectProductFailureEvidence(
   context: SiteTestRunContext,
   evidence: CollectedCaseEvidence,
-  injection: ProductFailureInjection
+  injection: ProductFailureInjection,
+  control?: SiteTestStageControl
 ): Promise<CollectedCaseEvidence> {
+  control?.signal.throwIfAborted();
   const artifactId = `${injection.caseId}-${injection.attemptId}-INJECTED-ARTIFACT`;
   const eventId = `${injection.caseId}-${injection.attemptId}-INJECTED-EVENT`;
   const assertionId = `${injection.caseId}-INJECTED-PRODUCT-FAILURE`;
@@ -37,7 +40,7 @@ export async function injectProductFailureEvidence(
   await writeFile(
     join(context.outputRoot, ...artifactPath.split("/")),
     `Deliberate product failure for harness verification: ${injection.caseId}/${injection.attemptId}\n`,
-    "utf8"
+    { encoding: "utf8", signal: control?.signal }
   );
 
   const existing = evidence.cases.find(

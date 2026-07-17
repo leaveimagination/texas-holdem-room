@@ -427,6 +427,29 @@ describe("isolated Docker site test stack", () => {
     });
   });
 
+  test("keeps cleanup inspection and down timeouts within the allocated stage budget", async () => {
+    const fixture = createDockerFixture({
+      inspections: [healthyContainers(), healthyContainers()]
+    });
+    const stack = createStack(fixture.run);
+    await stack.start();
+    const controller = new AbortController();
+
+    await stack.stop({
+      signal: controller.signal,
+      timeoutMs: 120_000
+    });
+
+    const cleanupCalls = fixture.calls.slice(-3);
+    expect(cleanupCalls.map(({ timeoutMs }) => timeoutMs)).toEqual(
+      expect.arrayContaining([expect.any(Number), expect.any(Number), expect.any(Number)])
+    );
+    expect(
+      cleanupCalls.reduce((total, { timeoutMs }) => total + (timeoutMs ?? 0), 0)
+    ).toBeLessThanOrEqual(120_000);
+    expect(cleanupCalls.every(({ signal }) => signal === controller.signal)).toBe(true);
+  });
+
   test("records exact ownership before a partial Compose start can fail", async () => {
     const fixture = createDockerFixture({
       failComposeUp: true,
@@ -512,6 +535,8 @@ function createDockerFixture(options: DockerFixtureOptions = {}) {
     command: string;
     args: string[];
     env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    signal?: AbortSignal;
   }> = [];
   const inspections = [
     ...(options.inspections ?? [healthyContainers({ appImageId: options.appImageId })])
@@ -522,7 +547,13 @@ function createDockerFixture(options: DockerFixtureOptions = {}) {
   ];
 
   const run: DockerProcessRunner = async (command, args, runOptions = {}) => {
-    calls.push({ command, args: [...args], env: runOptions.env });
+    calls.push({
+      command,
+      args: [...args],
+      env: runOptions.env,
+      timeoutMs: runOptions.timeoutMs,
+      signal: runOptions.signal
+    });
 
     if (args[0] === "image" && args[1] === "inspect") {
       return { exitCode: 0, stdout: `${imageId}\n`, stderr: "" };

@@ -3,7 +3,8 @@ import type {
   CaseReport,
   EvidenceEvent,
   OverallVerdict,
-  RunReport
+  RunReport,
+  RunResourceRecord
 } from "../../tests/experience/evidence/contracts";
 import type { KnownSecret } from "../../tests/experience/evidence/redaction";
 import type {
@@ -20,6 +21,7 @@ export const SITE_TEST_HARD_DEADLINE_MS = 30 * 60 * 1_000;
 export const SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS = Object.freeze({
   productFailureEvidence: 15_000,
   finalReport: 15_000,
+  retainedResourceFallback: 15_000,
   finalValidation: 30_000,
   dockerDiagnostics: 60_000,
   diagnosticsPersistence: 15_000,
@@ -39,6 +41,10 @@ export const SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS = Object.freeze({
     SITE_TEST_FINALIZATION_RESERVE_MS -
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.productFailureEvidence -
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalReport,
+  retainedResourceFallback:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.dockerDiagnostics +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence,
   dockerDiagnostics:
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.dockerDiagnostics +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence +
@@ -195,6 +201,12 @@ export interface SiteTestRunnerDependencies {
     diagnostics: SiteTestDiagnostics,
     control: SiteTestStageControl
   ): Promise<void>;
+  persistRetainedResources(
+    context: SiteTestRunContext,
+    resources: readonly RunResourceRecord[],
+    reason: string,
+    control: SiteTestStageControl
+  ): Promise<void>;
   now(): string;
 }
 
@@ -206,6 +218,7 @@ export interface RunFullSiteTestOptions {
 export interface SiteTestRunResult {
   exitCode: 0 | 1 | 2;
   verdict: OverallVerdict;
+  runId?: string;
   outputRoot?: string;
   report?: RunReport;
 }
@@ -228,6 +241,13 @@ export class OverallDeadlineError extends HarnessStageError {
   constructor(readonly timeoutMs: number) {
     super(`Full site test exceeded its ${timeoutMs}ms hard deadline`, "overall-deadline");
     this.name = "OverallDeadlineError";
+  }
+}
+
+export class StageTimeoutError extends HarnessStageError {
+  constructor(readonly timeoutMs: number, readonly stageName: string) {
+    super(`Site test stage ${stageName} exceeded its ${timeoutMs}ms budget`, stageName);
+    this.name = "StageTimeoutError";
   }
 }
 

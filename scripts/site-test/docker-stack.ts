@@ -74,6 +74,11 @@ export interface DockerSiteTestStackOptions {
   onLog?(entry: ProcessLogEntry): void;
 }
 
+export interface DockerStageControl {
+  signal?: AbortSignal;
+  timeoutMs: number;
+}
+
 export function assertVerifiedDockerSiteTestStackSnapshot(
   snapshot: DockerSiteTestStackSnapshot
 ): void {
@@ -96,7 +101,6 @@ export class DockerSiteTestStack {
   private readonly image: string;
   private readonly run: DockerProcessRunner;
   private readonly onLog?: (entry: ProcessLogEntry) => void;
-  private signal?: AbortSignal;
   private recorded?: DockerSiteTestStackSnapshot;
 
   constructor(options: DockerSiteTestStackOptions) {
@@ -115,16 +119,22 @@ export class DockerSiteTestStack {
     this.onLog = options.onLog;
   }
 
-  async start(signal?: AbortSignal): Promise<DockerSiteTestStackSnapshot> {
+  async start(
+    input?: AbortSignal | DockerStageControl
+  ): Promise<DockerSiteTestStackSnapshot> {
     if (this.recorded !== undefined) {
       throw new Error(`Site test stack ${this.projectName} has already been started`);
     }
 
-    this.signal = signal;
+    const control = normalizeControl(input, 285_000);
+    const [imageBudget, composeBudget, inspectionBudget] = sequentialBudgets(
+      control.timeoutMs,
+      [30_000, 195_000, 60_000]
+    );
     const imageResult = await this.run(
       "docker",
       ["image", "inspect", "--format", "{{.Id}}", this.image],
-      this.processOptions(30_000)
+      this.processOptions(imageBudget, control.signal)
     );
     const imageId = requireNonempty(imageResult.stdout.trim(), "Docker image ID");
 
@@ -141,14 +151,20 @@ export class DockerSiteTestStack {
           "--pull",
           "never"
         ]),
-        this.processOptions(195_000)
+        this.processOptions(composeBudget, control.signal)
       );
     } catch (error) {
-      await this.recordPartialOwnership(imageId);
+      await this.recordPartialOwnership(imageId, {
+        signal: control.signal,
+        timeoutMs: inspectionBudget
+      });
       throw error;
     }
 
-    const services = await this.inspect();
+    const services = await this.inspect({
+      signal: control.signal,
+      timeoutMs: inspectionBudget
+    });
     const snapshot: DockerSiteTestStackSnapshot = {
       runId: this.identity.runId,
       projectName: this.projectName,
@@ -164,11 +180,16 @@ export class DockerSiteTestStack {
     return verifiedSnapshot;
   }
 
-  async inspect(): Promise<DockerServiceState[]> {
+  async inspect(input?: AbortSignal | DockerStageControl): Promise<DockerServiceState[]> {
+    const control = normalizeControl(input, 60_000);
+    const [listBudget, inspectBudget] = sequentialBudgets(
+      control.timeoutMs,
+      [30_000, 30_000]
+    );
     const idsResult = await this.run(
       "docker",
       this.composeArgs(["ps", "--all", "--quiet"]),
-      this.processOptions(30_000)
+      this.processOptions(listBudget, control.signal)
     );
     const containerIds = idsResult.stdout
       .split(/\r?\n/)
@@ -185,7 +206,7 @@ export class DockerSiteTestStack {
     const inspectResult = await this.run(
       "docker",
       ["inspect", ...containerIds],
-      this.processOptions(30_000)
+      this.processOptions(inspectBudget, control.signal)
     );
     const containers = parseDockerInspection(inspectResult.stdout);
     const inspectedIds = containers.map((container) => container.Id);
@@ -210,12 +231,12 @@ export class DockerSiteTestStack {
     });
   }
 
-  async collectDiagnostics(signal?: AbortSignal): Promise<string> {
-    this.signal = signal;
+  async collectDiagnostics(input?: AbortSignal | DockerStageControl): Promise<string> {
+    const control = normalizeControl(input, 60_000);
     const result = await this.run(
       "docker",
       this.composeArgs(["logs", "--no-color", "--timestamps"]),
-      this.processOptions(60_000)
+      this.processOptions(control.timeoutMs, control.signal)
     );
     return (result.stdout + result.stderr).replaceAll(this.postgresPassword, "[REDACTED]");
   }
@@ -224,8 +245,8 @@ export class DockerSiteTestStack {
     return this.recorded === undefined ? undefined : cloneAndFreezeSnapshot(this.recorded);
   }
 
-  async stop(signal?: AbortSignal): Promise<void> {
-    this.signal = signal;
+  async stop(input?: AbortSignal | DockerStageControl): Promise<void> {
+    const control = normalizeControl(input, 180_000);
     const recorded = this.recorded;
     if (recorded === undefined) {
       throw new EnvironmentCleanupError(
@@ -237,7 +258,11 @@ export class DockerSiteTestStack {
 
     let current: DockerServiceState[];
     try {
-      current = await this.inspect();
+      const inspectionBudget = Math.max(2, Math.floor(control.timeoutMs / 2));
+      current = await this.inspect({
+        signal: control.signal,
+        timeoutMs: inspectionBudget
+      });
     } catch (error) {
       throw new EnvironmentCleanupError(
         `Refusing to tear down ${recorded.projectName}: current ownership could not be proven`,
@@ -263,7 +288,10 @@ export class DockerSiteTestStack {
     await this.run(
       "docker",
       this.composeArgs(["down", "--volumes"]),
-      this.processOptions(120_000)
+      this.processOptions(
+        control.timeoutMs - Math.max(2, Math.floor(control.timeoutMs / 2)),
+        control.signal
+      )
     );
     this.recorded = undefined;
   }
@@ -298,9 +326,12 @@ export class DockerSiteTestStack {
     };
   }
 
-  private async recordPartialOwnership(imageId: string): Promise<void> {
+  private async recordPartialOwnership(
+    imageId: string,
+    control: DockerStageControl
+  ): Promise<void> {
     try {
-      const services = await this.inspect();
+      const services = await this.inspect(control);
       this.recorded = {
         runId: this.identity.runId,
         projectName: this.projectName,
@@ -349,7 +380,10 @@ export class DockerSiteTestStack {
     ];
   }
 
-  private processOptions(timeoutMs: number): DockerProcessRunOptions {
+  private processOptions(
+    timeoutMs: number,
+    signal?: AbortSignal
+  ): DockerProcessRunOptions {
     return {
       cwd: this.rootDirectory,
       env: {
@@ -364,7 +398,7 @@ export class DockerSiteTestStack {
         SITE_TEST_RUN_ID: this.identity.runId
       },
       timeoutMs,
-      signal: this.signal,
+      signal,
       redact: (value) => value.replaceAll(this.postgresPassword, "[REDACTED]"),
       onLog: this.onLog
     };
@@ -427,6 +461,41 @@ function isSiteTestService(value: string | undefined): value is SiteTestService 
 
 function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value) => right.includes(value));
+}
+
+function normalizeControl(
+  input: AbortSignal | DockerStageControl | undefined,
+  fallbackTimeoutMs: number
+): DockerStageControl {
+  if (input !== undefined && "timeoutMs" in input) {
+    if (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0) {
+      throw new RangeError("Docker stage timeout must be positive");
+    }
+    return { signal: input.signal, timeoutMs: Math.floor(input.timeoutMs) };
+  }
+  return {
+    signal: input as AbortSignal | undefined,
+    timeoutMs: fallbackTimeoutMs
+  };
+}
+
+function sequentialBudgets(
+  totalMs: number,
+  maximums: readonly number[]
+): number[] {
+  if (totalMs < maximums.length) {
+    throw new RangeError("Docker stage budget is too small for its required commands");
+  }
+  let remaining = Math.floor(totalMs);
+  return maximums.map((maximum, index) => {
+    const commandsAfter = maximums.length - index - 1;
+    const budget =
+      commandsAfter === 0
+        ? remaining
+        : Math.min(maximum, remaining - commandsAfter);
+    remaining -= budget;
+    return budget;
+  });
 }
 
 function cloneAndFreezeSnapshot(snapshot: DockerSiteTestStackSnapshot): DockerSiteTestStackSnapshot {

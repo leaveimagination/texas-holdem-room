@@ -20,6 +20,7 @@ import {
   SITE_TEST_HARD_DEADLINE_MS,
   SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS,
   SMOKE_CASE_ID,
+  StageTimeoutError,
   exitCodeForVerdict,
   parseSiteTestArguments,
   type CollectedCaseEvidence,
@@ -55,6 +56,7 @@ import {
   inspectDefaultBrowserVersion,
   inspectDefaultImage,
   persistDefaultDiagnostics,
+  persistDefaultRetainedResources,
   preflightDefaultStack,
   writeDefaultMetadata
 } from "./site-test/runner-defaults";
@@ -65,21 +67,32 @@ export { injectProductFailureEvidence } from "./site-test/runner-evidence";
 export async function runFullSiteTest(
   options: RunFullSiteTestOptions
 ): Promise<SiteTestRunResult> {
+  const progress: {
+    context?: SiteTestRunContext;
+    report?: RunReport;
+  } = {};
   try {
     return await options.dependencies.withDeadline(
       SITE_TEST_HARD_DEADLINE_MS,
       async (signal, remainingMs) =>
-        await runFullSiteTestWithinDeadline(options, signal, remainingMs)
+        await runFullSiteTestWithinDeadline(options, signal, remainingMs, progress)
     );
   } catch {
-    return { exitCode: 2, verdict: "INCONCLUSIVE" };
+    return {
+      exitCode: 2,
+      verdict: "INCONCLUSIVE",
+      runId: progress.context?.runId,
+      outputRoot: progress.context?.outputRoot,
+      report: progress.report
+    };
   }
 }
 
 async function runFullSiteTestWithinDeadline(
   options: RunFullSiteTestOptions,
   signal: AbortSignal,
-  remainingMs: () => number
+  remainingMs: () => number,
+  progress: { context?: SiteTestRunContext; report?: RunReport }
 ): Promise<SiteTestRunResult> {
   const { dependencies, selection } = options;
   let context: SiteTestRunContext | undefined;
@@ -110,16 +123,23 @@ async function runFullSiteTestWithinDeadline(
           remainingMs,
           SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.allocation
         );
-        context = await dependencies.allocateRun(selection, allocationControl);
+        context = await runBoundedStage(
+          "allocation",
+          allocationControl,
+          async (control) => await dependencies.allocateRun(selection, control)
+        );
+        progress.context = context;
         throwIfDeadline(signal);
         const browserControl = requireOperationalBudget(
           signal,
           remainingMs,
           SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.browserVersion
         );
-        const chromiumVersion = await dependencies.inspectBrowserVersion(
-          context,
-          browserControl
+        const chromiumVersion = await runBoundedStage(
+          "browser-version",
+          browserControl,
+          async (control) =>
+            await dependencies.inspectBrowserVersion(context!, control)
         );
         throwIfDeadline(signal);
         const metadataControl = requireOperationalBudget(
@@ -127,11 +147,16 @@ async function runFullSiteTestWithinDeadline(
           remainingMs,
           SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.metadata
         );
-        await dependencies.writeMetadata(
-          context,
-          selection,
-          chromiumVersion,
-          metadataControl
+        await runBoundedStage(
+          "metadata",
+          metadataControl,
+          async (control) =>
+            await dependencies.writeMetadata(
+              context!,
+              selection,
+              chromiumVersion,
+              control
+            )
         );
         throwIfDeadline(signal);
 
@@ -141,7 +166,11 @@ async function runFullSiteTestWithinDeadline(
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.imageInspection
           );
-          diagnostics.imageId = await dependencies.inspectImage(context, imageControl);
+          diagnostics.imageId = await runBoundedStage(
+            "image-inspect",
+            imageControl,
+            async (control) => await dependencies.inspectImage(context!, control)
+          );
           throwIfDeadline(signal);
         } catch (error) {
           throw environmentError(error, "image-inspect");
@@ -154,7 +183,11 @@ async function runFullSiteTestWithinDeadline(
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.stackStart
           );
           stack = dependencies.createStack(context);
-          const snapshot = await stack.start(stackControl);
+          const snapshot = await runBoundedStage(
+            "isolated-stack-start",
+            stackControl,
+            async (control) => await stack!.start(control)
+          );
           throwIfDeadline(signal);
           resources = resourceRecords(snapshot);
           const appImageId = snapshot.services.find(
@@ -182,11 +215,16 @@ async function runFullSiteTestWithinDeadline(
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.preflight
           );
-          await dependencies.preflight(
-            context,
-            stack,
-            selection.injectEnvironmentFailure,
-            preflightControl
+          await runBoundedStage(
+            "preflight",
+            preflightControl,
+            async (control) =>
+              await dependencies.preflight(
+                context!,
+                stack!,
+                selection.injectEnvironmentFailure,
+                control
+              )
           );
           throwIfDeadline(signal);
         } catch (error) {
@@ -194,33 +232,54 @@ async function runFullSiteTestWithinDeadline(
         }
 
         if (isolatedCaseIds.length > 0) {
-          const evidenceControl = requireOperationalBudget(
+          requireOperationalBudget(
             signal,
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.playwrightMinimum
           );
           isolatedCaseIds.forEach((caseId) => attemptedCaseIds.add(caseId));
-          const groupResult = await runGroup(
-            dependencies,
-            context,
-            isolatedCaseIds,
-            playwrightBudget(remainingMs()),
-            signal
+          const isolatedPlaywrightControl = {
+            signal,
+            timeoutMs: playwrightBudget(remainingMs())
+          };
+          const groupResult = await runBoundedStage(
+            "isolated-playwright",
+            isolatedPlaywrightControl,
+            async (control) =>
+              await runGroup(
+                dependencies,
+                context!,
+                isolatedCaseIds,
+                control.timeoutMs,
+                control.signal
+              )
           );
           throwIfDeadline(signal);
           diagnostics.playwright.push({
             caseIds: isolatedCaseIds,
             result: groupResult
           });
-          requireOperationalBudget(
+          if (groupResult.timedOut) {
+            markHarnessInconclusive(
+              runResults,
+              diagnostics,
+              "The isolated Playwright group timed out before a conclusive product verdict."
+            );
+          }
+          const collectionControl = requireOperationalBudget(
             signal,
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.evidenceCollection
           );
-          const collected = await dependencies.collectCaseEvidence(
-            context,
-            isolatedCaseIds,
-            evidenceControl
+          const collected = await runBoundedStage(
+            "isolated-evidence-collection",
+            collectionControl,
+            async (control) =>
+              await dependencies.collectCaseEvidence(
+                context!,
+                isolatedCaseIds,
+                control
+              )
           );
           throwIfDeadline(signal);
           evidence = mergeEvidence(evidence, collected);
@@ -242,11 +301,16 @@ async function runFullSiteTestWithinDeadline(
               remainingMs,
               SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.productFailureEvidence
             );
-            evidence = await dependencies.injectProductFailure(
-              context,
-              evidence,
-              selection.injectProductFailure,
-              injectionControl
+            evidence = await runBoundedStage(
+              "isolated-product-failure-evidence",
+              injectionControl,
+              async (control) =>
+                await dependencies.injectProductFailure(
+                  context!,
+                  evidence,
+                  selection.injectProductFailure!,
+                  control
+                )
             );
             throwIfDeadline(signal);
             productInjectionApplied = true;
@@ -257,29 +321,40 @@ async function runFullSiteTestWithinDeadline(
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.partialReport
           );
-          report = await dependencies.writeReport(
-            reportInput(
-              context,
-              evidence,
-              resources,
-              runResults,
-              dependencies.now()
-            ),
-            partialReportControl
+          report = await runBoundedStage(
+            "isolated-partial-report",
+            partialReportControl,
+            async (control) =>
+              await dependencies.writeReport(
+                reportInput(
+                  context!,
+                  evidence,
+                  resources,
+                  runResults,
+                  dependencies.now()
+                ),
+                control
+              )
           );
           throwIfDeadline(signal);
           reportDurable = true;
+          progress.report = report;
           try {
             const partialValidationControl = requireOperationalBudget(
               signal,
               remainingMs,
               SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.partialValidation
             );
-            await dependencies.validateEvidence(
-              context.outputRoot,
-              context.knownSecrets,
-              "isolated",
-              partialValidationControl
+            await runBoundedStage(
+              "isolated-evidence-validation",
+              partialValidationControl,
+              async (control) =>
+                await dependencies.validateEvidence(
+                  context!.outputRoot,
+                  context!.knownSecrets,
+                  "isolated",
+                  control
+                )
             );
             throwIfDeadline(signal);
           } catch (error) {
@@ -290,9 +365,10 @@ async function runFullSiteTestWithinDeadline(
             );
           }
           if (
-            groupResult.exitCode !== 0 &&
-            selectedCasesPassed(evidence, isolatedCaseIds)
-          ) {
+              !groupResult.timedOut &&
+              groupResult.exitCode !== 0 &&
+              selectedCasesPassed(evidence, isolatedCaseIds)
+            ) {
             markHarnessInconclusive(
               runResults,
               diagnostics,
@@ -307,32 +383,55 @@ async function runFullSiteTestWithinDeadline(
           runResults.harness.status === "pass" &&
           runResults.environment.status === "pass";
         if (mayRunSmoke) {
-          const smokeEvidenceControl = requireOperationalBudget(
+          requireOperationalBudget(
             signal,
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.playwrightMinimum
           );
           attemptedCaseIds.add(SMOKE_CASE_ID);
-          const smokeResult = await runGroup(
-            dependencies,
-            context,
-            [SMOKE_CASE_ID],
-            playwrightBudget(remainingMs()),
-            signal
+          const smokePlaywrightControl = {
+            signal,
+            timeoutMs: playwrightBudget(remainingMs())
+          };
+          const smokeResult = await runBoundedStage(
+            "smoke-playwright",
+            smokePlaywrightControl,
+            async (control) =>
+              await runGroup(
+                dependencies,
+                context!,
+                [SMOKE_CASE_ID],
+                control.timeoutMs,
+                control.signal
+              )
           );
           throwIfDeadline(signal);
           diagnostics.playwright.push({
             caseIds: [SMOKE_CASE_ID],
             result: smokeResult
           });
-          requireOperationalBudget(
+          if (smokeResult.timedOut) {
+            markHarnessInconclusive(
+              runResults,
+              diagnostics,
+              "The smoke Playwright group timed out before a conclusive product verdict."
+            );
+          }
+          const smokeCollectionControl = requireOperationalBudget(
             signal,
             remainingMs,
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.evidenceCollection
           );
-          const collected = await dependencies.collectCaseEvidence(context, [
-            SMOKE_CASE_ID
-          ], smokeEvidenceControl);
+          const collected = await runBoundedStage(
+            "smoke-evidence-collection",
+            smokeCollectionControl,
+            async (control) =>
+              await dependencies.collectCaseEvidence(
+                context!,
+                [SMOKE_CASE_ID],
+                control
+              )
+          );
           throwIfDeadline(signal);
           evidence = mergeEvidence(evidence, collected);
           addCollectionIssues(collected, diagnostics, runResults);
@@ -349,19 +448,25 @@ async function runFullSiteTestWithinDeadline(
               remainingMs,
               SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.productFailureEvidence
             );
-            evidence = await dependencies.injectProductFailure(
-              context,
-              evidence,
-              selection.injectProductFailure,
-              smokeInjectionControl
+            evidence = await runBoundedStage(
+              "smoke-product-failure-evidence",
+              smokeInjectionControl,
+              async (control) =>
+                await dependencies.injectProductFailure(
+                  context!,
+                  evidence,
+                  selection.injectProductFailure!,
+                  control
+                )
             );
             throwIfDeadline(signal);
             productInjectionApplied = true;
           }
           if (
-            smokeResult.exitCode !== 0 &&
-            selectedCasesPassed(evidence, [SMOKE_CASE_ID])
-          ) {
+              !smokeResult.timedOut &&
+              smokeResult.exitCode !== 0 &&
+              selectedCasesPassed(evidence, [SMOKE_CASE_ID])
+            ) {
             markHarnessInconclusive(
               runResults,
               diagnostics,
@@ -370,6 +475,9 @@ async function runFullSiteTestWithinDeadline(
           }
         }
   } catch (error) {
+    if (error instanceof StageTimeoutError) {
+      throw error;
+    }
     failureStage =
       error instanceof EnvironmentStageError || error instanceof HarnessStageError
         ? error.stage
@@ -423,11 +531,16 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.productFailureEvidence
     );
     try {
-      evidence = await dependencies.injectProductFailure(
-        context,
-        evidence,
-        selection.injectProductFailure,
-        finalInjectionControl
+      evidence = await runBoundedStage(
+        "final-product-failure-evidence",
+        finalInjectionControl,
+        async (control) =>
+          await dependencies.injectProductFailure(
+            context!,
+            evidence,
+            selection.injectProductFailure!,
+            control
+          )
       );
       throwIfDeadline(signal);
     } catch (error) {
@@ -449,19 +562,62 @@ async function runFullSiteTestWithinDeadline(
     SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.finalReport
   );
   try {
-    report = await dependencies.writeReport(
-      reportInput(context, evidence, resources, runResults, dependencies.now()),
-      finalReportControl
+    report = await runBoundedStage(
+      "final-report",
+      finalReportControl,
+      async (control) =>
+        await dependencies.writeReport(
+          reportInput(
+            context!,
+            evidence,
+            resources,
+            runResults,
+            dependencies.now()
+          ),
+          control
+        )
     );
     reportDurable = true;
     currentFinalReportDurable = true;
+    progress.report = report;
     throwIfDeadline(signal);
   } catch (error) {
+    const summary = `Final report persistence failed: ${errorMessage(error)}`;
     markHarnessInconclusive(
       runResults,
       diagnostics,
-      `Final report persistence failed: ${errorMessage(error)}`
+      summary
     );
+    resources = resources.map((resource) => ({
+      ...resource,
+      cleanupStatus: "retained"
+    }));
+    const retainedFallbackControl = requireFinalizationBudget(
+      signal,
+      remainingMs,
+      SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
+      SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.retainedResourceFallback
+    );
+    try {
+      await runBoundedStage(
+        "retained-resource-fallback",
+        retainedFallbackControl,
+        async (control) =>
+          await dependencies.persistRetainedResources(
+            context!,
+            resources,
+            summary,
+            control
+          )
+      );
+      throwIfDeadline(signal);
+    } catch (fallbackError) {
+      markHarnessInconclusive(
+        runResults,
+        diagnostics,
+        `Retained resource fallback persistence failed: ${errorMessage(fallbackError)}`
+      );
+    }
   }
 
   if (reportDurable) {
@@ -473,11 +629,16 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.finalValidation
     );
     try {
-      await dependencies.validateEvidence(
-        context.outputRoot,
-        context.knownSecrets,
-        "final",
-        finalValidationControl
+      await runBoundedStage(
+        "final-evidence-validation",
+        finalValidationControl,
+        async (control) =>
+          await dependencies.validateEvidence(
+            context!.outputRoot,
+            context!.knownSecrets,
+            "final",
+            control
+          )
       );
       finalEvidenceValidated = true;
       throwIfDeadline(signal);
@@ -499,7 +660,11 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.dockerDiagnostics
     );
     try {
-      diagnostics.docker = await stack.collectDiagnostics(diagnosticsControl);
+      diagnostics.docker = await runBoundedStage(
+        "docker-diagnostics",
+        diagnosticsControl,
+        async (control) => await stack!.collectDiagnostics(control)
+      );
       diagnosticsComplete = true;
       throwIfDeadline(signal);
     } catch (error) {
@@ -520,10 +685,11 @@ async function runFullSiteTestWithinDeadline(
     SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.diagnosticsPersistence
   );
   try {
-    await dependencies.persistDiagnostics(
-      context,
-      diagnostics,
-      diagnosticsPersistenceControl
+    await runBoundedStage(
+      "diagnostics-persistence",
+      diagnosticsPersistenceControl,
+      async (control) =>
+        await dependencies.persistDiagnostics(context!, diagnostics, control)
     );
     diagnosticsDurable = true;
     throwIfDeadline(signal);
@@ -543,11 +709,16 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.finalizedPackValidation
     );
     try {
-      await dependencies.validateEvidence(
-        context.outputRoot,
-        context.knownSecrets,
-        "finalized-pack",
-        finalizedPackControl
+      await runBoundedStage(
+        "finalized-pack-validation",
+        finalizedPackControl,
+        async (control) =>
+          await dependencies.validateEvidence(
+            context!.outputRoot,
+            context!.knownSecrets,
+            "finalized-pack",
+            control
+          )
       );
       finalPackValidated = true;
       throwIfDeadline(signal);
@@ -582,7 +753,11 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.exactCleanup
     );
     try {
-      await stack.stop(cleanupControl);
+      await runBoundedStage(
+        "exact-stack-cleanup",
+        cleanupControl,
+        async (control) => await stack!.stop(control)
+      );
       throwIfDeadline(signal);
       resources = resources.map((resource) => ({
         ...resource,
@@ -609,10 +784,22 @@ async function runFullSiteTestWithinDeadline(
       SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS.cleanupStatusReport
     );
     try {
-      report = await dependencies.writeReport(
-        reportInput(context, evidence, resources, runResults, dependencies.now()),
-        cleanupReportControl
+      report = await runBoundedStage(
+        "cleanup-status-report",
+        cleanupReportControl,
+        async (control) =>
+          await dependencies.writeReport(
+            reportInput(
+              context!,
+              evidence,
+              resources,
+              runResults,
+              dependencies.now()
+            ),
+            control
+          )
       );
+      progress.report = report;
       throwIfDeadline(signal);
     } catch (error) {
       markHarnessInconclusive(
@@ -631,6 +818,7 @@ async function runFullSiteTestWithinDeadline(
     return {
       exitCode: 2,
       verdict: "INCONCLUSIVE",
+      runId: context.runId,
       outputRoot: context.outputRoot,
       report
     };
@@ -638,6 +826,7 @@ async function runFullSiteTestWithinDeadline(
   return {
     exitCode: exitCodeForVerdict(report.verdict),
     verdict: report.verdict,
+    runId: context.runId,
     outputRoot: context.outputRoot,
     report
   };
@@ -677,8 +866,7 @@ async function runGroup(
 export function createDefaultSiteTestRunnerDependencies(): SiteTestRunnerDependencies {
   return {
     withDeadline: withHardDeadline,
-    allocateRun: async (_selection, control) =>
-      await runControlled(control, allocateDefaultRun),
+    allocateRun: async (_selection, control) => await allocateDefaultRun(control),
     inspectBrowserVersion: inspectDefaultBrowserVersion,
     writeMetadata: writeDefaultMetadata,
     inspectImage: inspectDefaultImage,
@@ -687,28 +875,87 @@ export function createDefaultSiteTestRunnerDependencies(): SiteTestRunnerDepende
     runPlaywrightGroup,
     collectCaseEvidence: collectDefaultCaseEvidence,
     injectProductFailure: async (context, evidence, injection, control) =>
-      await runControlled(control, async () =>
-        await injectProductFailureEvidence(context, evidence, injection)
-      ),
+      await injectProductFailureEvidence(context, evidence, injection, control),
     writeReport: async (input, control) =>
-      await runControlled(control, async () => await writeExperienceReport(input)),
+      await writeExperienceReport(input, { signal: control.signal }),
     validateEvidence: async (outputRoot, knownSecrets, _phase, control) =>
-      await runControlled(control, async () =>
-        await validateEvidencePack(outputRoot, knownSecrets)
-      ),
+      await validateEvidencePack(outputRoot, knownSecrets, {
+        signal: control.signal
+      }),
     persistDiagnostics: persistDefaultDiagnostics,
+    persistRetainedResources: persistDefaultRetainedResources,
     now: () => new Date().toISOString()
   };
 }
 
-async function runControlled<T>(
-  control: SiteTestStageControl,
-  operation: () => Promise<T>
+async function runBoundedStage<T>(
+  stageName: string,
+  parentControl: SiteTestStageControl,
+  operation: (control: SiteTestStageControl) => Promise<T>
 ): Promise<T> {
-  control.signal.throwIfAborted();
-  const result = await operation();
-  control.signal.throwIfAborted();
-  return result;
+  parentControl.signal.throwIfAborted();
+  const controller = new AbortController();
+  const timeoutError = new StageTimeoutError(parentControl.timeoutMs, stageName);
+  const cancellationGraceMs = Math.min(
+    2_000,
+    Math.max(1, Math.floor(parentControl.timeoutMs / 4))
+  );
+  const operationBudgetMs = Math.max(
+    1,
+    parentControl.timeoutMs - cancellationGraceMs
+  );
+  let stageTimedOut = false;
+  const propagateParentAbort = () => {
+    controller.abort(parentControl.signal.reason);
+  };
+  parentControl.signal.addEventListener("abort", propagateParentAbort, {
+    once: true
+  });
+  const cancellationTimer = setTimeout(() => {
+    stageTimedOut = true;
+    controller.abort(timeoutError);
+  }, operationBudgetMs);
+  cancellationTimer.unref?.();
+  let rejectOnParentAbort: (() => void) | undefined;
+  const parentAborted = new Promise<never>((_resolve, reject) => {
+    rejectOnParentAbort = () => reject(parentControl.signal.reason);
+    parentControl.signal.addEventListener("abort", rejectOnParentAbort, {
+      once: true
+    });
+  });
+  let stageDeadlineTimer: NodeJS.Timeout | undefined;
+  const stageDeadline = new Promise<never>((_resolve, reject) => {
+    stageDeadlineTimer = setTimeout(() => reject(timeoutError), parentControl.timeoutMs);
+    stageDeadlineTimer.unref?.();
+  });
+  const pending = Promise.resolve().then(async () =>
+    await operation({
+      signal: controller.signal,
+      timeoutMs: operationBudgetMs
+    })
+  );
+  void pending.catch(() => undefined);
+  try {
+    const result = await Promise.race([pending, parentAborted, stageDeadline]);
+    if (stageTimedOut) {
+      throw timeoutError;
+    }
+    return result;
+  } catch (error) {
+    if (stageTimedOut) {
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(cancellationTimer);
+    if (stageDeadlineTimer !== undefined) {
+      clearTimeout(stageDeadlineTimer);
+    }
+    parentControl.signal.removeEventListener("abort", propagateParentAbort);
+    if (rejectOnParentAbort !== undefined) {
+      parentControl.signal.removeEventListener("abort", rejectOnParentAbort);
+    }
+  }
 }
 
 async function withHardDeadline<T>(

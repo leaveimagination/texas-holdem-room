@@ -214,6 +214,29 @@ describe("writeExperienceReport", () => {
     });
   });
 
+  it("honors an aborted signal before writing the evidence pack", async () => {
+    const outputRoot = await temporaryRoot();
+    const controller = new AbortController();
+    controller.abort(new Error("report stage cancelled"));
+
+    await expect(
+      writeExperienceReport(
+        {
+          outputRoot,
+          runId: "RUN-001",
+          startedAt: STARTED_AT,
+          finishedAt: FINISHED_AT,
+          cases: [caseReport("EXP-001", "A-001", "pass")],
+          events: [event("EXP-001", "A-001", 1)],
+          resources: [],
+          artifacts: [],
+          runResults: runResults()
+        },
+        { signal: controller.signal }
+      )
+    ).rejects.toThrow(/report stage cancelled|abort/i);
+  });
+
   it("rejects a root manifest owned by a different run", async () => {
     const outputRoot = await temporaryRoot();
     await writeSingleCaseRunPack(outputRoot);
