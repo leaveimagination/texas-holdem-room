@@ -33,9 +33,12 @@ export interface RunPlaywrightGroupInput {
   caseOutputRoot: string;
   caseIds: readonly string[];
   isolatedBaseUrl: string;
-  redisUrl: string;
   databaseUrl: string;
   smokeBaseUrl: string;
+  fixtureSeedBroker?: {
+    endpoint: string;
+    authorizationToken: string;
+  };
   timeoutMs: number;
   signal?: AbortSignal;
   knownSecrets?: readonly KnownSecret[];
@@ -91,9 +94,12 @@ export async function runPlaywrightGroup(
       SITE_TEST_CASE_OUTPUT_ROOT: input.caseOutputRoot,
       SITE_TEST_CASE_IDS: input.caseIds.join(","),
       SITE_TEST_ISOLATED_BASE_URL: input.isolatedBaseUrl,
-      SITE_TEST_REDIS_URL: input.redisUrl,
       SITE_TEST_DATABASE_URL: input.databaseUrl,
-      SITE_TEST_SMOKE_URL: input.smokeBaseUrl
+      SITE_TEST_SMOKE_URL: input.smokeBaseUrl,
+      ...(input.fixtureSeedBroker ? {
+        SITE_TEST_FIXTURE_BROKER_ENDPOINT: input.fixtureSeedBroker.endpoint,
+        SITE_TEST_FIXTURE_BROKER_TOKEN: input.fixtureSeedBroker.authorizationToken
+      } : {})
     },
     timeoutMs: input.timeoutMs,
     signal: input.signal,

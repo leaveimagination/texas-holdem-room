@@ -71,6 +71,24 @@ export function assertProductCondition(
   }
 }
 
+export async function observeProduct<T>(
+  operation: () => Promise<T>,
+  context: ProductAssertionContext
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isBoundedObservationTimeout(error)) {
+      throw new ProductAssertionError(context);
+    }
+    throw error;
+  }
+}
+
+function isBoundedObservationTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
 function serializeDiagnostic(value: unknown): string {
   if (typeof value === "string") {
     return value;

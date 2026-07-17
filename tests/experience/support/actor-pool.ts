@@ -120,12 +120,12 @@ export class ActorPool {
         }
       }
       try {
-        await actor.telemetry.flush();
+        await actor.context.close();
       } catch (error) {
         failures.push(error);
       }
       try {
-        await actor.context.close();
+        await actor.telemetry.flush();
       } catch (error) {
         failures.push(error);
       }

@@ -11,6 +11,11 @@ import { validateEvidencePack } from "../tests/experience/evidence/validator";
 import { runPlaywrightGroup } from "./site-test/playwright-group";
 import type { PlaywrightGroupResult } from "./site-test/playwright-group";
 import {
+  startFixtureSeedBroker,
+  type FixtureSeedBrokerClient,
+  type FixtureSeedBrokerHandle
+} from "./site-test/fixture-seed-broker";
+import {
   EnvironmentStageError,
   HarnessStageError,
   OverallDeadlineError,
@@ -97,6 +102,7 @@ async function runFullSiteTestWithinDeadline(
   const { dependencies, selection } = options;
   let context: SiteTestRunContext | undefined;
   let stack: SiteTestStackHandle | undefined;
+  let fixtureSeedBroker: FixtureSeedBrokerHandle | undefined;
   let evidence: CollectedCaseEvidence = { cases: [], events: [] };
   let resources: RunResourceRecord[] = [];
   let report: RunReport | undefined;
@@ -238,22 +244,68 @@ async function runFullSiteTestWithinDeadline(
             SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.playwrightMinimum
           );
           isolatedCaseIds.forEach((caseId) => attemptedCaseIds.add(caseId));
+          try {
+            const brokerStartControl = requireOperationalBudget(
+              signal,
+              remainingMs,
+              SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerStart
+            );
+            fixtureSeedBroker = await runBoundedStage(
+              "fixture-seed-broker-start",
+              brokerStartControl,
+              async (control) => await dependencies.startFixtureSeedBroker({
+                snapshot: requireStackSnapshot(stack),
+                databaseUrl: context!.databaseUrl,
+                runId: context!.runId,
+                runStartedAt: context!.startedAt
+              }, control)
+            );
+            context = {
+              ...context,
+              knownSecrets: [
+                ...context.knownSecrets,
+                fixtureSeedBroker.authorizationToken
+              ]
+            };
+            progress.context = context;
+          } catch (error) {
+            throw new HarnessStageError(
+              `Fixture seed broker startup failed: ${errorMessage(error)}`,
+              "fixture-seed-broker",
+              { cause: error }
+            );
+          }
           const isolatedPlaywrightControl = {
             signal,
-            timeoutMs: playwrightBudget(remainingMs())
+            timeoutMs: playwrightBudget(
+              remainingMs() - SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerCleanup
+            )
           };
-          const groupResult = await runBoundedStage(
-            "isolated-playwright",
-            isolatedPlaywrightControl,
-            async (control) =>
-              await runGroup(
-                dependencies,
-                context!,
-                isolatedCaseIds,
-                control.timeoutMs,
-                control.signal
-              )
-          );
+          let groupResult: PlaywrightGroupResult;
+          try {
+            groupResult = await runBoundedStage(
+              "isolated-playwright",
+              isolatedPlaywrightControl,
+              async (control) =>
+                await runGroup(
+                  dependencies,
+                  context!,
+                  isolatedCaseIds,
+                  control.timeoutMs,
+                  control.signal,
+                  fixtureSeedBroker
+                )
+            );
+          } finally {
+            const brokerCleanupControl = requireOperationalBudget(
+              signal,
+              remainingMs,
+              SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerCleanup
+            );
+            const brokerToClose = fixtureSeedBroker;
+            fixtureSeedBroker = undefined;
+            await closeFixtureSeedBroker(brokerToClose, brokerCleanupControl);
+          }
           throwIfDeadline(signal);
           diagnostics.playwright.push({
             caseIds: isolatedCaseIds,
@@ -402,7 +454,8 @@ async function runFullSiteTestWithinDeadline(
                 context!,
                 [SMOKE_CASE_ID],
                 control.timeoutMs,
-                control.signal
+                control.signal,
+                undefined
               )
           );
           throwIfDeadline(signal);
@@ -488,6 +541,29 @@ async function runFullSiteTestWithinDeadline(
       markEnvironmentInconclusive(runResults, failureSummary);
     } else {
       markHarnessInconclusive(runResults, diagnostics, failureSummary, false);
+    }
+  } finally {
+    if (fixtureSeedBroker !== undefined) {
+      if (signal.aborted) {
+        void fixtureSeedBroker.close({ signal, timeoutMs: 1 }).catch(() => undefined);
+        fixtureSeedBroker = undefined;
+      } else {
+        try {
+          const retryControl = requireOperationalBudget(
+            signal,
+            remainingMs,
+            SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerCleanup
+          );
+          await closeFixtureSeedBroker(fixtureSeedBroker, retryControl);
+          fixtureSeedBroker = undefined;
+        } catch (error) {
+          const summary = `Fixture seed broker cleanup retry failed: ${errorMessage(error)}`;
+          failureStage = "fixture-seed-broker-cleanup";
+          failureSummary = summary;
+          diagnostics.issues.push(summary);
+          markHarnessInconclusive(runResults, diagnostics, summary, false);
+        }
+      }
     }
   }
 
@@ -871,7 +947,8 @@ async function runGroup(
   context: SiteTestRunContext,
   caseIds: readonly string[],
   timeoutMs: number,
-  signal?: AbortSignal
+  signal: AbortSignal | undefined,
+  fixtureSeedBroker: FixtureSeedBrokerClient | undefined
 ): Promise<PlaywrightGroupResult> {
   try {
     return await dependencies.runPlaywrightGroup({
@@ -881,9 +958,9 @@ async function runGroup(
       caseOutputRoot: context.caseOutputRoot,
       caseIds,
       isolatedBaseUrl: context.isolatedBaseUrl,
-      redisUrl: context.redisUrl,
       databaseUrl: context.databaseUrl,
       smokeBaseUrl: context.smokeBaseUrl,
+      fixtureSeedBroker,
       timeoutMs,
       signal,
       knownSecrets: context.knownSecrets
@@ -905,6 +982,8 @@ export function createDefaultSiteTestRunnerDependencies(): SiteTestRunnerDepende
     writeMetadata: writeDefaultMetadata,
     inspectImage: inspectDefaultImage,
     createStack: createDefaultStack,
+    startFixtureSeedBroker: async (input, control) =>
+      await startFixtureSeedBroker(input, control),
     preflight: preflightDefaultStack,
     runPlaywrightGroup,
     collectCaseEvidence: collectDefaultCaseEvidence,
@@ -920,6 +999,49 @@ export function createDefaultSiteTestRunnerDependencies(): SiteTestRunnerDepende
     persistRetainedResources: persistDefaultRetainedResources,
     now: () => new Date().toISOString()
   };
+}
+
+function requireStackSnapshot(
+  stack: SiteTestStackHandle | undefined
+): NonNullable<SiteTestStackHandle["snapshot"]> {
+  if (stack?.snapshot === undefined) {
+    throw new Error("Verified isolated stack snapshot is unavailable");
+  }
+  return stack.snapshot;
+}
+
+async function closeFixtureSeedBroker(
+  broker: FixtureSeedBrokerHandle | undefined,
+  control: SiteTestStageControl
+): Promise<void> {
+  if (!broker) return;
+  try {
+    await runBoundedStage(
+      "fixture-seed-broker-cleanup",
+      control,
+      async (closeControl) => {
+        try {
+          await broker.close(closeControl);
+        } catch (firstError) {
+          if (closeControl.signal.aborted) throw firstError;
+          try {
+            await broker.close(closeControl);
+          } catch (retryError) {
+            throw new AggregateError(
+              [firstError, retryError],
+              "Fixture seed broker cleanup failed twice"
+            );
+          }
+        }
+      }
+    );
+  } catch (error) {
+    throw new HarnessStageError(
+      `Fixture seed broker cleanup failed: ${errorMessage(error)}`,
+      "fixture-seed-broker-cleanup",
+      { cause: error }
+    );
+  }
 }
 
 async function runBoundedStage<T>(

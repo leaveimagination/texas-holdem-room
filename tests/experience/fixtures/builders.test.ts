@@ -653,6 +653,7 @@ describe("FixtureRuntime", () => {
       redisUrl: "redis://127.0.0.1:43101/0"
     });
   });
+
 });
 
 describe("run resource projection", () => {

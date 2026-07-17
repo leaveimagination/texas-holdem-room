@@ -114,9 +114,12 @@ describe("dedicated Playwright group", () => {
       caseOutputRoot: "C:\\temp evidence\\run-01",
       caseIds: ["EXP-001", "EXP-003"],
       isolatedBaseUrl: "http://127.0.0.1:43000",
-      redisUrl: "redis://127.0.0.1:46379",
       databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem?schema=public",
       smokeBaseUrl: "http://localhost:3000",
+      fixtureSeedBroker: {
+        endpoint: "http://127.0.0.1:47000/v1/seed",
+        authorizationToken: "fixture-broker-token"
+      },
       timeoutMs: 45_000,
       run,
       writeStdout: (text) => stdout.push(text),
@@ -148,10 +151,11 @@ describe("dedicated Playwright group", () => {
         SITE_TEST_CASE_OUTPUT_ROOT: "C:\\temp evidence\\run-01",
         SITE_TEST_CASE_IDS: "EXP-001,EXP-003",
         SITE_TEST_ISOLATED_BASE_URL: "http://127.0.0.1:43000",
-        SITE_TEST_REDIS_URL: "redis://127.0.0.1:46379",
         SITE_TEST_DATABASE_URL:
           "postgresql://holdem:pw@127.0.0.1:45432/holdem?schema=public",
-        SITE_TEST_SMOKE_URL: "http://localhost:3000"
+        SITE_TEST_SMOKE_URL: "http://localhost:3000",
+        SITE_TEST_FIXTURE_BROKER_ENDPOINT: "http://127.0.0.1:47000/v1/seed",
+        SITE_TEST_FIXTURE_BROKER_TOKEN: "fixture-broker-token"
       }
     });
   });
@@ -175,9 +179,12 @@ describe("dedicated Playwright group", () => {
         caseOutputRoot: "C:\\cases",
         caseIds: ["EXP-001"],
         isolatedBaseUrl: "http://127.0.0.1:43000",
-        redisUrl: "redis://127.0.0.1:46379",
         databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem",
         smokeBaseUrl: "http://localhost:3000",
+        fixtureSeedBroker: {
+          endpoint: "http://127.0.0.1:47000/v1/seed",
+          authorizationToken: "fixture-broker-token"
+        },
         timeoutMs: 12_000,
         run
       })
@@ -209,9 +216,12 @@ describe("dedicated Playwright group", () => {
       caseOutputRoot: "C:\\cases",
       caseIds: ["EXP-001"],
       isolatedBaseUrl: "http://127.0.0.1:43000",
-      redisUrl: "redis://127.0.0.1:46379",
       databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem",
       smokeBaseUrl: "http://localhost:3000",
+      fixtureSeedBroker: {
+        endpoint: "http://127.0.0.1:47000/v1/seed",
+        authorizationToken: "fixture-broker-token"
+      },
       timeoutMs: 12_000,
       knownSecrets: [secretHostUrl],
       run,
@@ -394,6 +404,74 @@ describe("full site runner", () => {
     }
   });
 
+  test("bounds non-cooperative fixture broker startup before Playwright", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await createHarness();
+      harness.dependencies.startFixtureSeedBroker = async () => {
+        harness.calls.push("broker-start");
+        return await new Promise((resolve) => {
+          setTimeout(() => resolve({
+            endpoint: "http://127.0.0.1:47000/v1/seed",
+            authorizationToken: "late-broker-secret",
+            close: async () => undefined
+          }), SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerStart * 2);
+        });
+      };
+
+      const run = runFullSiteTest({
+        selection: parseSiteTestArguments(["--cases=EXP-003"]),
+        dependencies: harness.dependencies
+      });
+      await vi.advanceTimersByTimeAsync(
+        SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerStart * 2
+      );
+      const result = await run;
+
+      expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+      expect(harness.calls).toContain("broker-start");
+      expect(harness.playwrightGroups).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("bounds non-cooperative fixture broker cleanup and aborts its close signal", async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await createHarness();
+      let closeSignal: AbortSignal | undefined;
+      harness.dependencies.startFixtureSeedBroker = async () => ({
+        endpoint: "http://127.0.0.1:47000/v1/seed",
+        authorizationToken: "slow-close-secret",
+        close: async (control) => {
+          closeSignal = control?.signal;
+          await new Promise<void>((resolve) => {
+            setTimeout(
+              resolve,
+              SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerCleanup * 2
+            );
+          });
+        }
+      });
+
+      const run = runFullSiteTest({
+        selection: parseSiteTestArguments(["--cases=EXP-003"]),
+        dependencies: harness.dependencies
+      });
+      await vi.advanceTimersByTimeAsync(
+        SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerCleanup * 2
+      );
+      const result = await run;
+
+      expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+      expect(closeSignal?.aborted).toBe(true);
+      expect(harness.calls.some((call) => call.startsWith("collect:"))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("runs ordered isolated and smoke stages under one 30-minute deadline", async () => {
     const harness = await createHarness();
     const result = await runFullSiteTest({
@@ -445,6 +523,39 @@ describe("full site runner", () => {
     expect(result.exitCode).toBe(0);
     expect(harness.playwrightGroups).toEqual([["EXP-002"]]);
     expect(harness.calls.some((call) => call.includes("EXP-010"))).toBe(false);
+  });
+
+  test("registers the broker token for redaction and closes the broker when Playwright throws", async () => {
+    const harness = await createHarness();
+    const close = vi.fn(async (_control?: { signal: AbortSignal; timeoutMs: number }) => undefined);
+    const start = vi.fn(async (
+      _input: unknown,
+      _control: { signal: AbortSignal; timeoutMs: number }
+    ) => ({
+      endpoint: "http://127.0.0.1:47000/v1/seed",
+      authorizationToken: "one-run-broker-secret",
+      close
+    }));
+    harness.dependencies.startFixtureSeedBroker = start;
+    harness.dependencies.runPlaywrightGroup = async (input) => {
+      expect(input.knownSecrets).toContain("one-run-broker-secret");
+      throw new Error("worker launch failed");
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-003"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(start.mock.calls[0]?.[1].timeoutMs).toBeGreaterThan(0);
+    expect(start.mock.calls[0]?.[1].timeoutMs).toBeLessThan(
+      SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS.fixtureSeedBrokerStart
+    );
+    expect(close.mock.calls[0]?.[0]).toMatchObject({
+      timeoutMs: expect.any(Number)
+    });
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
   });
 
   test("rejects a started stack whose app image changed after inspection", async () => {
@@ -839,6 +950,7 @@ async function createHarness(options: HarnessOptions = {}) {
     start: async () => {
       calls.push("start-stack");
       await options.stackStart?.();
+      stackStarted = true;
       return stackSnapshot;
     },
     collectDiagnostics: async () => {
@@ -850,6 +962,7 @@ async function createHarness(options: HarnessOptions = {}) {
       await options.stackStop?.();
     }
   };
+  let stackStarted = false;
 
   const dependencies: SiteTestRunnerDependencies = {
     withDeadline: async (timeoutMs, task) => {
@@ -874,6 +987,18 @@ async function createHarness(options: HarnessOptions = {}) {
     createStack: () => {
       calls.push("create-stack");
       return stack;
+    },
+    startFixtureSeedBroker: async ({ snapshot: issuedSnapshot, databaseUrl, runId, runStartedAt }) => {
+      expect(stackStarted).toBe(true);
+      expect(issuedSnapshot).toBe(stackSnapshot);
+      expect(databaseUrl).toBe(context.databaseUrl);
+      expect(runId).toBe(context.runId);
+      expect(runStartedAt).toBe(context.startedAt);
+      return {
+        endpoint: "http://127.0.0.1:47000/v1/seed",
+        authorizationToken: "fixture-broker-token",
+        close: async () => undefined
+      };
     },
     preflight:
       options.preflight ??

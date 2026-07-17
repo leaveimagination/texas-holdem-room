@@ -29,6 +29,13 @@ export interface CenterPointHitResult {
   elementFromPoint: HitTestElement | null;
 }
 
+export interface SeatingLayoutRenderFacts {
+  expectedSeatCount: number;
+  feltRendered: boolean;
+  renderedSeatCount: number;
+  localSeatRendered: boolean;
+}
+
 export function hasMinimumHitTarget(
   size: Size,
   minimumPx = EXPERIENCE_THRESHOLDS.mobileHitTargetPx
@@ -106,4 +113,25 @@ export function assertCenterPointHit(
     measuredValue: { point: hit.point, targetOrDescendantHit },
     threshold: { point: centerPoint(target), targetOrDescendantHit: true }
   });
+}
+
+export function assertSeatingLayoutRendered(
+  facts: SeatingLayoutRenderFacts,
+  context: MechanicalAssertionContext
+): void {
+  assertProductCondition(
+    facts.feltRendered &&
+      facts.renderedSeatCount === facts.expectedSeatCount &&
+      facts.localSeatRendered,
+    {
+      ...context,
+      earliestDivergentProjection: null,
+      measuredValue: facts,
+      threshold: {
+        feltRendered: true,
+        renderedSeatCount: facts.expectedSeatCount,
+        localSeatRendered: true
+      }
+    }
+  );
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   ArtifactRecordSchema,
@@ -52,11 +53,47 @@ export interface FinishCaseInput {
   failures: CaseReport["failures"];
 }
 
+interface TransientRenameRetryOptions {
+  rename?: typeof rename;
+  wait?: (milliseconds: number) => Promise<unknown>;
+  maxAttempts?: number;
+}
+
+export async function renameWithTransientRetry(
+  source: string,
+  target: string,
+  options: TransientRenameRetryOptions = {}
+): Promise<void> {
+  const renameFile = options.rename ?? rename;
+  const wait = options.wait ?? delay;
+  const maxAttempts = options.maxAttempts ?? 5;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error("Transient rename retry requires at least one attempt");
+  }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await renameFile(source, target);
+      return;
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt === maxAttempts) throw error;
+      await wait(10 * 2 ** (attempt - 1));
+    }
+  }
+}
+
+function isTransientRenameError(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return code === "EPERM" || code === "EACCES" || code === "EBUSY";
+}
+
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   try {
-    await rename(temporaryPath, path);
+    await renameWithTransientRetry(temporaryPath, path);
   } catch (error) {
     await rm(temporaryPath, { force: true });
     throw error;

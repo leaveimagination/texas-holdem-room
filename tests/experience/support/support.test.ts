@@ -1,12 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { CaseReportSchema, type CaseReport } from "../evidence/contracts";
 import type { FinishCaseInput } from "../evidence/recorder";
 import { ActorPool } from "./actor-pool";
-import { ProductAssertionError } from "./experience-test";
+import { ProductAssertionError, observeProduct } from "./experience-test";
 import { ExperienceCaseRunError, runExperienceCase } from "./run-case";
 import { installBrowserTelemetry, projectWebSocketPayload, type TelemetryEvent } from "./telemetry";
 
@@ -267,6 +268,27 @@ describe("experience support", () => {
     expect(error.message).toContain("measured=1001");
     expect(error.message).toContain("threshold=1000");
     expect(error.message).toContain("artifacts=SHOT-1,TRACE-2");
+  });
+
+  it("classifies a bounded UI observation timeout as a product failure and preserves other errors", async () => {
+    const context = {
+      assertionId: "EXP-002-A03",
+      caseId: "EXP-002",
+      attemptId: "A-001",
+      actor: "host",
+      earliestDivergentProjection: null,
+      measuredValue: { visible: false },
+      threshold: { visible: true },
+      artifactIds: []
+    };
+    const timeout = Object.assign(new Error("locator timed out"), { name: "TimeoutError" });
+    const transport = new Error("socket reset");
+
+    await expect(observeProduct(async () => { throw timeout; }, context)).rejects.toMatchObject({
+      name: "ProductAssertionError",
+      context
+    });
+    await expect(observeProduct(async () => { throw transport; }, context)).rejects.toBe(transport);
   });
 
   it("preserves both declared attempts with separate fixtures before throwing a product failure", async () => {
@@ -602,6 +624,55 @@ describe("experience support", () => {
     await expect(pool.closeAll()).rejects.toThrow(/trace stop failed/i);
     expect(stops).toEqual([0, 1]);
     expect([...closes].sort()).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("flushes telemetry emitted while browser contexts close before closeAll resolves", async () => {
+    let releaseSink!: () => void;
+    const sinkGate = new Promise<void>((resolve) => { releaseSink = resolve; });
+    let pendingSinkEvents = 0;
+    const browser = {
+      async newContext() {
+        let binding: ((source: unknown, event: TelemetryEvent) => void) | undefined;
+        const page = {
+          on: vi.fn(),
+          addInitScript: vi.fn(),
+          exposeBinding: vi.fn(async (_name, callback) => { binding = callback; })
+        } as unknown as Page;
+        return {
+          tracing: { start: vi.fn(), stop: vi.fn() },
+          newPage: vi.fn(async () => page),
+          close: vi.fn(async () => {
+            binding?.({}, {
+              kind: "websocket-close",
+              wallTime: "2026-07-17T00:00:00.000Z",
+              monotonicMs: 1,
+              details: { code: 1000, wasClean: true }
+            });
+          })
+        } as unknown as BrowserContext;
+      }
+    } as unknown as Browser;
+    const pool = new ActorPool({
+      browser,
+      outputRoot: await temporaryOutputRoot(),
+      telemetrySink: async () => {
+        pendingSinkEvents += 1;
+        await sinkGate;
+      }
+    });
+    await pool.createActors({ playerCount: 4, includeSpectator: true });
+
+    const close = pool.closeAll();
+    await vi.waitFor(() => expect(pendingSinkEvents).toBe(6));
+    try {
+      await expect(Promise.race([
+        close.then(() => "closed" as const),
+        delay(25).then(() => "waiting" as const)
+      ])).resolves.toBe("waiting");
+    } finally {
+      releaseSink();
+    }
+    await close;
   });
 
   it("closes actors already created when a later actor context fails", async () => {

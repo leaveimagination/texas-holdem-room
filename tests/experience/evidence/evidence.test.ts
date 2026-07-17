@@ -10,7 +10,7 @@ import {
 } from "./contracts";
 import * as EvidenceContracts from "./contracts";
 import { redactForEvidence } from "./redaction";
-import { EvidenceRecorder } from "./recorder";
+import { EvidenceRecorder, renameWithTransientRetry } from "./recorder";
 import {
   validateEvidencePack,
   type EvidenceUnzipStarter
@@ -183,6 +183,27 @@ describe("evidence contracts", () => {
 });
 
 describe("EvidenceRecorder", () => {
+  it("retries transient Windows rename locks without hiding non-transient failures", async () => {
+    let attempts = 0;
+    await renameWithTransientRetry("events.tmp", "events.json", {
+      rename: async () => {
+        attempts += 1;
+        if (attempts < 3) {
+          throw Object.assign(new Error("target is temporarily locked"), { code: "EPERM" });
+        }
+      },
+      wait: async () => undefined
+    });
+    expect(attempts).toBe(3);
+
+    const permanent = Object.assign(new Error("invalid target"), { code: "EINVAL" });
+    const rename = async () => { throw permanent; };
+    await expect(renameWithTransientRetry("events.tmp", "events.json", {
+      rename,
+      wait: async () => undefined
+    })).rejects.toBe(permanent);
+  });
+
   it("assigns monotonic sequence numbers and persists every transition", async () => {
     const root = await temporaryRoot();
     const recorder = new EvidenceRecorder({
@@ -221,6 +242,33 @@ describe("EvidenceRecorder", () => {
     ]);
     expect(EvidenceEventSchema.parse(first)).toEqual(first);
     expect(EvidenceEventSchema.parse(second)).toEqual(second);
+  });
+
+  it("serializes concurrent telemetry event persistence into one durable timeline", async () => {
+    const root = await temporaryRoot();
+    const recorder = new EvidenceRecorder({
+      outputRoot: root,
+      runId: "RUN-001",
+      caseId: "EXP-003",
+      attemptId: "A-002",
+      actor: "browser"
+    });
+
+    const recorded = await Promise.all(Array.from({ length: 24 }, (_, index) =>
+      recorder.recordEvent({
+        actor: `actor-${index % 6}`,
+        stage: "browser-telemetry",
+        type: "websocket-message",
+        status: "observed",
+        details: { index }
+      })
+    ));
+    const persisted = JSON.parse(await readFile(join(root, "events.json"), "utf8"));
+
+    expect(recorded.map(({ seq }) => seq)).toEqual(Array.from({ length: 24 }, (_, index) => index + 1));
+    expect(persisted.map(({ seq }: { seq: number }) => seq)).toEqual(
+      Array.from({ length: 24 }, (_, index) => index + 1)
+    );
   });
 
   it("records artifacts and finishes a redacted case report", async () => {

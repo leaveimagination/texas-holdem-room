@@ -18,6 +18,7 @@ import {
 } from "./timing";
 import {
   assertCenterPointHit,
+  assertSeatingLayoutRendered,
   assertMinimumHitTarget,
   assertNoViewportOverflow,
   centerPoint,
@@ -170,6 +171,12 @@ describe("mechanical experience assertions", () => {
         hitTestResult({ x: 32, y: 42 }, false),
         context
       ),
+      () => assertSeatingLayoutRendered({
+        expectedSeatCount: 9,
+        feltRendered: false,
+        renderedSeatCount: 8,
+        localSeatRendered: false
+      }, context),
       () => assertChipConservation({ startingChips: [100], appliedTopUps: [], endingChips: [99] }, context),
       () => assertHandNetBalanced([10, -9], context),
       () => assertSessionNetAccounting({ initialChips: 100, appliedTopUpChips: 50, finalChips: 175, netChips: 75 }, context),
@@ -187,6 +194,29 @@ describe("mechanical experience assertions", () => {
     for (const failure of failures) {
       expect(failure).toThrow(ProductAssertionError);
     }
+  });
+
+  it("classifies missing seating DOM as a product assertion with measured diagnostics", () => {
+    const context = {
+      assertionId: "EXP-002-A01",
+      caseId: "EXP-002",
+      attemptId: "A-001",
+      actor: "nine",
+      artifactIds: []
+    };
+
+    expect(() => assertSeatingLayoutRendered({
+      expectedSeatCount: 9,
+      feltRendered: true,
+      renderedSeatCount: 8,
+      localSeatRendered: false
+    }, context)).toThrow(ProductAssertionError);
+    expect(() => assertSeatingLayoutRendered({
+      expectedSeatCount: 9,
+      feltRendered: true,
+      renderedSeatCount: 9,
+      localSeatRendered: true
+    }, context)).not.toThrow();
   });
 
   it("accepts timed phases at exactly plus or minus 400ms", () => {

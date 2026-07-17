@@ -12,6 +12,7 @@ import type {
 } from "../../tests/experience/evidence/report-writer";
 import type { EvidenceValidationResult } from "../../tests/experience/evidence/validator";
 import type { DockerSiteTestStackSnapshot } from "./docker-stack";
+import type { FixtureSeedBrokerHandle } from "./fixture-seed-broker";
 import type {
   PlaywrightGroupResult,
   RunPlaywrightGroupInput
@@ -78,6 +79,8 @@ export const SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS = Object.freeze({
   imageInspection: 30_000,
   stackStart: 285_000,
   preflight: 30_000,
+  fixtureSeedBrokerStart: 10_000,
+  fixtureSeedBrokerCleanup: 10_000,
   playwrightMinimum: 30_000,
   evidenceCollection: 30_000,
   productFailureEvidence: 15_000,
@@ -173,6 +176,12 @@ export interface SiteTestRunnerDependencies {
     control: SiteTestStageControl
   ): Promise<string>;
   createStack(context: SiteTestRunContext): SiteTestStackHandle;
+  startFixtureSeedBroker(input: {
+    snapshot: DockerSiteTestStackSnapshot;
+    databaseUrl: string;
+    runId: string;
+    runStartedAt: string;
+  }, control: SiteTestStageControl): Promise<FixtureSeedBrokerHandle>;
   preflight(
     context: SiteTestRunContext,
     stack: SiteTestStackHandle,

@@ -34,6 +34,11 @@ interface FixtureRuntimeOptions {
   redisFactory?: (url: string) => FixtureRedisClient;
 }
 
+interface FixtureOperationControl {
+  signal: AbortSignal;
+  timeoutMs: number;
+}
+
 const verifiedIsolatedTargets = new WeakSet<object>();
 
 export function createFixtureTargetEnvironment(
@@ -84,7 +89,11 @@ export class FixtureRuntime {
     this.redisFactory = options.redisFactory ?? defaultRedisFactory;
   }
 
-  async seedRoom(roomId: string, fixture: PokerFixture): Promise<RoomState> {
+  async seedRoom(
+    roomId: string,
+    fixture: PokerFixture,
+    control?: FixtureOperationControl
+  ): Promise<RoomState> {
     let room = createInitialRoomState(fixture.settings, roomId);
     for (const fixtureParticipant of fixture.participants) {
       room = claimSeat(
@@ -118,10 +127,32 @@ export class FixtureRuntime {
     const seeded = fixture.startHand ? startHand(room, fixture.deck, 0) : room;
     const redis = this.redisFactory(this.options.targetEnvironment.redisUrl);
     redis.on?.("error", () => undefined);
+    const abort = () => redis.disconnect();
+    control?.signal.addEventListener("abort", abort, { once: true });
     try {
-      await new LiveRoomStore(createRedisKeyValueStore(redis)).saveRoom(seeded);
+      await runRedisOperation(
+        new LiveRoomStore(createRedisKeyValueStore(redis)).saveRoom(seeded),
+        control
+      );
       return seeded;
     } finally {
+      control?.signal.removeEventListener("abort", abort);
+      redis.disconnect();
+    }
+  }
+
+  async readRoom(roomId: string, control?: FixtureOperationControl): Promise<RoomState | null> {
+    const redis = this.redisFactory(this.options.targetEnvironment.redisUrl);
+    redis.on?.("error", () => undefined);
+    const abort = () => redis.disconnect();
+    control?.signal.addEventListener("abort", abort, { once: true });
+    try {
+      return await runRedisOperation(
+        new LiveRoomStore(createRedisKeyValueStore(redis)).getRoom(roomId),
+        control
+      );
+    } finally {
+      control?.signal.removeEventListener("abort", abort);
       redis.disconnect();
     }
   }
@@ -182,5 +213,42 @@ function isPort(value: number): boolean {
 }
 
 function defaultRedisFactory(url: string): FixtureRedisClient {
-  return new Redis(url, { lazyConnect: true });
+  return new Redis(url, {
+    lazyConnect: true,
+    connectTimeout: 5_000,
+    commandTimeout: 5_000,
+    maxRetriesPerRequest: 0
+  });
+}
+
+async function runRedisOperation<T>(
+  operation: Promise<T>,
+  control: FixtureOperationControl | undefined
+): Promise<T> {
+  if (control === undefined) return await operation;
+  if (control.signal.aborted) throw abortReason(control.signal);
+  let timer: NodeJS.Timeout | undefined;
+  let rejectOnAbort: (() => void) | undefined;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Fixture Redis operation timed out")),
+      Math.max(1, control.timeoutMs)
+    );
+    timer.unref?.();
+  });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectOnAbort = () => reject(abortReason(control.signal));
+    control.signal.addEventListener("abort", rejectOnAbort, { once: true });
+  });
+  try {
+    return await Promise.race([operation, timedOut, aborted]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (rejectOnAbort !== undefined) control.signal.removeEventListener("abort", rejectOnAbort);
+    void operation.catch(() => undefined);
+  }
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error("Fixture Redis operation aborted");
 }
