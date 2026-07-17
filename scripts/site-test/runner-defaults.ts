@@ -16,11 +16,13 @@ import type {
   SiteTestDiagnostics,
   SiteTestRunContext,
   SiteTestSelection,
+  SiteTestStageControl,
   SiteTestStackHandle
 } from "./runner-contracts";
 import { DockerSiteTestStack } from "./docker-stack";
 import { reserveLoopbackPorts } from "./ports";
 import { runProcess } from "./process-runner";
+import { chromium } from "@playwright/test";
 
 const POSTGRES_HEALTH_INJECTION = "postgres-health";
 
@@ -58,16 +60,19 @@ export async function allocateDefaultRun(): Promise<SiteTestRunContext> {
 
 export async function writeDefaultMetadata(
   context: SiteTestRunContext,
-  selection: SiteTestSelection
+  selection: SiteTestSelection,
+  chromiumVersion: string,
+  control?: SiteTestStageControl
 ): Promise<void> {
   const git = await runProcess("git", ["rev-parse", "HEAD"], {
     cwd: context.rootDirectory,
-    timeoutMs: 10_000
+    timeoutMs: Math.min(10_000, control?.timeoutMs ?? 10_000),
+    signal: control?.signal
   });
   const packageJson = JSON.parse(
     await readFile(
       resolve(context.rootDirectory, "node_modules", "@playwright", "test", "package.json"),
-      "utf8"
+      { encoding: "utf8", signal: control?.signal }
     )
   ) as { version?: unknown };
   const metadata = redactForEvidence(
@@ -80,6 +85,7 @@ export async function writeDefaultMetadata(
       nodeVersion: process.version,
       platform: process.platform,
       playwrightVersion: packageJson.version,
+      chromiumVersion,
       selectedCaseIds: selection.caseIds,
       hardDeadlineMs: 30 * 60 * 1_000,
       thresholds: EXPERIENCE_THRESHOLDS
@@ -90,17 +96,40 @@ export async function writeDefaultMetadata(
   await writeFile(
     join(context.outputRoot, "diagnostics", "metadata.json"),
     `${JSON.stringify(metadata, null, 2)}\n`,
-    "utf8"
+    { encoding: "utf8", signal: control?.signal }
   );
 }
 
+export async function inspectDefaultBrowserVersion(
+  _context: SiteTestRunContext,
+  control: SiteTestStageControl
+): Promise<string> {
+  if (control.signal.aborted) {
+    throw control.signal.reason;
+  }
+  const browser = await chromium.launch({ timeout: control.timeoutMs });
+  try {
+    if (control.signal.aborted) {
+      throw control.signal.reason;
+    }
+    return browser.version();
+  } finally {
+    await browser.close();
+  }
+}
+
 export async function inspectDefaultImage(
-  context: SiteTestRunContext
+  context: SiteTestRunContext,
+  control: SiteTestStageControl
 ): Promise<string> {
   const result = await runProcess(
     "docker",
     ["image", "inspect", "--format", "{{.Id}}", context.image],
-    { cwd: context.rootDirectory, timeoutMs: 30_000 }
+    {
+      cwd: context.rootDirectory,
+      timeoutMs: Math.min(30_000, control.timeoutMs),
+      signal: control.signal
+    }
   );
   const imageId = result.stdout.trim();
   if (imageId.length === 0) {
@@ -109,9 +138,9 @@ export async function inspectDefaultImage(
   return imageId;
 }
 
-export async function startDefaultStack(
+export function createDefaultStack(
   context: SiteTestRunContext
-): Promise<SiteTestStackHandle> {
+): SiteTestStackHandle {
   const stack = new DockerSiteTestStack({
     runId: context.runId,
     rootDirectory: context.rootDirectory,
@@ -122,11 +151,25 @@ export async function startDefaultStack(
       (stream === "stdout" ? process.stdout : process.stderr).write(text);
     }
   });
-  const snapshot = await stack.start();
+  let snapshot = stack.recordedSnapshot;
   return {
-    snapshot,
-    collectDiagnostics: async () => await stack.collectDiagnostics(),
-    stop: async () => await stack.stop()
+    runId: stack.identity.runId,
+    projectName: stack.projectName,
+    get snapshot() {
+      return snapshot ?? stack.recordedSnapshot;
+    },
+    start: async (control) => {
+      try {
+        snapshot = await stack.start(control.signal);
+        return snapshot;
+      } catch (error) {
+        snapshot = stack.recordedSnapshot;
+        throw error;
+      }
+    },
+    collectDiagnostics: async (control) =>
+      await stack.collectDiagnostics(control.signal),
+    stop: async (control) => await stack.stop(control.signal)
   };
 }
 
@@ -134,9 +177,11 @@ export async function preflightDefaultStack(
   context: SiteTestRunContext,
   _stack: SiteTestStackHandle,
   injection: SiteTestSelection["injectEnvironmentFailure"],
-  signal: AbortSignal
+  control: SiteTestStageControl
 ): Promise<void> {
-  const response = await fetch(`${context.isolatedBaseUrl}/api/health`, { signal });
+  const response = await fetch(`${context.isolatedBaseUrl}/api/health`, {
+    signal: control.signal
+  });
   if (!response.ok) {
     throw new Error(`Application health endpoint returned HTTP ${response.status}`);
   }
@@ -157,7 +202,7 @@ export async function preflightDefaultStack(
   const { default: Redis } = await import("ioredis");
   const redis = new Redis(context.redisUrl, {
     lazyConnect: true,
-    connectTimeout: 5_000,
+    connectTimeout: Math.min(5_000, control.timeoutMs),
     maxRetriesPerRequest: 1
   });
   try {
@@ -172,18 +217,26 @@ export async function preflightDefaultStack(
 
 export async function collectDefaultCaseEvidence(
   context: SiteTestRunContext,
-  caseIds: readonly string[]
+  caseIds: readonly string[],
+  control: SiteTestStageControl
 ): Promise<CollectedCaseEvidence> {
   const cases: CaseReport[] = [];
   const events: EvidenceEvent[] = [];
   const issues: Error[] = [];
   for (const caseId of caseIds) {
     for (const attemptId of experienceAttemptIds(caseId)) {
+      control.signal.throwIfAborted();
       const attemptRoot = join(context.caseOutputRoot, caseId, attemptId);
       try {
         const [reportJson, eventsJson] = await Promise.all([
-          readFile(join(attemptRoot, "report.json"), "utf8"),
-          readFile(join(attemptRoot, "events.json"), "utf8")
+          readFile(join(attemptRoot, "report.json"), {
+            encoding: "utf8",
+            signal: control.signal
+          }),
+          readFile(join(attemptRoot, "events.json"), {
+            encoding: "utf8",
+            signal: control.signal
+          })
         ]);
         const report = CaseReportSchema.parse(JSON.parse(reportJson));
         if (
@@ -196,6 +249,9 @@ export async function collectDefaultCaseEvidence(
         cases.push(report);
         events.push(...EvidenceEventSchema.array().min(1).parse(JSON.parse(eventsJson)));
       } catch (error) {
+        if (control.signal.aborted) {
+          throw control.signal.reason;
+        }
         issues.push(
           new Error(
             `Could not load durable evidence for ${caseId}/${attemptId}: ${errorMessage(error)}`,
@@ -210,7 +266,8 @@ export async function collectDefaultCaseEvidence(
 
 export async function persistDefaultDiagnostics(
   context: SiteTestRunContext,
-  diagnostics: SiteTestDiagnostics
+  diagnostics: SiteTestDiagnostics,
+  control: SiteTestStageControl
 ): Promise<void> {
   const root = join(context.outputRoot, "diagnostics");
   const playwrightRoot = join(root, "playwright");
@@ -220,16 +277,30 @@ export async function persistDefaultDiagnostics(
   ]);
   const safe = redactForEvidence(diagnostics, context.knownSecrets) as SiteTestDiagnostics;
   const writes: Promise<void>[] = [
-    writeFile(join(root, "runner.json"), `${JSON.stringify(safe, null, 2)}\n`, "utf8")
+    writeFile(join(root, "runner.json"), `${JSON.stringify(safe, null, 2)}\n`, {
+      encoding: "utf8",
+      signal: control.signal
+    })
   ];
   if (safe.docker !== undefined) {
-    writes.push(writeFile(join(root, "docker.txt"), `${safe.docker}\n`, "utf8"));
+    writes.push(
+      writeFile(join(root, "docker.txt"), `${safe.docker}\n`, {
+        encoding: "utf8",
+        signal: control.signal
+      })
+    );
   }
   safe.playwright.forEach(({ caseIds, result }, index) => {
     const label = `${String(index + 1).padStart(2, "0")}-${caseIds.join("-")}`;
     writes.push(
-      writeFile(join(playwrightRoot, `${label}.stdout.log`), result.stdout, "utf8"),
-      writeFile(join(playwrightRoot, `${label}.stderr.log`), result.stderr, "utf8")
+      writeFile(join(playwrightRoot, `${label}.stdout.log`), result.stdout, {
+        encoding: "utf8",
+        signal: control.signal
+      }),
+      writeFile(join(playwrightRoot, `${label}.stderr.log`), result.stderr, {
+        encoding: "utf8",
+        signal: control.signal
+      })
     );
   });
   await Promise.all(writes);

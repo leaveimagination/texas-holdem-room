@@ -20,7 +20,10 @@ type SiteTestService = (typeof REQUIRED_SERVICES)[number];
 const verifiedStackSnapshots = new WeakSet<DockerSiteTestStackSnapshot>();
 
 export interface DockerProcessRunOptions
-  extends Pick<RunProcessOptions, "cwd" | "env" | "timeoutMs" | "redact" | "onLog"> {}
+  extends Pick<
+    RunProcessOptions,
+    "cwd" | "env" | "timeoutMs" | "signal" | "redact" | "onLog"
+  > {}
 
 export type DockerProcessRunner = (
   command: string,
@@ -93,6 +96,7 @@ export class DockerSiteTestStack {
   private readonly image: string;
   private readonly run: DockerProcessRunner;
   private readonly onLog?: (entry: ProcessLogEntry) => void;
+  private signal?: AbortSignal;
   private recorded?: DockerSiteTestStackSnapshot;
 
   constructor(options: DockerSiteTestStackOptions) {
@@ -111,11 +115,12 @@ export class DockerSiteTestStack {
     this.onLog = options.onLog;
   }
 
-  async start(): Promise<DockerSiteTestStackSnapshot> {
+  async start(signal?: AbortSignal): Promise<DockerSiteTestStackSnapshot> {
     if (this.recorded !== undefined) {
       throw new Error(`Site test stack ${this.projectName} has already been started`);
     }
 
+    this.signal = signal;
     const imageResult = await this.run(
       "docker",
       ["image", "inspect", "--format", "{{.Id}}", this.image],
@@ -123,20 +128,25 @@ export class DockerSiteTestStack {
     );
     const imageId = requireNonempty(imageResult.stdout.trim(), "Docker image ID");
 
-    await this.run(
-      "docker",
-      this.composeArgs([
-        "up",
-        "--detach",
-        "--wait",
-        "--wait-timeout",
-        "180",
-        "--no-build",
-        "--pull",
-        "never"
-      ]),
-      this.processOptions(195_000)
-    );
+    try {
+      await this.run(
+        "docker",
+        this.composeArgs([
+          "up",
+          "--detach",
+          "--wait",
+          "--wait-timeout",
+          "180",
+          "--no-build",
+          "--pull",
+          "never"
+        ]),
+        this.processOptions(195_000)
+      );
+    } catch (error) {
+      await this.recordPartialOwnership(imageId);
+      throw error;
+    }
 
     const services = await this.inspect();
     const snapshot: DockerSiteTestStackSnapshot = {
@@ -200,7 +210,8 @@ export class DockerSiteTestStack {
     });
   }
 
-  async collectDiagnostics(): Promise<string> {
+  async collectDiagnostics(signal?: AbortSignal): Promise<string> {
+    this.signal = signal;
     const result = await this.run(
       "docker",
       this.composeArgs(["logs", "--no-color", "--timestamps"]),
@@ -209,7 +220,12 @@ export class DockerSiteTestStack {
     return (result.stdout + result.stderr).replaceAll(this.postgresPassword, "[REDACTED]");
   }
 
-  async stop(): Promise<void> {
+  get recordedSnapshot(): DockerSiteTestStackSnapshot | undefined {
+    return this.recorded === undefined ? undefined : cloneAndFreezeSnapshot(this.recorded);
+  }
+
+  async stop(signal?: AbortSignal): Promise<void> {
+    this.signal = signal;
     const recorded = this.recorded;
     if (recorded === undefined) {
       throw new EnvironmentCleanupError(
@@ -282,6 +298,22 @@ export class DockerSiteTestStack {
     };
   }
 
+  private async recordPartialOwnership(imageId: string): Promise<void> {
+    try {
+      const services = await this.inspect();
+      this.recorded = {
+        runId: this.identity.runId,
+        projectName: this.projectName,
+        image: this.image,
+        imageId,
+        ports: { ...this.ports },
+        services
+      };
+    } catch {
+      // Cleanup remains forbidden when exact current ownership cannot be proven.
+    }
+  }
+
   private validateRecordedOwnership(recorded: DockerSiteTestStackSnapshot): void {
     const exactExpectedName = `${SITE_TEST_PROJECT_PREFIX}${recorded.runId}`;
     if (
@@ -332,6 +364,7 @@ export class DockerSiteTestStack {
         SITE_TEST_RUN_ID: this.identity.runId
       },
       timeoutMs,
+      signal: this.signal,
       redact: (value) => value.replaceAll(this.postgresPassword, "[REDACTED]"),
       onLog: this.onLog
     };

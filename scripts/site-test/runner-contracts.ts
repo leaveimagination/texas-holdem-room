@@ -11,11 +11,68 @@ import type {
 } from "../../tests/experience/evidence/report-writer";
 import type { EvidenceValidationResult } from "../../tests/experience/evidence/validator";
 import type { DockerSiteTestStackSnapshot } from "./docker-stack";
-import type { RunPlaywrightGroupInput } from "./playwright-group";
-import type { ProcessResult } from "./process-runner";
+import type {
+  PlaywrightGroupResult,
+  RunPlaywrightGroupInput
+} from "./playwright-group";
 
 export const SITE_TEST_HARD_DEADLINE_MS = 30 * 60 * 1_000;
-export const SITE_TEST_FINALIZATION_RESERVE_MS = 195_000;
+export const SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS = Object.freeze({
+  productFailureEvidence: 15_000,
+  finalReport: 15_000,
+  finalValidation: 30_000,
+  dockerDiagnostics: 60_000,
+  diagnosticsPersistence: 15_000,
+  finalizedPackValidation: 30_000,
+  exactCleanup: 120_000,
+  cleanupStatusReport: 15_000
+});
+export const SITE_TEST_FINALIZATION_RESERVE_MS = Object.values(
+  SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS
+).reduce((total, budget) => total + budget, 0);
+export const SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS = Object.freeze({
+  productFailureEvidence: SITE_TEST_FINALIZATION_RESERVE_MS,
+  finalReport:
+    SITE_TEST_FINALIZATION_RESERVE_MS -
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.productFailureEvidence,
+  finalValidation:
+    SITE_TEST_FINALIZATION_RESERVE_MS -
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.productFailureEvidence -
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalReport,
+  dockerDiagnostics:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.dockerDiagnostics +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+  diagnosticsPersistence:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+  finalizedPackValidation:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+  exactCleanup:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+  cleanupStatusReport:
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport
+});
+export const SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS = Object.freeze({
+  allocation: 10_000,
+  browserVersion: 30_000,
+  metadata: 30_000,
+  imageInspection: 30_000,
+  stackStart: 285_000,
+  preflight: 30_000,
+  playwrightMinimum: 30_000,
+  evidenceCollection: 30_000,
+  productFailureEvidence: 15_000,
+  partialReport: 15_000,
+  partialValidation: 30_000
+});
 export const DEFAULT_SITE_TEST_CASE_IDS = Object.freeze(
   EXPERIENCE_CASES.map(({ caseId }) => caseId)
 );
@@ -57,10 +114,18 @@ export interface CollectedCaseEvidence {
   issues?: readonly Error[];
 }
 
+export interface SiteTestStageControl {
+  signal: AbortSignal;
+  timeoutMs: number;
+}
+
 export interface SiteTestStackHandle {
-  snapshot: DockerSiteTestStackSnapshot;
-  collectDiagnostics(): Promise<string>;
-  stop(): Promise<void>;
+  readonly runId: string;
+  readonly projectName: string;
+  readonly snapshot?: DockerSiteTestStackSnapshot;
+  start(control: SiteTestStageControl): Promise<DockerSiteTestStackSnapshot>;
+  collectDiagnostics(control: SiteTestStageControl): Promise<string>;
+  stop(control: SiteTestStageControl): Promise<void>;
 }
 
 export interface SiteTestDiagnostics {
@@ -68,7 +133,7 @@ export interface SiteTestDiagnostics {
   docker?: string;
   playwright: Array<{
     caseIds: readonly string[];
-    result: ProcessResult;
+    result: PlaywrightGroupResult;
   }>;
   issues: string[];
 }
@@ -78,41 +143,57 @@ export interface SiteTestRunnerDependencies {
     timeoutMs: number,
     task: (signal: AbortSignal, remainingMs: () => number) => Promise<T>
   ): Promise<T>;
-  allocateRun(selection: SiteTestSelection): Promise<SiteTestRunContext>;
+  allocateRun(
+    selection: SiteTestSelection,
+    control: SiteTestStageControl
+  ): Promise<SiteTestRunContext>;
+  inspectBrowserVersion(
+    context: SiteTestRunContext,
+    control: SiteTestStageControl
+  ): Promise<string>;
   writeMetadata(
     context: SiteTestRunContext,
-    selection: SiteTestSelection
+    selection: SiteTestSelection,
+    chromiumVersion: string,
+    control: SiteTestStageControl
   ): Promise<void>;
-  inspectImage(context: SiteTestRunContext, signal: AbortSignal): Promise<string>;
-  startStack(
+  inspectImage(
     context: SiteTestRunContext,
-    signal: AbortSignal
-  ): Promise<SiteTestStackHandle>;
+    control: SiteTestStageControl
+  ): Promise<string>;
+  createStack(context: SiteTestRunContext): SiteTestStackHandle;
   preflight(
     context: SiteTestRunContext,
     stack: SiteTestStackHandle,
     injection: SiteTestSelection["injectEnvironmentFailure"],
-    signal: AbortSignal
+    control: SiteTestStageControl
   ): Promise<void>;
-  runPlaywrightGroup(input: RunPlaywrightGroupInput): Promise<ProcessResult>;
+  runPlaywrightGroup(input: RunPlaywrightGroupInput): Promise<PlaywrightGroupResult>;
   collectCaseEvidence(
     context: SiteTestRunContext,
-    caseIds: readonly string[]
+    caseIds: readonly string[],
+    control: SiteTestStageControl
   ): Promise<CollectedCaseEvidence>;
   injectProductFailure(
     context: SiteTestRunContext,
     evidence: CollectedCaseEvidence,
-    injection: ProductFailureInjection
+    injection: ProductFailureInjection,
+    control: SiteTestStageControl
   ): Promise<CollectedCaseEvidence>;
-  writeReport(input: WriteExperienceReportInput): Promise<RunReport>;
+  writeReport(
+    input: WriteExperienceReportInput,
+    control: SiteTestStageControl
+  ): Promise<RunReport>;
   validateEvidence(
     outputRoot: string,
     knownSecrets: readonly KnownSecret[],
-    phase: "isolated" | "final" | "finalized-pack"
+    phase: "isolated" | "final" | "finalized-pack",
+    control: SiteTestStageControl
   ): Promise<EvidenceValidationResult>;
   persistDiagnostics(
     context: SiteTestRunContext,
-    diagnostics: SiteTestDiagnostics
+    diagnostics: SiteTestDiagnostics,
+    control: SiteTestStageControl
   ): Promise<void>;
   now(): string;
 }

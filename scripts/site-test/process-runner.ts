@@ -40,6 +40,7 @@ export interface RunProcessOptions {
   timeoutMs?: number;
   terminationGraceMs?: number;
   spawn?: SpawnProcess;
+  signal?: AbortSignal;
   redact?(value: string): string;
   onLog?(entry: ProcessLogEntry): void;
 }
@@ -177,6 +178,7 @@ export async function runProcess(
 
   return await new Promise<ProcessResult>((resolve, reject) => {
     let closed = false;
+    let deadlineTimer: NodeJS.Timeout;
     let escalationTimer: NodeJS.Timeout | undefined;
 
     const onStdoutData = (chunk: Buffer | string) => {
@@ -190,48 +192,60 @@ export async function runProcess(
       streamRedactedLines("stderr", text);
     };
     const lateErrorGuard = () => {
-      // A timed-out child can emit an AbortError or kill error after the caller has settled.
+      // A cancelled child can emit an AbortError or kill error after settlement.
     };
-
-    child.stdout.on("data", onStdoutData);
-    child.stderr.on("data", onStderrData);
-    child.on("error", lateErrorGuard);
-
-    const finish = (callback: () => void) => {
+    const detachOutputListeners = () => {
+      child.stdout.off("data", onStdoutData);
+      child.stderr.off("data", onStderrData);
+    };
+    const redactedFailureOutput = () => ({
+      stdout: redact(stdout),
+      stderr: redact(stderr)
+    });
+    const safelyKill = (signal: NodeJS.Signals) => {
+      try {
+        child.kill(signal);
+      } catch {
+        // Termination errors cannot replace the bounded process result.
+      }
+    };
+    const onExternalAbort = () => terminate();
+    const finish = (callback: () => void, retainLateErrorGuard = false) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(deadlineTimer);
+      if (escalationTimer !== undefined) {
+        clearTimeout(escalationTimer);
+      }
+      options.signal?.removeEventListener("abort", onExternalAbort);
+      detachOutputListeners();
+      child.off("error", onError);
+      child.off("close", onClose);
+      if (!retainLateErrorGuard) {
+        child.off("error", lateErrorGuard);
+      }
+      flushRedactedLogs();
       callback();
     };
-
-    const detachOutputListeners = () => {
-      child.stdout.off("data", onStdoutData);
-      child.stderr.off("data", onStderrData);
-    };
-
-    const safelyKill = (signal: NodeJS.Signals) => {
-      try {
-        child.kill(signal);
-      } catch {
-        // The caller is already settling; kill errors must not replace the process result.
-      }
-    };
-
-    const redactedFailureOutput = () => ({
-      stdout: redact(stdout),
-      stderr: redact(stderr)
-    });
-
+    const rejectTimeout = () =>
+      finish(
+        () =>
+          reject(
+            new ProcessTimeoutError(`Process ${command} exceeded its ${timeoutMs}ms deadline`, {
+              command,
+              args: processArgs,
+              ...redactedFailureOutput(),
+              timeoutMs
+            })
+          ),
+        true
+      );
     const onError = (error: Error) => {
       if (timedOut) {
         return;
       }
-      flushRedactedLogs();
-      detachOutputListeners();
-      child.off("close", onClose);
-      child.off("error", onError);
       finish(() =>
         reject(
           new ProcessExecutionError(`Failed to start process ${command}: ${redact(error.message)}`, {
@@ -245,29 +259,13 @@ export async function runProcess(
         )
       );
     };
-
     const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
       closed = true;
-      if (escalationTimer !== undefined) {
-        clearTimeout(escalationTimer);
+      if (timedOut) {
+        rejectTimeout();
+        return;
       }
-      flushRedactedLogs();
-      detachOutputListeners();
-      child.off("error", onError);
-      child.off("error", lateErrorGuard);
-      child.off("close", onClose);
       finish(() => {
-        if (timedOut) {
-          reject(
-            new ProcessTimeoutError(`Process ${command} exceeded its ${timeoutMs}ms deadline`, {
-              command,
-              args: processArgs,
-              ...redactedFailureOutput(),
-              timeoutMs
-            })
-          );
-          return;
-        }
         if (code !== 0) {
           const detail = redact(stderr.trim() || stdout.trim());
           reject(
@@ -287,29 +285,11 @@ export async function runProcess(
         resolve({ exitCode: code, stdout, stderr });
       });
     };
-
-    child.on("error", onError);
-    child.once("close", onClose);
-
-    const deadlineTimer = setTimeout(() => {
-      if (settled || closed) {
+    function terminate(): void {
+      if (settled || closed || timedOut) {
         return;
       }
       timedOut = true;
-      flushRedactedLogs();
-      detachOutputListeners();
-      child.off("error", onError);
-      finish(() =>
-        reject(
-          new ProcessTimeoutError(`Process ${command} exceeded its ${timeoutMs}ms deadline`, {
-            command,
-            args: processArgs,
-            ...redactedFailureOutput(),
-            timeoutMs
-          })
-        )
-      );
-
       controller.abort(new Error(`Process deadline exceeded after ${timeoutMs}ms`));
       if (closed) {
         return;
@@ -319,11 +299,26 @@ export async function runProcess(
         return;
       }
       escalationTimer = setTimeout(() => {
+        if (settled || closed) {
+          return;
+        }
         safelyKill("SIGKILL");
-        child.off("close", onClose);
+        rejectTimeout();
       }, terminationGraceMs);
       escalationTimer.unref?.();
-    }, timeoutMs);
+    }
+
+    child.stdout.on("data", onStdoutData);
+    child.stderr.on("data", onStderrData);
+    child.on("error", lateErrorGuard);
+    child.on("error", onError);
+    child.once("close", onClose);
+    options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+
+    deadlineTimer = setTimeout(terminate, timeoutMs);
     deadlineTimer.unref?.();
+    if (options.signal?.aborted) {
+      queueMicrotask(terminate);
+    }
   });
 }

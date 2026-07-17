@@ -116,7 +116,6 @@ describe("safe process runner", () => {
       command: "stuck-command",
       timeoutMs: 10
     });
-    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(child.kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
     expect(child.stdout.listenerCount("data")).toBe(0);
     expect(child.stderr.listenerCount("data")).toBe(0);
@@ -126,6 +125,50 @@ describe("safe process runner", () => {
       child.emit("error", new Error("late error two"));
       child.emit("close", null, "SIGKILL");
     }).not.toThrow();
+  });
+
+  test("honors external cancellation and settles only after child termination", async () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const events: string[] = [];
+    const child = new EventEmitter() as SpawnedProcess;
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn((signal) => {
+      events.push(String(signal));
+      if (signal === "SIGTERM") {
+        setTimeout(() => {
+          events.push("closed");
+          child.emit("close", null, "SIGTERM");
+        }, 10);
+      }
+      return true;
+    });
+    const controller = new AbortController();
+    const run = runProcess("cancelled-command", [], {
+      timeoutMs: 1_000,
+      terminationGraceMs: 50,
+      signal: controller.signal,
+      spawn: () => child
+    });
+    controller.abort(new Error("overall deadline"));
+
+    const result = await Promise.race([
+      run.then(
+        () => undefined,
+        (error: unknown) => error
+      ),
+      new Promise<Error>((resolve) =>
+        setTimeout(() => resolve(new Error("external cancellation was ignored")), 80)
+      )
+    ]);
+    if (result instanceof Error && result.message === "external cancellation was ignored") {
+      child.emit("close", null, "SIGTERM");
+    }
+
+    expect(result).toMatchObject({ name: "ProcessTimeoutError" });
+    expect(events).toEqual(["SIGTERM", "closed"]);
+    expect(child.listenerCount("close")).toBe(0);
   });
 
   test("aborts at the deadline while preserving partial output and redacting streamed logs", async () => {
@@ -384,6 +427,20 @@ describe("isolated Docker site test stack", () => {
     });
   });
 
+  test("records exact ownership before a partial Compose start can fail", async () => {
+    const fixture = createDockerFixture({
+      failComposeUp: true,
+      inspections: [healthyContainers(), healthyContainers()]
+    });
+    const stack = createStack(fixture.run);
+
+    await expect(stack.start()).rejects.toThrow(/injected compose up failure/i);
+    await stack.stop();
+
+    expect(fixture.calls.filter((call) => call.args.includes("ps"))).toHaveLength(2);
+    expect(fixture.calls.at(-1)?.args).toContain("down");
+  });
+
   test("collects project-scoped diagnostics without mutating Docker state", async () => {
     const fixture = createDockerFixture({
       logOutput: "app-1 | password=fixture-password diagnostic line\n"
@@ -447,6 +504,7 @@ interface DockerFixtureOptions {
   idLists?: string[];
   inspections?: DockerContainerInspect[][];
   logOutput?: string;
+  failComposeUp?: boolean;
 }
 
 function createDockerFixture(options: DockerFixtureOptions = {}) {
@@ -468,6 +526,9 @@ function createDockerFixture(options: DockerFixtureOptions = {}) {
 
     if (args[0] === "image" && args[1] === "inspect") {
       return { exitCode: 0, stdout: `${imageId}\n`, stderr: "" };
+    }
+    if (args.includes("up") && options.failComposeUp) {
+      throw new Error("Injected Compose up failure after resources were created");
     }
     if (args.includes("up") || args.includes("down")) {
       return { exitCode: 0, stdout: "", stderr: "" };

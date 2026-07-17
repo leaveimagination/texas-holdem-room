@@ -8,6 +8,9 @@ import {
   DEFAULT_SITE_TEST_CASE_IDS,
   EnvironmentStageError,
   SITE_TEST_HARD_DEADLINE_MS,
+  SITE_TEST_FINALIZATION_RESERVE_MS,
+  OverallDeadlineError,
+  createDefaultSiteTestRunnerDependencies,
   injectProductFailureEvidence,
   parseSiteTestArguments,
   runFullSiteTest,
@@ -17,6 +20,7 @@ import {
 } from "../../scripts/run-full-site-test";
 import { runPlaywrightGroup } from "../../scripts/site-test/playwright-group";
 import { writeDefaultMetadata } from "../../scripts/site-test/runner-defaults";
+import { ProcessTimeoutError } from "../../scripts/site-test/process-runner";
 import type { DockerSiteTestStackSnapshot } from "../../scripts/site-test/docker-stack";
 import {
   EXPERIENCE_THRESHOLDS,
@@ -118,7 +122,12 @@ describe("dedicated Playwright group", () => {
       writeStderr: (text) => stderr.push(text)
     });
 
-    expect(result).toEqual({ exitCode: 0, stdout: "one pw\n", stderr: "two\n" });
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: "one pw\n",
+      stderr: "two\n",
+      timedOut: false
+    });
     expect(stdout).toEqual(["one [REDACTED]\n"]);
     expect(stderr).toEqual(["two\n"]);
     expect(run).toHaveBeenCalledTimes(1);
@@ -145,6 +154,76 @@ describe("dedicated Playwright group", () => {
       }
     });
   });
+
+  test("preserves redacted partial output when Playwright times out", async () => {
+    const run = vi.fn(async () => {
+      throw new ProcessTimeoutError("timed out", {
+        command: process.execPath,
+        args: ["playwright"],
+        stdout: "partial hostToken=[REDACTED]\n",
+        stderr: "partial failure\n",
+        timeoutMs: 12_000
+      });
+    });
+
+    await expect(
+      runPlaywrightGroup({
+        rootDirectory: process.cwd(),
+        runId: "run-01",
+        outputRoot: "C:\\output",
+        caseOutputRoot: "C:\\cases",
+        caseIds: ["EXP-001"],
+        isolatedBaseUrl: "http://127.0.0.1:43000",
+        redisUrl: "redis://127.0.0.1:46379",
+        databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem",
+        smokeBaseUrl: "http://localhost:3000",
+        timeoutMs: 12_000,
+        run
+      })
+    ).resolves.toEqual({
+      exitCode: 2,
+      stdout: "partial hostToken=[REDACTED]\n",
+      stderr: "partial failure\n",
+      timedOut: true
+    });
+  });
+
+  test("redacts generic credentials and registered host URLs from streamed logs", async () => {
+    const streamed: string[] = [];
+    const secretHostUrl = "https://example.test/room?hostToken=host-secret";
+    const run = vi.fn(async (_command, _args, options) => {
+      options?.onLog?.({
+        stream: "stdout",
+        text:
+          `Authorization: Bearer bearer-secret\n${secretHostUrl}\n` +
+          "participantToken=participant-secret\n"
+      });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    await runPlaywrightGroup({
+      rootDirectory: process.cwd(),
+      runId: "run-01",
+      outputRoot: "C:\\output",
+      caseOutputRoot: "C:\\cases",
+      caseIds: ["EXP-001"],
+      isolatedBaseUrl: "http://127.0.0.1:43000",
+      redisUrl: "redis://127.0.0.1:46379",
+      databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem",
+      smokeBaseUrl: "http://localhost:3000",
+      timeoutMs: 12_000,
+      knownSecrets: [secretHostUrl],
+      run,
+      writeStdout: (text) => streamed.push(text)
+    });
+
+    const output = streamed.join("");
+    expect(output).toContain("[REDACTED]");
+    expect(output).not.toContain("bearer-secret");
+    expect(output).not.toContain("host-secret");
+    expect(output).not.toContain("participant-secret");
+    expect(output).not.toContain(secretHostUrl);
+  });
 });
 
 describe("full site runner", () => {
@@ -153,7 +232,8 @@ describe("full site runner", () => {
 
     await writeDefaultMetadata(
       harness.context,
-      parseSiteTestArguments(["--cases=EXP-001,EXP-002"])
+      parseSiteTestArguments(["--cases=EXP-001,EXP-002"]),
+      "Chromium 138.0.7204.4"
     );
 
     const metadata = JSON.parse(
@@ -172,6 +252,102 @@ describe("full site runner", () => {
     });
     expect(metadata.gitRevision).toMatch(/^[0-9a-f]{40}$/);
     expect(metadata.playwrightVersion).toMatch(/^\d+\.\d+\.\d+/);
+    expect(metadata.chromiumVersion).toBe("Chromium 138.0.7204.4");
+  });
+
+  test("reserves enough bounded time for every required finalization stage", () => {
+    expect(SITE_TEST_FINALIZATION_RESERVE_MS).toBeGreaterThanOrEqual(
+      15_000 + 30_000 + 60_000 + 15_000 + 30_000 + 120_000 + 15_000
+    );
+    expect(SITE_TEST_FINALIZATION_RESERVE_MS).toBeLessThan(
+      SITE_TEST_HARD_DEADLINE_MS
+    );
+  });
+
+  test("keeps report, diagnostics, validation, and cleanup inside the absolute deadline", async () => {
+    const harness = await createHarness();
+    let insideDeadline = false;
+    const outsideDeadline: string[] = [];
+    harness.dependencies.withDeadline = async (timeoutMs, task) => {
+      harness.deadlines.push(timeoutMs);
+      insideDeadline = true;
+      try {
+        return await task(new AbortController().signal, () => timeoutMs);
+      } finally {
+        insideDeadline = false;
+      }
+    };
+    const observe = <T extends (...args: never[]) => Promise<unknown>>(
+      label: string,
+      operation: T
+    ): T =>
+      (async (...args: Parameters<T>) => {
+        if (!insideDeadline) outsideDeadline.push(label);
+        return await operation(...args);
+      }) as T;
+    harness.dependencies.writeReport = observe(
+      "report",
+      harness.dependencies.writeReport as (...args: never[]) => Promise<unknown>
+    ) as SiteTestRunnerDependencies["writeReport"];
+    harness.dependencies.validateEvidence = observe(
+      "validate",
+      harness.dependencies.validateEvidence as (...args: never[]) => Promise<unknown>
+    ) as SiteTestRunnerDependencies["validateEvidence"];
+    harness.dependencies.persistDiagnostics = observe(
+      "diagnostics",
+      harness.dependencies.persistDiagnostics as (...args: never[]) => Promise<unknown>
+    ) as SiteTestRunnerDependencies["persistDiagnostics"];
+
+    await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(outsideDeadline).toEqual([]);
+    expect(harness.calls).toContain("cleanup");
+  });
+
+  test("awaits cooperative cancellation before rejecting the hard deadline", async () => {
+    const events: string[] = [];
+
+    await expect(
+      createDefaultSiteTestRunnerDependencies().withDeadline(10, async (signal) => {
+        await new Promise<void>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              events.push("aborted");
+              setTimeout(() => {
+                events.push("terminated");
+                resolve();
+              }, 10);
+            },
+            { once: true }
+          );
+        });
+      })
+    ).rejects.toBeInstanceOf(OverallDeadlineError);
+
+    expect(events).toEqual(["aborted", "terminated"]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(events).toEqual(["aborted", "terminated"]);
+  });
+
+  test("does not start a bounded stage when its budget would consume finalization reserve", async () => {
+    const harness = await createHarness();
+    harness.dependencies.withDeadline = async (_timeoutMs, task) =>
+      await task(
+        new AbortController().signal,
+        () => SITE_TEST_FINALIZATION_RESERVE_MS + 5_000
+      );
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.calls).toEqual([]);
   });
 
   test("runs ordered isolated and smoke stages under one 30-minute deadline", async () => {
@@ -192,8 +368,10 @@ describe("full site runner", () => {
     ).toBe(true);
     expect(harness.calls).toEqual([
       "allocate",
+      "browser-version",
       "metadata",
       "inspect-image",
+      "create-stack",
       "start-stack",
       "preflight",
       "playwright:EXP-001",
@@ -237,6 +415,26 @@ describe("full site runner", () => {
     expect(harness.calls).not.toContain("preflight");
     expect(harness.playwrightGroups).toEqual([]);
     expect(result.report?.results.environment.status).toBe("inconclusive");
+  });
+
+  test("creates the exact stack handle before start so partial-start resources remain diagnosable", async () => {
+    const harness = await createHarness({
+      stackStart: async () => {
+        throw new Error("Compose wait failed after containers were created");
+      }
+    });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.calls.indexOf("create-stack")).toBeLessThan(
+      harness.calls.indexOf("start-stack")
+    );
+    expect(harness.calls).toContain("docker-diagnostics");
+    expect(harness.calls).toContain("cleanup");
   });
 
   test("skips deployed smoke after an isolated product failure and returns exit 1", async () => {
@@ -337,6 +535,108 @@ describe("full site runner", () => {
     expect(harness.calls).not.toContain("cleanup");
     expect(result.report).toBeUndefined();
   });
+
+  test("does not continue into evidence collection, smoke, or cleanup after timeout", async () => {
+    const harness = await createHarness();
+    const controller = new AbortController();
+    harness.dependencies.withDeadline = async (timeoutMs, task) =>
+      await task(controller.signal, () =>
+        controller.signal.aborted ? 0 : timeoutMs
+      );
+    harness.dependencies.runPlaywrightGroup = async (input) => {
+      harness.calls.push(`playwright:${input.caseIds.join(",")}`);
+      controller.abort(new OverallDeadlineError(SITE_TEST_HARD_DEADLINE_MS));
+      return { exitCode: 2, stdout: "partial", stderr: "timed out", timedOut: true };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001,EXP-010"]),
+      dependencies: harness.dependencies
+    });
+    const callsAtSettlement = [...harness.calls];
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.calls).not.toContain("collect:EXP-001");
+    expect(harness.calls).not.toContain("playwright:EXP-010");
+    expect(harness.calls).not.toContain("cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(harness.calls).toEqual(callsAtSettlement);
+  });
+
+  test("retains the stack when the current final report write fails", async () => {
+    const harness = await createHarness();
+    const writeReport = harness.dependencies.writeReport;
+    let writes = 0;
+    harness.dependencies.writeReport = async (input, control) => {
+      writes += 1;
+      if (writes === 2) throw new Error("final atomic rename failed");
+      return await writeReport(input, control);
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(harness.calls).not.toContain("cleanup");
+  });
+
+  test("retains the stack when diagnostics cannot be persisted", async () => {
+    const harness = await createHarness();
+    harness.dependencies.persistDiagnostics = async () => {
+      harness.calls.push("persist-diagnostics");
+      throw new Error("diagnostics disk full");
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(harness.calls).not.toContain("cleanup");
+    expect(result.report?.resources.every(({ cleanupStatus }) => cleanupStatus === "retained"))
+      .toBe(true);
+  });
+
+  test("retains the stack when final pack validation fails", async () => {
+    const harness = await createHarness();
+    harness.dependencies.validateEvidence = async (_root, _secrets, phase) => {
+      harness.calls.push(`validate:${phase}`);
+      if (phase === "finalized-pack") throw new Error("diagnostic secret detected");
+      return { filesScanned: 4, textEntriesScanned: 4, artifactCount: 0 };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(harness.calls).not.toContain("cleanup");
+    expect(result.report?.resources.every(({ cleanupStatus }) => cleanupStatus === "retained"))
+      .toBe(true);
+  });
+
+  test("retains the stack when current final report validation fails", async () => {
+    const harness = await createHarness();
+    harness.dependencies.validateEvidence = async (_root, _secrets, phase) => {
+      harness.calls.push(`validate:${phase}`);
+      if (phase === "final") throw new Error("final report schema invalid");
+      return { filesScanned: 4, textEntriesScanned: 4, artifactCount: 0 };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(harness.calls).not.toContain("cleanup");
+    expect(result.report?.resources.every(({ cleanupStatus }) => cleanupStatus === "retained"))
+      .toBe(true);
+  });
 });
 
 interface HarnessOptions {
@@ -345,6 +645,7 @@ interface HarnessOptions {
   writeReport?: SiteTestRunnerDependencies["writeReport"];
   useRealProductInjection?: boolean;
   stackImageId?: string;
+  stackStart?: () => Promise<void>;
 }
 
 async function createHarness(options: HarnessOptions = {}) {
@@ -374,6 +675,13 @@ async function createHarness(options: HarnessOptions = {}) {
   const stackSnapshot = snapshot(options.stackImageId);
   const stack = {
     snapshot: stackSnapshot,
+    runId: stackSnapshot.runId,
+    projectName: stackSnapshot.projectName,
+    start: async () => {
+      calls.push("start-stack");
+      await options.stackStart?.();
+      return stackSnapshot;
+    },
     collectDiagnostics: async () => {
       calls.push("docker-diagnostics");
       return "docker diagnostics";
@@ -392,6 +700,10 @@ async function createHarness(options: HarnessOptions = {}) {
       calls.push("allocate");
       return context;
     },
+    inspectBrowserVersion: async () => {
+      calls.push("browser-version");
+      return "Chromium 138.0.7204.4";
+    },
     writeMetadata: async () => {
       calls.push("metadata");
     },
@@ -399,8 +711,8 @@ async function createHarness(options: HarnessOptions = {}) {
       calls.push("inspect-image");
       return "sha256:image";
     },
-    startStack: async () => {
-      calls.push("start-stack");
+    createStack: () => {
+      calls.push("create-stack");
       return stack;
     },
     preflight:
@@ -413,7 +725,12 @@ async function createHarness(options: HarnessOptions = {}) {
       playwrightGroups.push(ids);
       playwrightTimeouts.push(input.timeoutMs);
       calls.push(`playwright:${ids.join(",")}`);
-      return { exitCode: 0, stdout: `${ids.join(",")} stdout`, stderr: "" };
+      return {
+        exitCode: 0,
+        stdout: `${ids.join(",")} stdout`,
+        stderr: "",
+        timedOut: false
+      };
     },
     collectCaseEvidence: async (_context, caseIds) => {
       calls.push(`collect:${caseIds.join(",")}`);

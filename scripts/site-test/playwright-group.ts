@@ -2,18 +2,27 @@ import { resolve } from "node:path";
 
 import {
   ProcessExecutionError,
+  ProcessTimeoutError,
   runProcess,
   type ProcessLogEntry,
   type ProcessResult,
   type RunProcessOptions
 } from "./process-runner";
+import {
+  redactForEvidence,
+  type KnownSecret
+} from "../../tests/experience/evidence/redaction";
+
+export interface PlaywrightGroupResult extends ProcessResult {
+  timedOut: boolean;
+}
 
 export type PlaywrightProcessRunner = (
   command: string,
   args: readonly string[],
   options?: Pick<
     RunProcessOptions,
-    "cwd" | "env" | "timeoutMs" | "onLog" | "redact"
+    "cwd" | "env" | "timeoutMs" | "signal" | "onLog" | "redact"
   >
 ) => Promise<ProcessResult>;
 
@@ -28,6 +37,8 @@ export interface RunPlaywrightGroupInput {
   databaseUrl: string;
   smokeBaseUrl: string;
   timeoutMs: number;
+  signal?: AbortSignal;
+  knownSecrets?: readonly KnownSecret[];
   run?: PlaywrightProcessRunner;
   writeStdout?(text: string): void;
   writeStderr?(text: string): void;
@@ -35,7 +46,7 @@ export interface RunPlaywrightGroupInput {
 
 export async function runPlaywrightGroup(
   input: RunPlaywrightGroupInput
-): Promise<ProcessResult> {
+): Promise<PlaywrightGroupResult> {
   if (input.caseIds.length === 0) {
     throw new Error("A Playwright group must contain at least one explicit case ID");
   }
@@ -44,7 +55,7 @@ export async function runPlaywrightGroup(
   }
 
   const run = input.run ?? runProcess;
-  const redact = credentialRedactor(input.databaseUrl);
+  const redact = credentialRedactor(input.databaseUrl, input.knownSecrets ?? []);
   const onLog = (entry: ProcessLogEntry) => {
     if (entry.stream === "stdout") {
       (input.writeStdout ?? process.stdout.write.bind(process.stdout))(
@@ -85,18 +96,28 @@ export async function runPlaywrightGroup(
       SITE_TEST_SMOKE_URL: input.smokeBaseUrl
     },
     timeoutMs: input.timeoutMs,
+    signal: input.signal,
     redact,
     onLog
   };
 
   try {
-    return await run(process.execPath, args, options);
+    return { ...(await run(process.execPath, args, options)), timedOut: false };
   } catch (error) {
     if (error instanceof ProcessExecutionError) {
       return {
         exitCode: error.exitCode ?? 2,
         stdout: error.stdout,
-        stderr: error.stderr
+        stderr: error.stderr,
+        timedOut: false
+      };
+    }
+    if (error instanceof ProcessTimeoutError) {
+      return {
+        exitCode: 2,
+        stdout: error.stdout,
+        stderr: error.stderr,
+        timedOut: true
       };
     }
     throw error;
@@ -111,19 +132,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function credentialRedactor(databaseUrl: string): (value: string) => string {
+function credentialRedactor(
+  databaseUrl: string,
+  knownSecrets: readonly KnownSecret[]
+): (value: string) => string {
   const password = new URL(databaseUrl).password;
-  const secrets = new Set(
-    [password, safeDecodeURIComponent(password)].filter(
-      (value) => value.length > 0
-    )
-  );
+  const secrets: KnownSecret[] = [
+    ...knownSecrets,
+    ...[password, safeDecodeURIComponent(password)].filter((value) => value.length > 0)
+  ];
   return (value) => {
-    let redacted = value;
-    for (const secret of secrets) {
-      redacted = redacted.replaceAll(secret, "[REDACTED]");
-    }
-    return redacted;
+    const redacted = redactForEvidence(value, secrets);
+    return typeof redacted === "string" ? redacted : JSON.stringify(redacted);
   };
 }
 
