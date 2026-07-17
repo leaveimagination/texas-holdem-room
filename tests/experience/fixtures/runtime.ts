@@ -1,6 +1,9 @@
 import Redis from "ioredis";
 import { createSiteTestRunIdentity } from "../../../scripts/site-test/contracts";
-import type { DockerSiteTestStackSnapshot } from "../../../scripts/site-test/docker-stack";
+import {
+  assertVerifiedDockerSiteTestStackSnapshot,
+  type DockerSiteTestStackSnapshot
+} from "../../../scripts/site-test/docker-stack";
 import {
   claimSeat,
   createInitialRoomState,
@@ -36,6 +39,7 @@ const verifiedIsolatedTargets = new WeakSet<object>();
 export function createFixtureTargetEnvironment(
   snapshot: DockerSiteTestStackSnapshot
 ): FixtureTargetEnvironment {
+  assertVerifiedDockerSiteTestStackSnapshot(snapshot);
   const identity = createSiteTestRunIdentity(snapshot.runId);
   if (
     snapshot.runId !== identity.runId ||

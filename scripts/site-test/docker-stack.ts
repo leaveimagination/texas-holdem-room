@@ -17,6 +17,7 @@ import {
 
 const REQUIRED_SERVICES = ["app", "postgres", "redis"] as const;
 type SiteTestService = (typeof REQUIRED_SERVICES)[number];
+const verifiedStackSnapshots = new WeakSet<DockerSiteTestStackSnapshot>();
 
 export interface DockerProcessRunOptions
   extends Pick<RunProcessOptions, "cwd" | "env" | "timeoutMs" | "redact" | "onLog"> {}
@@ -68,6 +69,16 @@ export interface DockerSiteTestStackOptions {
   image?: string;
   run?: DockerProcessRunner;
   onLog?(entry: ProcessLogEntry): void;
+}
+
+export function assertVerifiedDockerSiteTestStackSnapshot(
+  snapshot: DockerSiteTestStackSnapshot
+): void {
+  if (!verifiedStackSnapshots.has(snapshot)) {
+    throw new Error(
+      "Docker stack snapshot was not issued by a verified Docker site test stack lifecycle"
+    );
+  }
 }
 
 export class DockerSiteTestStack {
@@ -138,7 +149,9 @@ export class DockerSiteTestStack {
     };
     this.recorded = snapshot;
     validateStartState(snapshot);
-    return cloneSnapshot(snapshot);
+    const verifiedSnapshot = cloneAndFreezeSnapshot(snapshot);
+    verifiedStackSnapshots.add(verifiedSnapshot);
+    return verifiedSnapshot;
   }
 
   async inspect(): Promise<DockerServiceState[]> {
@@ -383,10 +396,14 @@ function sameStringSet(left: readonly string[], right: readonly string[]): boole
   return left.length === right.length && left.every((value) => right.includes(value));
 }
 
-function cloneSnapshot(snapshot: DockerSiteTestStackSnapshot): DockerSiteTestStackSnapshot {
-  return {
+function cloneAndFreezeSnapshot(snapshot: DockerSiteTestStackSnapshot): DockerSiteTestStackSnapshot {
+  const ports = Object.freeze({ ...snapshot.ports });
+  const services = Object.freeze(
+    snapshot.services.map((service) => Object.freeze({ ...service }))
+  );
+  return Object.freeze({
     ...snapshot,
-    ports: { ...snapshot.ports },
-    services: snapshot.services.map((service) => ({ ...service }))
-  };
+    ports,
+    services
+  }) as DockerSiteTestStackSnapshot;
 }

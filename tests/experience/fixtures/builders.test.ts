@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Page } from "@playwright/test";
-import type { DockerSiteTestStackSnapshot } from "../../../scripts/site-test/docker-stack";
+import {
+  DockerSiteTestStack,
+  type DockerContainerInspect,
+  type DockerProcessRunner,
+  type DockerSiteTestStackSnapshot
+} from "../../../scripts/site-test/docker-stack";
 import { serializeCard } from "@/lib/poker/cards";
 import type { RoomState } from "@/lib/poker/engine";
 import { ExperienceApiClient, bootstrapBrowserIdentity } from "./api-client";
@@ -564,7 +569,7 @@ describe("FixtureRuntime", () => {
     const values = new Map<string, string>();
     const openedUrls: string[] = [];
     let disconnected = false;
-    const environment = createFixtureTargetEnvironment(isolatedStackSnapshot());
+    const environment = createFixtureTargetEnvironment(await verifiedStackSnapshot());
     const runtime = new FixtureRuntime({
       targetEnvironment: environment,
       redisFactory(url) {
@@ -621,7 +626,7 @@ describe("FixtureRuntime", () => {
     });
   });
 
-  it("refuses targets that were not derived from the exact healthy Task 4 stack identity", () => {
+  it("refuses direct target casts and structurally valid forged Task 4 snapshots", () => {
     expect(() => new FixtureRuntime({
       targetEnvironment: {
         name: "deployed",
@@ -632,16 +637,27 @@ describe("FixtureRuntime", () => {
       } as FixtureTargetEnvironment
     })).toThrow(/verified isolated stack/i);
 
-    expect(() => createFixtureTargetEnvironment({
-      ...isolatedStackSnapshot(),
-      projectName: "texas-holdem"
-    })).toThrow(/exact isolated stack identity/i);
+    expect(() => createFixtureTargetEnvironment(isolatedStackSnapshot())).toThrow(
+      /not issued by a verified Docker site test stack lifecycle/i
+    );
+  });
+
+  it("accepts a snapshot issued after the injected Task 4 lifecycle verifies the stack", async () => {
+    const environment = createFixtureTargetEnvironment(await verifiedStackSnapshot());
+
+    expect(environment).toEqual({
+      name: "holdem-site-r5",
+      kind: "isolated",
+      runId: "r5",
+      baseUrl: "http://127.0.0.1:43100",
+      redisUrl: "redis://127.0.0.1:43101/0"
+    });
   });
 });
 
 describe("run resource projection", () => {
-  it("records exact non-secret room ownership facts and omits all credentials and Redis connection data", () => {
-    const environment = createFixtureTargetEnvironment(isolatedStackSnapshot());
+  it("records exact non-secret room ownership facts and omits all credentials and Redis connection data", async () => {
+    const environment = createFixtureTargetEnvironment(await verifiedStackSnapshot());
     const players: JoinedPlayerIdentity[] = [
       {
         role: "button",
@@ -756,4 +772,52 @@ function isolatedStackSnapshot(): DockerSiteTestStackSnapshot {
     ports: { app: 43_100, postgres: 43_102, redis: 43_101 },
     services
   };
+}
+
+async function verifiedStackSnapshot(): Promise<DockerSiteTestStackSnapshot> {
+  const snapshot = isolatedStackSnapshot();
+  const containers: DockerContainerInspect[] = snapshot.services.map((service) => ({
+    Id: service.containerId,
+    Image: service.service === "app" ? snapshot.imageId : service.imageId,
+    Config: {
+      Labels: {
+        "com.docker.compose.project": snapshot.projectName,
+        "com.docker.compose.service": service.service,
+        "com.texas-holdem.site-test-run": snapshot.runId
+      }
+    },
+    State: {
+      Status: service.status,
+      Health: { Status: service.health }
+    }
+  }));
+  const run: DockerProcessRunner = async (_command, args) => {
+    if (args[0] === "image" && args[1] === "inspect") {
+      return { exitCode: 0, stdout: `${snapshot.imageId}\n`, stderr: "" };
+    }
+    if (args.includes("up")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (args.includes("ps")) {
+      return {
+        exitCode: 0,
+        stdout: `${snapshot.services.map(({ containerId }) => containerId).join("\n")}\n`,
+        stderr: ""
+      };
+    }
+    if (args[0] === "inspect") {
+      return { exitCode: 0, stdout: JSON.stringify(containers), stderr: "" };
+    }
+    throw new Error(`Unexpected injected Docker command: ${args.join(" ")}`);
+  };
+  const stack = new DockerSiteTestStack({
+    runId: snapshot.runId,
+    rootDirectory: process.cwd(),
+    ports: snapshot.ports,
+    postgresPassword: "fixture-password",
+    image: snapshot.image,
+    run
+  });
+
+  return stack.start();
 }

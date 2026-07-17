@@ -10,8 +10,10 @@ import {
 } from "../../scripts/site-test/contracts";
 import {
   DockerSiteTestStack,
+  assertVerifiedDockerSiteTestStackSnapshot,
   type DockerContainerInspect,
-  type DockerProcessRunner
+  type DockerProcessRunner,
+  type DockerSiteTestStackSnapshot
 } from "../../scripts/site-test/docker-stack";
 import { reserveLoopbackPorts } from "../../scripts/site-test/ports";
 import {
@@ -236,6 +238,38 @@ describe("safe process runner", () => {
 });
 
 describe("isolated Docker site test stack", () => {
+  test("rejects a structurally valid snapshot that was not issued by the verified lifecycle", () => {
+    expect(() => assertVerifiedDockerSiteTestStackSnapshot(structurallyValidSnapshot())).toThrow(
+      /not issued by a verified Docker site test stack lifecycle/i
+    );
+  });
+
+  test("accepts a snapshot only after the injected lifecycle completes verification", async () => {
+    const fixture = createDockerFixture();
+    const snapshot = await createStack(fixture.run).start();
+
+    expect(() => assertVerifiedDockerSiteTestStackSnapshot(snapshot)).not.toThrow();
+  });
+
+  test("prevents verified snapshot values from being mutated after lifecycle registration", async () => {
+    const fixture = createDockerFixture();
+    const snapshot = await createStack(fixture.run).start();
+
+    expect(() => {
+      snapshot.ports.redis = 65_000;
+    }).toThrow();
+    expect(() => {
+      snapshot.services[0].imageId = "sha256:forged-image";
+    }).toThrow();
+    expect(() => {
+      snapshot.services.push({ ...snapshot.services[0] });
+    }).toThrow();
+    expect(snapshot.ports.redis).toBe(46_379);
+    expect(snapshot.services[0].imageId).toBe(imageId);
+    expect(snapshot.services).toHaveLength(3);
+    expect(() => assertVerifiedDockerSiteTestStackSnapshot(snapshot)).not.toThrow();
+  });
+
   test("uses exact argument arrays, waits for health, and records the immutable app image", async () => {
     const fixture = createDockerFixture();
     const stack = createStack(fixture.run);
@@ -384,6 +418,28 @@ function createStack(run: DockerProcessRunner): DockerSiteTestStack {
     postgresPassword: "fixture-password",
     run
   });
+}
+
+function structurallyValidSnapshot(): DockerSiteTestStackSnapshot {
+  return {
+    runId: "run-01",
+    projectName: "holdem-site-run-01",
+    image: imageName,
+    imageId,
+    ports: { app: 43100, postgres: 45432, redis: 46379 },
+    services: healthyContainers().map((container) => ({
+      service: container.Config.Labels?.["com.docker.compose.service"] as
+        | "app"
+        | "postgres"
+        | "redis",
+      containerId: container.Id,
+      projectName: container.Config.Labels?.["com.docker.compose.project"] ?? "",
+      runLabel: container.Config.Labels?.["com.texas-holdem.site-test-run"] ?? "",
+      status: container.State.Status,
+      health: container.State.Health?.Status ?? "missing",
+      imageId: container.Image
+    }))
+  };
 }
 
 interface DockerFixtureOptions {
