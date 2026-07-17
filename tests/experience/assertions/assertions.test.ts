@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EXPERIENCE_THRESHOLDS } from "../evidence/contracts";
 import {
-  areViewsSynchronized,
+  assessViewSynchronization,
   assertSynchronizedViews,
   findEarliestDivergentProjection,
   type ViewProjection
@@ -34,7 +34,10 @@ import {
   isSessionNetCorrect
 } from "./accounting";
 import { assertPrivateCardsAuthorized, classifyPrivateCardVisibility } from "./privacy";
-import { ProductAssertionError } from "../support/experience-test";
+import {
+  HarnessInconclusiveError,
+  ProductAssertionError
+} from "../support/experience-test";
 
 const synchronized: ViewProjection = {
   phase: "betting",
@@ -48,13 +51,26 @@ const synchronized: ViewProjection = {
 
 describe("mechanical experience assertions", () => {
   it("compares synchronized view fields and reports the earliest divergent checkpoint", () => {
-    expect(areViewsSynchronized([synchronized, { ...synchronized }])).toBe(true);
-    expect(areViewsSynchronized([synchronized, { ...synchronized, pot: 200 }])).toBe(false);
+    const expectedActors = ["host", "player"];
+    expect(assessViewSynchronization([{
+      monotonicMs: 10,
+      projections: [
+        { actor: "host", projection: synchronized },
+        { actor: "player", projection: { ...synchronized } }
+      ]
+    }], expectedActors)).toEqual({ status: "synchronized" });
+    expect(assessViewSynchronization([{
+      monotonicMs: 10,
+      projections: [
+        { actor: "host", projection: synchronized },
+        { actor: "player", projection: { ...synchronized, pot: 200 } }
+      ]
+    }], expectedActors)).toMatchObject({ status: "divergent" });
 
     expect(findEarliestDivergentProjection([
-      { monotonicMs: 30, projections: { host: synchronized, player: { ...synchronized, pot: 200 } } },
-      { monotonicMs: 10, projections: { host: synchronized, player: { ...synchronized } } },
-      { monotonicMs: 20, projections: { host: synchronized, player: { ...synchronized, actor: "p3" } } }
+      { monotonicMs: 30, projections: actorProjections(synchronized, { ...synchronized, pot: 200 }) },
+      { monotonicMs: 10, projections: actorProjections(synchronized, { ...synchronized }) },
+      { monotonicMs: 20, projections: actorProjections(synchronized, { ...synchronized, actor: "p3" }) }
     ])).toEqual({
       monotonicMs: 20,
       baselineActor: "host",
@@ -63,6 +79,44 @@ describe("mechanical experience assertions", () => {
       baseline: synchronized,
       divergent: { ...synchronized, actor: "p3" }
     });
+  });
+
+  it("classifies missing and duplicate actor projections as harness-inconclusive", () => {
+    const context = {
+      assertionId: "EXP-003-A03",
+      caseId: "EXP-003",
+      attemptId: "A-001",
+      actor: "host",
+      artifactIds: ["TRACE-1"]
+    };
+    const expectedActors = ["host", "player"];
+    const missing = [{
+      monotonicMs: 10,
+      projections: [{ actor: "host", projection: synchronized }]
+    }];
+    const duplicate = [{
+      monotonicMs: 20,
+      projections: [
+        { actor: "host", projection: synchronized },
+        { actor: "host", projection: { ...synchronized } },
+        { actor: "player", projection: synchronized }
+      ]
+    }];
+
+    expect(assessViewSynchronization([], expectedActors)).toMatchObject({
+      status: "inconclusive",
+      evidenceIssue: { missingActors: ["host", "player"] }
+    });
+    expect(assessViewSynchronization(missing, expectedActors)).toMatchObject({
+      status: "inconclusive",
+      evidenceIssue: { monotonicMs: 10, missingActors: ["player"], duplicateActors: [] }
+    });
+    expect(assessViewSynchronization(duplicate, expectedActors)).toMatchObject({
+      status: "inconclusive",
+      evidenceIssue: { monotonicMs: 20, missingActors: [], duplicateActors: ["host"] }
+    });
+    expect(() => assertSynchronizedViews(missing, expectedActors, context))
+      .toThrow(HarnessInconclusiveError);
   });
 
   it("treats the 800ms, 1000ms, and 3000ms limits as inclusive boundaries", () => {
@@ -102,7 +156,10 @@ describe("mechanical experience assertions", () => {
       artifactIds: ["SHOT-MOBILE"]
     };
     const failures = [
-      () => assertSynchronizedViews([{ monotonicMs: 10, projections: { host: synchronized, player: { ...synchronized, pot: 181 } } }], context),
+      () => assertSynchronizedViews([{
+        monotonicMs: 10,
+        projections: actorProjections(synchronized, { ...synchronized, pot: 181 })
+      }], ["host", "player"], context),
       () => assertLocalFeedback(801, context),
       () => assertDeadStateDuration(3_001, context),
       () => assertTimedPhaseDuration(2_401, 2_000, context),
@@ -116,7 +173,15 @@ describe("mechanical experience assertions", () => {
       () => assertChipConservation({ startingChips: [100], appliedTopUps: [], endingChips: [99] }, context),
       () => assertHandNetBalanced([10, -9], context),
       () => assertSessionNetAccounting({ initialChips: 100, appliedTopUpChips: 50, finalChips: 175, netChips: 75 }, context),
-      () => assertPrivateCardsAuthorized({ visible: true, viewerRole: "spectator", ownerParticipantId: "p1" }, context)
+      () => assertPrivateCardsAuthorized({
+        visible: true,
+        viewerRole: "spectator",
+        ownerParticipantId: "p1",
+        showdown: false,
+        ownerFolded: false,
+        futureCard: false,
+        documentedRevealAuthority: false
+      }, context)
     ];
 
     for (const failure of failures) {
@@ -165,30 +230,49 @@ describe("mechanical experience assertions", () => {
     expect(classifyPrivateCardVisibility({
       visible: false,
       viewerRole: "spectator",
-      ownerParticipantId: "p1"
+      ownerParticipantId: "p1",
+      showdown: false,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: false
     })).toBe("hidden");
     expect(classifyPrivateCardVisibility({
       visible: true,
       viewerRole: "spectator",
-      ownerParticipantId: "p1"
+      ownerParticipantId: "p1",
+      showdown: false,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: false
     })).toBe("leak");
     expect(classifyPrivateCardVisibility({
       visible: true,
       viewerRole: "spectator",
       viewerParticipantId: "p1",
-      ownerParticipantId: "p1"
+      ownerParticipantId: "p1",
+      showdown: false,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: false
     })).toBe("leak");
     expect(classifyPrivateCardVisibility({
       visible: true,
       viewerRole: "spectator",
       ownerParticipantId: "p1",
-      showdown: true
-    })).toBe("authorized");
+      showdown: true,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: false
+    })).toBe("leak");
     expect(classifyPrivateCardVisibility({
       visible: true,
       viewerRole: "player",
       viewerParticipantId: "p1",
-      ownerParticipantId: "p1"
+      ownerParticipantId: "p1",
+      showdown: false,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: false
     })).toBe("authorized");
     expect(classifyPrivateCardVisibility({
       visible: true,
@@ -196,16 +280,56 @@ describe("mechanical experience assertions", () => {
       viewerParticipantId: "p2",
       ownerParticipantId: "p1",
       showdown: true,
+      ownerFolded: true,
+      futureCard: false,
+      documentedRevealAuthority: true
+    })).toBe("leak");
+    expect(classifyPrivateCardVisibility({
+      visible: true,
+      viewerRole: "player",
+      viewerParticipantId: "p2",
+      ownerParticipantId: "p1",
+      showdown: true,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: true
+    })).toBe("authorized");
+  });
+
+  it("requires documented, explicitly non-folded, non-future authority for public reveals", () => {
+    const documentedReveal = {
+      visible: true,
+      viewerRole: "spectator" as const,
+      ownerParticipantId: "p1",
+      showdown: true,
+      ownerFolded: false,
+      futureCard: false,
+      documentedRevealAuthority: true
+    };
+
+    expect(classifyPrivateCardVisibility(documentedReveal)).toBe("authorized");
+    expect(classifyPrivateCardVisibility({
+      ...documentedReveal,
+      documentedRevealAuthority: false
+    })).toBe("leak");
+    expect(classifyPrivateCardVisibility({
+      ...documentedReveal,
       ownerFolded: true
     })).toBe("leak");
     expect(classifyPrivateCardVisibility({
-      visible: true,
+      ...documentedReveal,
+      ownerFolded: undefined
+    } as unknown as Parameters<typeof classifyPrivateCardVisibility>[0])).toBe("leak");
+    expect(classifyPrivateCardVisibility({
+      ...documentedReveal,
+      futureCard: true
+    })).toBe("leak");
+    expect(classifyPrivateCardVisibility({
+      ...documentedReveal,
       viewerRole: "player",
-      viewerParticipantId: "p2",
-      ownerParticipantId: "p1",
-      showdown: true,
-      ruleRevealed: true
-    })).toBe("authorized");
+      viewerParticipantId: "p1",
+      futureCard: true
+    })).toBe("leak");
   });
 });
 
@@ -219,4 +343,11 @@ function hitTestResult(point: { x: number; y: number }, targetOrDescendantHit: b
     targetElement,
     elementFromPoint: hitElement
   };
+}
+
+function actorProjections(host: ViewProjection, player: ViewProjection) {
+  return [
+    { actor: "host", projection: host },
+    { actor: "player", projection: player }
+  ];
 }

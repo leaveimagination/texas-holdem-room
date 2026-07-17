@@ -71,6 +71,7 @@ describe("ActionControls", () => {
     expect(html).toContain("4 BB");
     expect(html).toContain("Add chips");
     expect(html).toContain("top-up-popover");
+    expect(html).toContain('data-control-panel="top-up"');
     expect(html).not.toContain("rebuy-modal");
   });
 
@@ -214,6 +215,7 @@ describe("ActionControls", () => {
     }));
 
     expect(active).toContain(">End room<");
+    expect(active).toContain('data-control-panel="host"');
     expect(ending).toContain("Ending after this hand");
     expect(ending).toMatch(/<button[^>]*disabled=""[^>]*>Ending after this hand<\/button>/);
   });

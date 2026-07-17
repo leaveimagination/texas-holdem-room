@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { redactForEvidence } from "../evidence/redaction";
 
 export interface SafeWebSocketProjection {
   type: string;
@@ -101,19 +102,21 @@ export async function installBrowserTelemetry(
 
   page.on("console", (message) => {
     if (message.type() === "error") {
-      emitNodeEvent("console-error", { message: message.text() });
+      emitNodeEvent("console-error", { message: sanitizeDiagnosticString(message.text()) });
     }
   });
-  page.on("pageerror", (error) => emitNodeEvent("page-error", { message: error.message }));
+  page.on("pageerror", (error) => emitNodeEvent("page-error", {
+    message: sanitizeDiagnosticString(error.message)
+  }));
   page.on("requestfailed", (request) => emitNodeEvent("request-failure", {
     method: request.method(),
     url: safeUrl(request.url()),
-    failure: request.failure()?.errorText ?? "unknown"
+    failure: sanitizeDiagnosticString(request.failure()?.errorText ?? "unknown")
   }));
 
   return {
     async captureDomCheckpoint(checkpoint: string): Promise<TelemetryEvent> {
-      const details = await page.evaluate(() => {
+      const details = await page.evaluate((serializedCheckpoint) => {
         const table = document.querySelector<HTMLElement>('[aria-label="Table"]');
         const seats = Array.from(document.querySelectorAll<HTMLElement>("[data-seat-number]")).map((seat) => ({
           seatNumber: numberFromDataset(seat.dataset.seatNumber),
@@ -126,7 +129,7 @@ export async function installBrowserTelemetry(
           .filter((action): action is string => action !== null);
         const pendingTopUp = document.querySelector<HTMLElement>("[data-pending-top-up]")?.dataset.pendingTopUp;
         return {
-          checkpoint,
+          checkpoint: serializedCheckpoint,
           phase: table?.dataset.flowPhase ?? null,
           sequence: numberFromDataset(table?.dataset.flowSequence),
           handNumber: numberFromDataset(table?.dataset.handNumber),
@@ -143,7 +146,7 @@ export async function installBrowserTelemetry(
           const parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : null;
         }
-      });
+      }, checkpoint);
       const event: TelemetryEvent = {
         kind: "dom-checkpoint",
         wallTime: new Date().toISOString(),
@@ -355,4 +358,20 @@ function sanitizeBrowserTelemetryEvent(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sanitizeDiagnosticString(value: string): string {
+  const structurallyRedacted = redactForEvidence(value);
+  const diagnostic = typeof structurallyRedacted === "string"
+    ? structurallyRedacted
+    : JSON.stringify(structurallyRedacted);
+  return diagnostic
+    .replace(
+      /((?:["']?(?:hole|private)[ _-]?cards?["']?)\s*[:=]\s*)(?:\[[^\]\r\n]*\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\r\n]+)/gi,
+      "$1[PRIVATE CARDS REDACTED]"
+    )
+    .replace(
+      /((?:["']?(?:hostToken|participantToken|token|secret|password|passwd|authorization|api[ _-]?key|cookie|credential)["']?)\s*[:=]\s*)(?:Bearer\s+)?(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\r\n]+)/gi,
+      "$1[REDACTED]"
+    );
 }

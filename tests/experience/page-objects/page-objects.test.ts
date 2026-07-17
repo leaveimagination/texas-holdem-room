@@ -72,6 +72,11 @@ describe("experience page objects", () => {
     await room.requestRoomEnd();
     await room.waitForPhase("betting", { sequence: 7 });
 
+    expect(page.locator).toHaveBeenCalledWith('[data-control-panel="host"]');
+    expect(page.locator).toHaveBeenCalledWith('[data-control-panel="top-up"]');
+    expect(page.locator).not.toHaveBeenCalledWith("details.host-popover");
+    expect(page.locator).not.toHaveBeenCalledWith("details.top-up-popover");
+
     expect(calls).toEqual([
       "fill:textbox:Nickname:Alice",
       "click:button:Join",

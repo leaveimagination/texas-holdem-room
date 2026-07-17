@@ -260,7 +260,7 @@ export function ActionControls({
 
       {hostControls ? (
         <div className="table-tools" aria-label="Table tools">
-          <details className="host-popover">
+          <details className="host-popover" data-control-panel="host">
             <summary>Host tools</summary>
             <div className="popover-body host-controls is-anchored-host-controls" aria-label="Host controls">
               <button type="button" onClick={onStartRoom} disabled={!connected || !canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
@@ -287,7 +287,7 @@ export function ActionControls({
 
       {showTopUp ? (
         <div className="top-up-utility" aria-label="Add chips controls" data-pending-top-up={pendingTopUp}>
-          <details className="top-up-popover">
+          <details className="top-up-popover" data-control-panel="top-up">
             <summary>
               <span>Add chips</span>
               {pendingTopUp > 0 ? <strong>Pending +{pendingTopUp}</strong> : null}

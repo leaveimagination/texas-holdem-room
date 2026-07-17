@@ -14,6 +14,32 @@ export type MechanicalAssertionContext = Pick<
   "assertionId" | "caseId" | "attemptId" | "actor" | "artifactIds"
 >;
 
+export interface HarnessInconclusiveContext extends MechanicalAssertionContext {
+  reason: string;
+  details: unknown;
+}
+
+export class HarnessInconclusiveError extends Error {
+  readonly context: HarnessInconclusiveContext;
+
+  constructor(context: HarnessInconclusiveContext) {
+    super([
+      `Harness assertion ${context.assertionId} is inconclusive`,
+      `case=${context.caseId}`,
+      `attempt=${context.attemptId}`,
+      `actor=${context.actor}`,
+      `reason=${context.reason}`,
+      `details=${serializeDiagnostic(context.details)}`,
+      `artifacts=${context.artifactIds.join(",") || "none"}`
+    ].join("; "));
+    this.name = "HarnessInconclusiveError";
+    this.context = Object.freeze({
+      ...context,
+      artifactIds: Object.freeze([...context.artifactIds])
+    });
+  }
+}
+
 export class ProductAssertionError extends Error {
   readonly context: ProductAssertionContext;
 

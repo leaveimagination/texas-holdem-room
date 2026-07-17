@@ -5,17 +5,25 @@ import {
 
 export type PrivateCardVisibility = "authorized" | "hidden" | "leak";
 
-export function classifyPrivateCardVisibility(input: {
+export interface PrivateCardVisibilityInput {
   visible: boolean;
   viewerRole: "host" | "player" | "spectator";
   viewerParticipantId?: string | null;
   ownerParticipantId: string;
-  showdown?: boolean;
-  ownerFolded?: boolean;
-  ruleRevealed?: boolean;
-}): PrivateCardVisibility {
+  showdown: boolean;
+  ownerFolded: boolean;
+  futureCard: boolean;
+  documentedRevealAuthority: boolean;
+}
+
+export function classifyPrivateCardVisibility(
+  input: PrivateCardVisibilityInput
+): PrivateCardVisibility {
   if (!input.visible) {
     return "hidden";
+  }
+  if (input.futureCard !== false) {
+    return "leak";
   }
   if (
     input.viewerRole !== "spectator" &&
@@ -23,7 +31,9 @@ export function classifyPrivateCardVisibility(input: {
   ) {
     return "authorized";
   }
-  return input.showdown && (!input.ownerFolded || input.ruleRevealed)
+  return input.showdown === true &&
+      input.ownerFolded === false &&
+      input.documentedRevealAuthority === true
     ? "authorized"
     : "leak";
 }

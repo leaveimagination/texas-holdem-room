@@ -38,7 +38,7 @@ export class RoomPage {
   }
 
   async openHostControls(): Promise<void> {
-    const popover = this.page.locator("details.host-popover");
+    const popover = this.page.locator('[data-control-panel="host"]');
     if (await popover.getAttribute("open") === null) {
       await this.page.getByText("Host tools", { exact: true }).click();
     }
@@ -56,7 +56,7 @@ export class RoomPage {
   }
 
   async queueTopUp(amount: number): Promise<void> {
-    const popover = this.page.locator("details.top-up-popover");
+    const popover = this.page.locator('[data-control-panel="top-up"]');
     if (await popover.getAttribute("open") === null) {
       await this.page.getByText("Add chips", { exact: true }).click();
     }
