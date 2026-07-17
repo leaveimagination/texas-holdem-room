@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,10 @@ import {
   type CaseReport,
   type EvidenceEvent
 } from "./contracts";
-import { writeExperienceReport } from "./report-writer";
+import * as reportWriter from "./report-writer";
+import { validateEvidencePack } from "./validator";
+
+const { writeExperienceReport } = reportWriter;
 
 const roots: string[] = [];
 const STARTED_AT = "2026-07-17T01:00:00.000Z";
@@ -110,7 +113,159 @@ function caseReport(
   };
 }
 
+function inconclusiveCaseReport(caseId: string): CaseReport {
+  const report = caseReport(caseId, "A-001", "pass");
+  return {
+    ...report,
+    verdict: "INCONCLUSIVE",
+    results: {
+      ...report.results,
+      product: {
+        status: "inconclusive",
+        summary: "Product evidence was incomplete.",
+        evidenceEventIds: []
+      }
+    },
+    assertions: report.assertions.map((assertion) => ({
+      ...assertion,
+      outcome: "inconclusive",
+      summary: "The assertion could not be judged."
+    }))
+  };
+}
+
+function runResults(
+  productStatus: "pass" | "inconclusive" = "pass"
+): CaseReport["results"] {
+  return {
+    product: {
+      status: productStatus,
+      summary:
+        productStatus === "pass"
+          ? "Run-level product checks passed."
+          : "Run-level product evidence was incomplete.",
+      evidenceEventIds: []
+    },
+    harness: {
+      status: "pass",
+      summary: "Run-level harness checks passed.",
+      evidenceEventIds: []
+    },
+    environment: {
+      status: "pass",
+      summary: "Run-level environment checks passed.",
+      evidenceEventIds: []
+    }
+  };
+}
+
+async function writeSingleCaseRunPack(
+  outputRoot: string,
+  caseId = "EXP-001"
+): Promise<void> {
+  await writeExperienceReport({
+    outputRoot,
+    runId: "RUN-001",
+    startedAt: STARTED_AT,
+    finishedAt: FINISHED_AT,
+    cases: [caseReport(caseId, "A-001", "pass")],
+    events: [event(caseId, "A-001", 1)],
+    resources: [],
+    artifacts: [],
+    runResults: runResults()
+  });
+}
+
 describe("writeExperienceReport", () => {
+  it("classifies artifact paths independently of the host path flavor", () => {
+    const isRunRelativeArtifactPath = (
+      reportWriter as unknown as {
+        isRunRelativeArtifactPath?: (path: string) => boolean;
+      }
+    ).isRunRelativeArtifactPath;
+
+    expect(isRunRelativeArtifactPath).toBeTypeOf("function");
+    for (const path of [
+      "/outside.png",
+      "\\outside.png",
+      "C:\\outside.png",
+      "\\\\server\\share\\outside.png",
+      "//server/share/outside.png",
+      "file:///outside.png",
+      "screenshots/../../outside.png"
+    ]) {
+      expect(isRunRelativeArtifactPath?.(path), path).toBe(false);
+    }
+    for (const path of [
+      "screenshots/failure.png",
+      "screenshots\\failure.png",
+      "..foo.png"
+    ]) {
+      expect(isRunRelativeArtifactPath?.(path), path).toBe(true);
+    }
+  });
+
+  it("writes a strict root run pack accepted by evidence validation", async () => {
+    const outputRoot = await temporaryRoot();
+    await writeSingleCaseRunPack(outputRoot);
+
+    await expect(validateEvidencePack(outputRoot, [])).resolves.toMatchObject({
+      artifactCount: 0
+    });
+  });
+
+  it("rejects a root manifest owned by a different run", async () => {
+    const outputRoot = await temporaryRoot();
+    await writeSingleCaseRunPack(outputRoot);
+    const manifestPath = join(outputRoot, "case-manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, runId: "RUN-OTHER" })
+    );
+
+    await expect(validateEvidencePack(outputRoot, [])).rejects.toThrow(
+      /manifest run RUN-OTHER does not match report run RUN-001/i
+    );
+  });
+
+  it("rejects a run report case absent from the root manifest catalog", async () => {
+    const outputRoot = await temporaryRoot();
+    await writeSingleCaseRunPack(outputRoot, "EXP-999");
+
+    await expect(validateEvidencePack(outputRoot, [])).rejects.toThrow(
+      /report case EXP-999 is absent from root manifest/i
+    );
+  });
+
+  it.each(["run-level", "case-level"] as const)(
+    "preserves %s product uncertainty alongside a proven product failure",
+    async (uncertaintySource) => {
+      const outputRoot = await temporaryRoot();
+      const cases = [caseReport("EXP-001", "A-001", "fail")];
+      if (uncertaintySource === "case-level") {
+        cases.push(inconclusiveCaseReport("EXP-002"));
+      }
+
+      const report = await writeExperienceReport({
+        outputRoot,
+        runId: "RUN-001",
+        startedAt: STARTED_AT,
+        finishedAt: FINISHED_AT,
+        cases,
+        events: [],
+        resources: [],
+        artifacts: [],
+        runResults: runResults(
+          uncertaintySource === "run-level" ? "inconclusive" : "pass"
+        )
+      });
+
+      expect(report.results.product.status).toBe("inconclusive");
+      expect(report.verdict).toBe("INCONCLUSIVE");
+    }
+  );
+
   it("writes the catalog, sorted events, validated JSON report, and escaped HTML", async () => {
     const outputRoot = await temporaryRoot();
     const artifact: ArtifactRecord = {
@@ -131,7 +286,7 @@ describe("writeExperienceReport", () => {
     };
     const events = [
       event("EXP-002", "A-001", 2, "fail"),
-      event("EXP-002", "A-001", 1),
+      event("EXP-002", "A-001", 1, "fail"),
       event("EXP-001", "A-001", 2),
       event("EXP-001", "A-001", 1)
     ];
@@ -201,8 +356,11 @@ describe("writeExperienceReport", () => {
     expect(html).toContain("harness");
     expect(html).toContain("environment");
     expect(html).toContain("Earliest divergent event");
-    expect(html).toContain("EXP-002-A-001-E-000002");
-    expect(html).toContain("&lt;script&gt;settlement&lt;/script&gt;");
+    expect(html).toContain("EXP-002-A-001-E-000001");
+    expect(html).toContain("room-ready");
+    expect(html).toContain(
+      "Product rendered &lt;script&gt;too early&lt;/script&gt;."
+    );
     expect(html).toContain("Failure &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain('href="screenshots/EXP-002%20failure.png"');
@@ -210,11 +368,19 @@ describe("writeExperienceReport", () => {
     expect(html).not.toContain(outputRoot);
   });
 
-  it("rejects artifact paths that escape the run directory", async () => {
+  it.each([
+    ["POSIX root", "/outside.png"],
+    ["Windows rooted path", "\\outside.png"],
+    ["Windows drive root", "C:\\outside.png"],
+    ["UNC root", "\\\\server\\share\\outside.png"],
+    ["forward-slash network root", "//server/share/outside.png"],
+    ["URI", "file:///outside.png"],
+    ["traversal", "screenshots/../../outside.png"]
+  ])("rejects a %s artifact path", async (_kind, artifactPath) => {
     const outputRoot = await temporaryRoot();
     const artifact: ArtifactRecord = {
       id: "ART-FAILURE",
-      path: "../outside.png",
+      path: artifactPath,
       description: "Unsafe artifact",
       required: true
     };
@@ -229,23 +395,7 @@ describe("writeExperienceReport", () => {
         events: [event("EXP-002", "A-001", 2, "fail")],
         resources: [],
         artifacts: [],
-        runResults: {
-          product: {
-            status: "pass",
-            summary: "Run-level product checks passed.",
-            evidenceEventIds: []
-          },
-          harness: {
-            status: "pass",
-            summary: "Run-level harness checks passed.",
-            evidenceEventIds: []
-          },
-          environment: {
-            status: "pass",
-            summary: "Run-level environment checks passed.",
-            evidenceEventIds: []
-          }
-        }
+        runResults: runResults()
       })
     ).rejects.toThrow(/artifact path must be relative to the run directory/i);
   });

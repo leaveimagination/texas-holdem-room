@@ -8,6 +8,7 @@ import {
   EvidenceEventSchema,
   EXPERIENCE_THRESHOLDS
 } from "./contracts";
+import * as EvidenceContracts from "./contracts";
 import { redactForEvidence } from "./redaction";
 import { EvidenceRecorder } from "./recorder";
 import { validateEvidencePack } from "./validator";
@@ -109,6 +110,42 @@ async function writePack(
 }
 
 describe("evidence contracts", () => {
+  it("defines a strict root run manifest contract composed from case manifests", async () => {
+    const root = await temporaryRoot();
+    await writePack(root);
+    const manifest = JSON.parse(
+      await readFile(join(root, "case-manifest.json"), "utf8")
+    );
+    const runManifest = {
+      schemaVersion: "1.0",
+      runId: "RUN-001",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      finishedAt: "2026-07-17T00:00:01.000Z",
+      thresholds: EXPERIENCE_THRESHOLDS,
+      cases: [manifest]
+    };
+    const schema = (
+      EvidenceContracts as unknown as {
+        ExperienceRunManifestSchema?: {
+          parse(value: unknown): unknown;
+        };
+      }
+    ).ExperienceRunManifestSchema;
+
+    expect(schema).toBeTypeOf("object");
+    expect(schema?.parse(runManifest)).toEqual(runManifest);
+    expect(() => schema?.parse({ ...runManifest, unexpected: true })).toThrow();
+    expect(() =>
+      schema?.parse({
+        ...runManifest,
+        cases: [{ ...manifest, unexpected: true }]
+      })
+    ).toThrow();
+    expect(() =>
+      schema?.parse({ ...runManifest, cases: [manifest, manifest] })
+    ).toThrow(/duplicate experience case id.*EXP-001/i);
+  });
+
   it.each([
     "runId",
     "caseId",
@@ -480,6 +517,95 @@ describe("validateEvidencePack", () => {
     await expect(validateEvidencePack(root, [])).rejects.toThrow(
       /event sequence.*strictly increasing/i
     );
+  });
+
+  it("accepts sequence and monotonic resets for each case and attempt group", async () => {
+    const root = await temporaryRoot();
+    await writePack(root);
+    const manifestPath = join(root, "case-manifest.json");
+    const reportPath = join(root, "report.json");
+    const eventsPath = join(root, "events.json");
+    const firstManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const secondManifest = {
+      ...firstManifest,
+      caseId: "EXP-002",
+      assertions: [
+        { id: "A-002", description: "The second case is visible." }
+      ]
+    };
+    const firstCaseReport = JSON.parse(await readFile(reportPath, "utf8"));
+    const nestedCase = (
+      caseId: string,
+      attemptId: string,
+      assertionId: string,
+      eventId: string
+    ) => ({
+      ...firstCaseReport,
+      caseId,
+      attemptId,
+      assertions: [
+        {
+          ...firstCaseReport.assertions[0],
+          id: assertionId,
+          evidenceEventIds: [eventId]
+        }
+      ]
+    });
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: "1.0",
+        runId: "RUN-001",
+        startedAt: "2026-07-17T00:00:00.000Z",
+        finishedAt: "2026-07-17T00:00:01.000Z",
+        thresholds: EXPERIENCE_THRESHOLDS,
+        cases: [firstManifest, secondManifest]
+      })
+    );
+    await writeFile(
+      eventsPath,
+      JSON.stringify([
+        event,
+        {
+          ...event,
+          id: "E-002",
+          attemptId: "A-002",
+          seq: 1,
+          monotonicMs: 5
+        },
+        {
+          ...event,
+          id: "E-003",
+          caseId: "EXP-002",
+          seq: 1,
+          monotonicMs: 1
+        }
+      ])
+    );
+    await writeFile(
+      reportPath,
+      JSON.stringify({
+        schemaVersion: "1.0",
+        runId: "RUN-001",
+        startedAt: "2026-07-17T00:00:00.000Z",
+        finishedAt: "2026-07-17T00:00:01.000Z",
+        verdict: "PASS",
+        results: passingPlanes,
+        thresholds: EXPERIENCE_THRESHOLDS,
+        cases: [
+          nestedCase("EXP-001", "A-001", "A-001", "E-001"),
+          nestedCase("EXP-001", "A-002", "A-001", "E-002"),
+          nestedCase("EXP-002", "A-001", "A-002", "E-003")
+        ],
+        resources: [],
+        artifacts: []
+      })
+    );
+
+    await expect(validateEvidencePack(root, [])).resolves.toMatchObject({
+      artifactCount: 0
+    });
   });
 
   it("rejects decreasing monotonic event timestamps", async () => {

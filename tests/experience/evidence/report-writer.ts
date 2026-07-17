@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 import { EXPERIENCE_CASES } from "../case-catalog";
 import {
@@ -8,6 +8,7 @@ import {
   CaseReportSchema,
   EXPERIENCE_THRESHOLDS,
   EvidenceEventSchema,
+  ExperienceRunManifestSchema,
   PlaneResultSchema,
   RunReportSchema,
   RunResourceRecordSchema,
@@ -80,10 +81,10 @@ function aggregatePlane(
       result: caseReport.results[plane]
     }))
   ];
-  const status = sources.some(({ result }) => result.status === "fail")
-    ? "fail"
-    : sources.some(({ result }) => result.status === "inconclusive")
-      ? "inconclusive"
+  const status = sources.some(({ result }) => result.status === "inconclusive")
+    ? "inconclusive"
+    : sources.some(({ result }) => result.status === "fail")
+      ? "fail"
       : "pass";
   const summaries = sources
     .filter(({ result }) => status === "pass" || result.status !== "pass")
@@ -99,6 +100,16 @@ function aggregatePlane(
   });
 }
 
+export function isRunRelativeArtifactPath(artifactPath: string): boolean {
+  const segments = artifactPath.split(/[\\/]+/);
+  return !(
+    posix.isAbsolute(artifactPath) ||
+    win32.isAbsolute(artifactPath) ||
+    /^[a-z][a-z\d+.-]*:/i.test(artifactPath) ||
+    segments.includes("..")
+  );
+}
+
 function assertRelativeArtifactPaths(report: RunReport): void {
   const artifacts = [
     ...report.artifacts,
@@ -106,12 +117,7 @@ function assertRelativeArtifactPaths(report: RunReport): void {
   ];
 
   for (const artifact of artifacts) {
-    const segments = artifact.path.split(/[\\/]+/);
-    if (
-      isAbsolute(artifact.path) ||
-      /^[a-z][a-z\d+.-]*:/i.test(artifact.path) ||
-      segments.includes("..")
-    ) {
+    if (!isRunRelativeArtifactPath(artifact.path)) {
       throw new Error(
         `Artifact path must be relative to the run directory: ${artifact.path}`
       );
@@ -159,11 +165,10 @@ function earliestDivergentEvent(
     ({ caseId, attemptId }) =>
       caseId === caseReport.caseId && attemptId === caseReport.attemptId
   );
-  return (
-    caseEvents.find(({ id }) => evidenceIds.has(id)) ??
-    caseEvents.find(
-      ({ status }) => !["ok", "pass", "passed", "success"].includes(status.toLowerCase())
-    )
+  return caseEvents.find(
+    ({ id, status }) =>
+      evidenceIds.has(id) ||
+      !["ok", "pass", "passed", "success"].includes(status.toLowerCase())
   );
 }
 
@@ -289,14 +294,14 @@ export async function writeExperienceReport(
   });
   assertRelativeArtifactPaths(report);
 
-  const rootManifest = {
+  const rootManifest = ExperienceRunManifestSchema.parse({
     schemaVersion: "1.0",
     runId: report.runId,
     startedAt: report.startedAt,
     finishedAt: report.finishedAt,
     thresholds: report.thresholds,
     cases: EXPERIENCE_CASES
-  };
+  });
 
   await mkdir(input.outputRoot, { recursive: true });
   await atomicWrite(join(input.outputRoot, "case-manifest.json"), json(rootManifest));

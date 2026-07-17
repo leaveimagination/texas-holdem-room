@@ -59,6 +59,34 @@ export type ExperienceCaseManifest = z.infer<
   typeof ExperienceCaseManifestSchema
 >;
 
+export const ExperienceRunManifestSchema = z
+  .object({
+    schemaVersion: NonEmptyString,
+    runId: NonEmptyString,
+    startedAt: IsoTimestamp,
+    finishedAt: IsoTimestamp,
+    thresholds: ExperienceThresholdsSchema,
+    cases: z.array(ExperienceCaseManifestSchema).min(1)
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    const seenCaseIds = new Set<string>();
+    manifest.cases.forEach(({ caseId }, index) => {
+      if (seenCaseIds.has(caseId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["cases", index, "caseId"],
+          message: `Duplicate experience case ID: ${caseId}`
+        });
+      }
+      seenCaseIds.add(caseId);
+    });
+  });
+
+export type ExperienceRunManifest = z.infer<
+  typeof ExperienceRunManifestSchema
+>;
+
 export const EvidenceEventSchema = z.object({
   id: NonEmptyString,
   runId: NonEmptyString,

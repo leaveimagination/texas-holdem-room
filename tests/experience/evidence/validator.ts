@@ -16,6 +16,7 @@ import {
   CaseReportSchema,
   EvidenceEventSchema,
   ExperienceCaseManifestSchema,
+  ExperienceRunManifestSchema,
   RunReportSchema,
   type ArtifactRecord,
   type CaseReport,
@@ -103,17 +104,25 @@ function isLikelyText(bytes: Uint8Array): boolean {
 }
 
 function assertMonotonicEvents(events: readonly EvidenceEvent[], source: string): void {
-  for (let index = 1; index < events.length; index += 1) {
-    if (events[index].seq <= events[index - 1].seq) {
+  const previousByContext = new Map<string, EvidenceEvent>();
+  for (const event of events) {
+    const context = JSON.stringify([
+      event.runId,
+      event.caseId,
+      event.attemptId
+    ]);
+    const previous = previousByContext.get(context);
+    if (previous && event.seq <= previous.seq) {
       throw new Error(
         `Event sequence must be strictly increasing in ${source}`
       );
     }
-    if (events[index].monotonicMs < events[index - 1].monotonicMs) {
+    if (previous && event.monotonicMs < previous.monotonicMs) {
       throw new Error(
         `Monotonic timestamp must be nondecreasing in ${source}`
       );
     }
+    previousByContext.set(context, event);
   }
 }
 
@@ -154,6 +163,29 @@ interface ParsedReport {
   }>;
   artifacts: ArtifactRecord[];
   eventReferences: ReportEventReference[];
+}
+
+interface ParsedManifest {
+  kind: "case" | "run";
+  runId?: string;
+  caseIds: string[];
+}
+
+function parseManifest(manifest: unknown): ParsedManifest {
+  const caseResult = ExperienceCaseManifestSchema.safeParse(manifest);
+  if (caseResult.success) {
+    return {
+      kind: "case",
+      caseIds: [caseResult.data.caseId]
+    };
+  }
+
+  const runManifest = ExperienceRunManifestSchema.parse(manifest);
+  return {
+    kind: "run",
+    runId: runManifest.runId,
+    caseIds: runManifest.cases.map(({ caseId }) => caseId)
+  };
 }
 
 function caseReportReferences(report: CaseReport): ReportEventReference[] {
@@ -237,7 +269,7 @@ export async function validateEvidencePack(
   const secrets = normalizeSecrets(knownSecrets);
   const artifacts: ArtifactRecord[] = [];
   const events: EvidenceEvent[] = [];
-  const manifestCaseIds: string[] = [];
+  let parsedManifest: ParsedManifest | undefined;
   const reports: ParsedReport[] = [];
   const reportEventReferences: ReportEventReference[] = [];
   let manifestCount = 0;
@@ -249,8 +281,7 @@ export async function validateEvidencePack(
     const name = basename(path).toLowerCase();
     if (name === "case-manifest.json") {
       manifestCount += 1;
-      const manifest = ExperienceCaseManifestSchema.parse(await parseJson(path));
-      manifestCaseIds.push(manifest.caseId);
+      parsedManifest = parseManifest(await parseJson(path));
     } else if (name === "events.json") {
       eventStreamCount += 1;
       const parsed = EvidenceEventSchema.array().min(1).parse(await parseJson(path));
@@ -285,21 +316,39 @@ export async function validateEvidencePack(
     }
   }
 
-  const manifestCaseId = manifestCaseIds[0];
+  const manifest = parsedManifest as ParsedManifest;
   const report = reports[0];
-  if (report.kind === "case" && report.cases[0].caseId !== manifestCaseId) {
-    throw new Error(
-      `Manifest case ${manifestCaseId} does not match report case ${report.cases[0].caseId}`
-    );
-  }
-  if (
-    report.kind === "run" &&
-    report.cases.length > 0 &&
-    !report.cases.some((caseContext) => caseContext.caseId === manifestCaseId)
-  ) {
-    throw new Error(
-      `Manifest case ${manifestCaseId} is absent from run report ${report.runId}`
-    );
+  if (manifest.kind === "case") {
+    const manifestCaseId = manifest.caseIds[0];
+    if (report.kind === "case" && report.cases[0].caseId !== manifestCaseId) {
+      throw new Error(
+        `Manifest case ${manifestCaseId} does not match report case ${report.cases[0].caseId}`
+      );
+    }
+    if (
+      report.kind === "run" &&
+      report.cases.length > 0 &&
+      !report.cases.some((caseContext) => caseContext.caseId === manifestCaseId)
+    ) {
+      throw new Error(
+        `Manifest case ${manifestCaseId} is absent from run report ${report.runId}`
+      );
+    }
+  } else {
+    if (report.kind !== "run") {
+      throw new Error("Root run manifest requires a run report");
+    }
+    if (manifest.runId !== report.runId) {
+      throw new Error(
+        `Manifest run ${manifest.runId} does not match report run ${report.runId}`
+      );
+    }
+    const manifestCaseIds = new Set(manifest.caseIds);
+    for (const { caseId } of report.cases) {
+      if (!manifestCaseIds.has(caseId)) {
+        throw new Error(`Report case ${caseId} is absent from root manifest`);
+      }
+    }
   }
   for (const event of events) {
     const matchesCase = report.cases.some(
