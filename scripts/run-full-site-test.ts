@@ -802,11 +802,45 @@ async function runFullSiteTestWithinDeadline(
       progress.report = report;
       throwIfDeadline(signal);
     } catch (error) {
+      const summary = `Cleanup status persistence failed: ${errorMessage(error)}`;
       markHarnessInconclusive(
         runResults,
         diagnostics,
-        `Cleanup status persistence failed: ${errorMessage(error)}`
+        summary
       );
+      if (
+        resources.some(
+          ({ cleanupStatus }) =>
+            cleanupStatus === "retained" || cleanupStatus === "failed"
+        )
+      ) {
+        const fallbackControl = requireFinalizationBudget(
+          signal,
+          remainingMs,
+          SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
+          SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback
+        );
+        try {
+          await runBoundedStage(
+            "cleanup-retained-resource-fallback",
+            fallbackControl,
+            async (control) =>
+              await dependencies.persistRetainedResources(
+                context!,
+                resources,
+                summary,
+                control
+              )
+          );
+          throwIfDeadline(signal);
+        } catch (fallbackError) {
+          markHarnessInconclusive(
+            runResults,
+            diagnostics,
+            `Cleanup retained resource fallback persistence failed: ${errorMessage(fallbackError)}`
+          );
+        }
+      }
     }
   }
 

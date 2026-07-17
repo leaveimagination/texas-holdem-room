@@ -10,7 +10,13 @@ import {
   relative,
   resolve
 } from "node:path";
-import { strFromU8, unzipSync } from "fflate";
+import {
+  strFromU8,
+  unzip,
+  type AsyncTerminable,
+  type UnzipCallback,
+  type Unzipped
+} from "fflate";
 
 import {
   CaseReportSchema,
@@ -32,6 +38,66 @@ export interface EvidenceValidationResult {
 
 export interface EvidenceValidationOptions {
   signal?: AbortSignal;
+  startUnzip?: EvidenceUnzipStarter;
+}
+
+export type EvidenceUnzipStarter = (
+  data: Uint8Array,
+  callback: UnzipCallback
+) => AsyncTerminable;
+
+const startDefaultUnzip: EvidenceUnzipStarter = (data, callback) =>
+  unzip(data, callback);
+
+async function unzipWithSignal(
+  data: Uint8Array,
+  signal: AbortSignal | undefined,
+  startUnzip: EvidenceUnzipStarter
+): Promise<Unzipped> {
+  signal?.throwIfAborted();
+  return await new Promise<Unzipped>((resolve, reject) => {
+    let finished = false;
+    let terminate: AsyncTerminable | undefined;
+    const removeAbortListener = () => {
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      terminate?.();
+      removeAbortListener();
+      reject(signal?.reason ?? new Error("Evidence ZIP decompression aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      terminate = startUnzip(data, (error, entries) => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        removeAbortListener();
+        if (error !== null) {
+          reject(error);
+          return;
+        }
+        resolve(entries);
+      });
+      if (finished && signal?.aborted) {
+        terminate();
+      }
+    } catch (error) {
+      if (!finished) {
+        finished = true;
+        removeAbortListener();
+        reject(error);
+      }
+    }
+    if (signal?.aborted) {
+      onAbort();
+    }
+  });
 }
 
 async function listFiles(root: string, signal?: AbortSignal): Promise<string[]> {
@@ -274,7 +340,7 @@ export async function validateEvidencePack(
   knownSecrets: readonly KnownSecret[] = [],
   options: EvidenceValidationOptions = {}
 ): Promise<EvidenceValidationResult> {
-  const { signal } = options;
+  const { signal, startUnzip = startDefaultUnzip } = options;
   signal?.throwIfAborted();
   const canonicalRoot = await realpath(outputRoot);
   signal?.throwIfAborted();
@@ -458,8 +524,15 @@ export async function validateEvidencePack(
     if (path.toLowerCase().endsWith(".zip")) {
       let entries: Record<string, Uint8Array>;
       try {
-        entries = unzipSync(new Uint8Array(await readFile(path, { signal })));
+        entries = await unzipWithSignal(
+          new Uint8Array(await readFile(path, { signal })),
+          signal,
+          startUnzip
+        );
       } catch (error) {
+        if (signal?.aborted) {
+          throw signal.reason ?? error;
+        }
         throw new Error(`Invalid trace ZIP: ${path}`, { cause: error });
       }
       for (const [entryName, bytes] of Object.entries(entries)) {

@@ -11,7 +11,10 @@ import {
 import * as EvidenceContracts from "./contracts";
 import { redactForEvidence } from "./redaction";
 import { EvidenceRecorder } from "./recorder";
-import { validateEvidencePack } from "./validator";
+import {
+  validateEvidencePack,
+  type EvidenceUnzipStarter
+} from "./validator";
 
 const temporaryRoots: string[] = [];
 
@@ -825,6 +828,40 @@ describe("validateEvidencePack", () => {
     await expect(validateEvidencePack(root, [secret])).rejects.toThrow(
       /known secret.*trace\.trace/i
     );
+  });
+
+  it("terminates a delayed ZIP worker when evidence validation is aborted", async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, "traces"));
+    await writeFile(
+      join(root, "traces", "EXP-001-delayed.zip"),
+      zipSync({ "trace.trace": strToU8('{"event":"room-ready"}') })
+    );
+    await writePack(root, [
+      {
+        id: "ART-DELAYED-TRACE",
+        path: "traces/EXP-001-delayed.zip",
+        description: "Delayed hostile trace",
+        kind: "trace"
+      }
+    ]);
+    const controller = new AbortController();
+    let terminated = false;
+    const startUnzip: EvidenceUnzipStarter = () => {
+      queueMicrotask(() => controller.abort(new Error("ZIP evidence timeout")));
+      return () => {
+        terminated = true;
+      };
+    };
+
+    await expect(
+      validateEvidencePack(
+        root,
+        [],
+        { signal: controller.signal, startUnzip }
+      )
+    ).rejects.toThrow(/ZIP evidence timeout/i);
+    expect(terminated).toBe(true);
   });
 
   it("rejects a percent-encoded known token in a decompressed trace entry", async () => {

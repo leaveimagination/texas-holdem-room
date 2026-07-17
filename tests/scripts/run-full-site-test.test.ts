@@ -665,6 +665,49 @@ describe("full site runner", () => {
     expect(retainedFallback?.reason).toMatch(/final report persistence failed/i);
   });
 
+  test("persists retained resources when cleanup and its status report both fail", async () => {
+    const harness = await createHarness({
+      stackStop: async () => {
+        throw Object.assign(new Error("Docker down left the exact stack running"), {
+          retained: true
+        });
+      }
+    });
+    const writeReport = harness.dependencies.writeReport;
+    let writes = 0;
+    harness.dependencies.writeReport = async (input, control) => {
+      writes += 1;
+      if (writes === 3) {
+        throw new Error("cleanup status atomic rename failed");
+      }
+      return await writeReport(input, control);
+    };
+    let retainedFallback:
+      | { resources: readonly { cleanupStatus: string }[]; reason: string }
+      | undefined;
+    harness.dependencies.persistRetainedResources = async (
+      _context,
+      resources,
+      reason
+    ) => {
+      harness.calls.push("persist-retained-resources");
+      retainedFallback = { resources, reason };
+    };
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.calls).toContain("cleanup");
+    expect(harness.calls).toContain("persist-retained-resources");
+    expect(retainedFallback?.resources.every(
+      ({ cleanupStatus }) => cleanupStatus === "retained"
+    )).toBe(true);
+    expect(retainedFallback?.reason).toMatch(/cleanup status persistence failed/i);
+  });
+
   test("preserves run location and the last partial report when the absolute deadline fires", async () => {
     const harness = await createHarness();
     const controller = new AbortController();
@@ -761,6 +804,7 @@ interface HarnessOptions {
   useRealProductInjection?: boolean;
   stackImageId?: string;
   stackStart?: () => Promise<void>;
+  stackStop?: () => Promise<void>;
 }
 
 async function createHarness(options: HarnessOptions = {}) {
@@ -803,6 +847,7 @@ async function createHarness(options: HarnessOptions = {}) {
     },
     stop: async () => {
       calls.push("cleanup");
+      await options.stackStop?.();
     }
   };
 

@@ -50,21 +50,26 @@ export const SITE_TEST_FINALIZATION_REQUIRED_REMAINING_MS = Object.freeze({
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
-    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
   diagnosticsPersistence:
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.diagnosticsPersistence +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
-    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
   finalizedPackValidation:
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.finalizedPackValidation +
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
-    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
   exactCleanup:
     SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.exactCleanup +
-    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport,
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback,
   cleanupStatusReport:
-    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.cleanupStatusReport +
+    SITE_TEST_FINALIZATION_STAGE_BUDGETS_MS.retainedResourceFallback
 });
 export const SITE_TEST_OPERATIONAL_STAGE_BUDGETS_MS = Object.freeze({
   allocation: 10_000,
