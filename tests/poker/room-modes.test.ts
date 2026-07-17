@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceDuePhase,
   applyPlayerAction,
   canClaimSeat,
   claimSeat,
   createInitialRoomState,
   finishHandIfReady,
   markDisconnected,
-  rebuy
+  rebuy,
+  type RoomState
 } from "@/lib/poker/engine";
 import { parseCard } from "@/lib/poker/cards";
 
@@ -163,7 +165,8 @@ describe("room mode rules", () => {
       }))
     };
 
-    const finished = finishHandIfReady(state);
+    const locked = finishHandIfReady(state);
+    const finished = settlePresentation(locked);
 
     expect(finished.hand?.finished).toBe(true);
     expect(finished.hand?.winners).toEqual(["p1"]);
@@ -171,6 +174,17 @@ describe("room mode rules", () => {
     expect(finished.seats.map((seat) => seat.status)).toEqual(["active", "eliminated"]);
   });
 });
+
+function settlePresentation(state: RoomState): RoomState {
+  let current = state;
+  for (let guard = 0; guard < 10; guard += 1) {
+    if (current.flow.phase === "hand-summary" || current.flow.deadlineAt === null) {
+      return current;
+    }
+    current = advanceDuePhase(current, current.flow.deadlineAt);
+  }
+  throw new Error("Presentation did not settle within ten transitions");
+}
 
 function createPlayingCashRoom() {
   const room = createCashRoom();

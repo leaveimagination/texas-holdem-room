@@ -312,7 +312,7 @@ describe("createGameServer", () => {
     expect(room?.hand?.finished).toBe(false);
   });
 
-  it("includes showdown hole cards in the hand finished event before the next hand snapshot", async () => {
+  it("does not emit a hand result before the authoritative runout advances", async () => {
     vi.spyOn(Math, "random").mockImplementation(seededRandom(1));
 
     const liveRooms = new LiveRoomStore(new MemoryStore());
@@ -348,7 +348,7 @@ describe("createGameServer", () => {
     );
     await afterAllIn;
 
-    const showdownMessages = nextMessages(p1Socket, 3);
+    const showdownMessages = nextMessages(p1Socket, 2);
     p2Socket.send(
       JSON.stringify({
         type: "player_action",
@@ -358,19 +358,18 @@ describe("createGameServer", () => {
       })
     );
 
-    const [, handFinished, finishedSnapshot] = await showdownMessages;
-    expect(handFinished).toMatchObject({
-      type: "hand_finished",
-      payload: {
-        showdownPlayers: [
-          { participantId: "p1", displayName: "P1", seatNumber: 1 },
-          { participantId: "p2", displayName: "P2", seatNumber: 2 }
-        ]
-      }
+    const [actionRecorded, showdownSnapshot] = await showdownMessages;
+    expect(actionRecorded).toMatchObject({ type: "action_recorded" });
+    expect(showdownSnapshot).toMatchObject({
+      type: "room_snapshot",
+      payload: { hand: { number: 1, board: [], finished: false, winners: [] } }
     });
-    expect(getShowdownCards(handFinished, "p1")).toHaveLength(2);
-    expect(getShowdownCards(handFinished, "p2")).toHaveLength(2);
-    expect(finishedSnapshot).toMatchObject({ type: "room_snapshot", payload: { hand: { number: 1, finished: true } } });
+
+    const room = await liveRooms.getRoom(roomId);
+    expect(room).toMatchObject({
+      flow: { phase: "showdown-reveal", handResult: null },
+      hand: { board: [], finished: false, winners: [] }
+    });
   });
 
   it("automatically starts the next hand after a busted player rebuys", async () => {

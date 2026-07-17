@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseCard, serializeCard } from "@/lib/poker/cards";
 import { getLegalActions } from "@/lib/poker/betting";
-import { applyInsuranceDecision, applyPlayerAction, createInitialRoomState, finishHandIfReady, startHand, type RoomState } from "@/lib/poker/engine";
+import { advanceDuePhase, applyInsuranceDecision, applyPlayerAction, createInitialRoomState, finishHandIfReady, startHand, type RoomState } from "@/lib/poker/engine";
 
 const fixedDeck = "As Ah Kd Kh Qs Qh Jd Jh Tc Td 9s 9h 8d 8h 7s 7h 6d 6h 5s 5h 4d 4h 3s 3h 2d 2h Ac Ad Kc Ks Qc Qd Jc Js Ts Th 9c 9d 8c 8s 7c 7d 6c 6s 5c 5d 4c 4s 3c 3d 2c 2s"
   .split(" ")
@@ -130,7 +130,8 @@ describe("engine", () => {
 
   it("closes the action after the small blind calls a short all-in big blind", () => {
     const started = startHand(createReadyHeadsUpState([100, 15]), fixedDeck);
-    const called = applyPlayerAction(started, { type: "call", playerId: started.hand!.actorId });
+    const locked = applyPlayerAction(started, { type: "call", playerId: started.hand!.actorId });
+    const called = settlePresentation(locked);
 
     expect(started.seats[1].status).toBe("all-in");
     expect(started.hand?.betting.currentBet).toBe(15);
@@ -144,7 +145,8 @@ describe("engine", () => {
 
   it("allows the opener to complete a short all-in big blind to the full configured blind", () => {
     const started = startHand(createReadyHeadsUpState([100, 15]), fixedDeck);
-    const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
+    const locked = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
+    const completed = settlePresentation(locked);
 
     expect(completed.hand?.betting.currentBet).toBe(20);
     expect(completed.hand?.finished).toBe(true);
@@ -185,7 +187,8 @@ describe("engine", () => {
   it("finishes after the next player calls a short-big-blind completion in three-handed play", () => {
     const started = startHand(createReadyThreeHandedState([100, 100, 15]), fixedDeck);
     const completed = applyPlayerAction(started, { type: "raise", playerId: started.hand!.actorId, amountTo: 20 });
-    const called = applyPlayerAction(completed, { type: "call", playerId: completed.hand!.actorId });
+    const locked = applyPlayerAction(completed, { type: "call", playerId: completed.hand!.actorId });
+    const called = settlePresentation(locked);
 
     expect(started.seats[2].status).toBe("all-in");
     expect(completed.hand?.finished).toBe(false);
@@ -227,10 +230,11 @@ describe("engine", () => {
     expect(river.hand?.street).toBe("river");
     expect(river.hand?.board.map(serializeCard)).toEqual(["Qs", "Qh", "Jd", "Jh", "Tc"]);
 
-    const showdown = applyPlayerAction(
+    const showdownReveal = applyPlayerAction(
       applyPlayerAction(river, { type: "check", playerId: "p2" }),
       { type: "check", playerId: "p1" }
     );
+    const showdown = settlePresentation(showdownReveal);
     expect(showdown.hand?.finished).toBe(true);
     expect(showdown.hand?.winners).toEqual(["p1", "p2"]);
     expect(showdown.seats.map((seat) => seat.chips)).toEqual([1000, 1000]);
@@ -243,7 +247,8 @@ describe("engine", () => {
     const started = startHand(createReadyThreeHandedState([50, 100, 100]), deck);
     const p1AllIn = applyPlayerAction(started, { type: "all-in", playerId: "p1" });
     const p2AllIn = applyPlayerAction(p1AllIn, { type: "all-in", playerId: "p2" });
-    const showdown = applyPlayerAction(p2AllIn, { type: "call", playerId: "p3" });
+    const locked = applyPlayerAction(p2AllIn, { type: "call", playerId: "p3" });
+    const showdown = settlePresentation(locked);
 
     expect(showdown.hand?.finished).toBe(true);
     expect(showdown.hand?.board).toHaveLength(5);
@@ -257,7 +262,8 @@ describe("engine", () => {
       .map(parseCard);
     const started = startHand(createReadyHeadsUpState([100, 100]), acesOverKingsDeck);
     const p1AllIn = applyPlayerAction(started, { type: "all-in", playerId: "p1" });
-    const showdown = applyPlayerAction(p1AllIn, { type: "call", playerId: "p2" });
+    const locked = applyPlayerAction(p1AllIn, { type: "call", playerId: "p2" });
+    const showdown = settlePresentation(locked);
 
     expect(showdown.hand?.finished).toBe(true);
     expect(showdown.hand?.board.map(serializeCard)).toEqual(["2c", "7d", "9h", "3s", "4d"]);
@@ -267,7 +273,8 @@ describe("engine", () => {
   });
 
   it("does not leave the hand with an all-in opening actor when nobody can act after blinds", () => {
-    const started = startHand(createReadyHeadsUpState([5, 15]), fixedDeck);
+    const locked = startHand(createReadyHeadsUpState([5, 15]), fixedDeck);
+    const started = settlePresentation(locked);
 
     expect(started.hand?.finished).toBe(true);
     expect(started.hand?.board).toHaveLength(5);
@@ -318,7 +325,8 @@ describe("engine", () => {
 
   it("pays accepted all-in insurance when the covered favorite loses", () => {
     const pending = finishHandIfReady(createTurnAllInInsuranceState());
-    const resolved = applyInsuranceDecision(pending, "p1", true);
+    const showdownReveal = applyInsuranceDecision(pending, "p1", true);
+    const resolved = settlePresentation(showdownReveal);
 
     expect(resolved.hand?.finished).toBe(true);
     expect(resolved.hand?.board.map(serializeCard)).toEqual(["2c", "7d", "9h", "3s", "Kc"]);
@@ -347,13 +355,25 @@ describe("engine", () => {
       ]
     };
 
-    const started = startHand(ready);
+    const locked = startHand(ready);
+    const started = settlePresentation(locked);
 
     expect(started.hand?.finished).toBe(true);
     expect(started.hand?.board).toHaveLength(5);
     expect(started.hand?.winners.length).toBeGreaterThan(0);
   });
 });
+
+function settlePresentation(state: RoomState): RoomState {
+  let current = state;
+  for (let guard = 0; guard < 10; guard += 1) {
+    if (current.flow.phase === "hand-summary" || current.flow.deadlineAt === null) {
+      return current;
+    }
+    current = advanceDuePhase(current, current.flow.deadlineAt);
+  }
+  throw new Error("Presentation did not settle within ten transitions");
+}
 
 function createTurnAllInInsuranceState(): RoomState {
   return {

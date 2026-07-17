@@ -117,7 +117,7 @@ git commit -m "feat: add authoritative table flow contracts"
 - Consumes: Task 1 flow and result types, existing `buildPots()`, evaluator, insurance state, and deterministic decks.
 - Produces: `SHOWDOWN_REVEAL_MS`, `FLOP_CARD_GAP_MS`, `FLOP_HOLD_MS`, `TURN_HOLD_MS`, `RIVER_HOLD_MS`, `HAND_SUMMARY_MS`, `advanceDuePhase(room, now)`, and exact `HandResult` settlement.
 
-- [ ] **Step 1: Write failing preflop all-in phase tests**
+- [x] **Step 1: Write failing preflop all-in phase tests**
 
 Create `runout-flow.test.ts` with a four-player fixed deck and assertions:
 
@@ -148,13 +148,13 @@ expect(settled.flow.handResult?.players).toHaveLength(4);
 
 Add later-street, normal-river, fold-win, exact unequal-side-pot, split/remainder, and insurance-delta cases.
 
-- [ ] **Step 2: Run the runout tests and verify RED**
+- [x] **Step 2: Run the runout tests and verify RED**
 
 Run: `npx vitest run tests/poker/runout-flow.test.ts`
 
 Expected: FAIL because all-in settlement is still synchronous and `advanceDuePhase()` is absent.
 
-- [ ] **Step 3: Implement pure flow advancement and settlement**
+- [x] **Step 3: Implement pure flow advancement and settlement**
 
 Export exact constants and use deadline arithmetic from the prior deadline rather than callback time:
 
@@ -186,13 +186,13 @@ export function finishHandIfReady(state: RoomState, now = 0): RoomState;
 
 Fold wins call the same result builder with a single pot award and enter `hand-summary` immediately. Do not apply post-hand tournament elimination until settlement.
 
-- [ ] **Step 4: Verify all engine behavior GREEN**
+- [x] **Step 4: Verify all engine behavior GREEN**
 
 Run: `npx vitest run tests/poker/runout-flow.test.ts tests/poker/engine.test.ts tests/poker/room-modes.test.ts tests/poker/betting.test.ts && npm run typecheck`
 
 Expected: all focused engine tests pass; previous instant-settlement expectations are updated to phase/deadline assertions.
 
-- [ ] **Step 5: Commit the runout slice**
+- [x] **Step 5: Commit the runout slice**
 
 ```bash
 git add src/lib/poker/engine.ts tests/poker/engine.test.ts tests/poker/runout-flow.test.ts
