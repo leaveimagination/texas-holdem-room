@@ -1,110 +1,134 @@
 import React from "react";
 
+type HandPlayerResult = {
+  participantId: string;
+  displayName: string;
+  startingChips: number;
+  endingChips: number;
+  netChips: number;
+};
+
+type PotResult = {
+  potIndex: number;
+  amount: number;
+  awardsByParticipantId: Record<string, number>;
+};
+
+type VisibleHandResult = {
+  handNumber: number;
+  board: string[];
+  players: HandPlayerResult[];
+  pots: PotResult[];
+};
+
 export function HandResultPanel({ view }: { view: unknown }) {
   const result = readResult(view);
   if (!result) {
     return null;
   }
 
+  const namesById = new Map(result.players.map((player) => [player.participantId, player.displayName]));
   return (
-    <section className="hand-result hand-result-card" aria-label="Hand result">
-      <div>
-        <span>Hand finished</span>
-        <strong>{result.winnerText}</strong>
+    <section className="hand-result hand-result-card" aria-label="Hand result" role="status">
+      <header className="hand-result-header">
+        <div>
+          <span>Hand complete</span>
+          <strong>Hand {result.handNumber} result</strong>
+        </div>
+        {result.board.length > 0 ? <p aria-label="Final board">{result.board.join(" ")}</p> : null}
+      </header>
+
+      <div className={result.players.length >= 6 ? "hand-result-players is-two-column" : "hand-result-players"}>
+        {result.players.map((player) => (
+          <div className="hand-result-player" key={player.participantId}>
+            <span>{player.displayName}</span>
+            <small>{formatChips(player.startingChips)} → {formatChips(player.endingChips)}</small>
+            <strong className={player.netChips > 0 ? "is-positive" : player.netChips < 0 ? "is-negative" : "is-even"}>
+              {formatSigned(player.netChips)}
+            </strong>
+          </div>
+        ))}
       </div>
-      <div className="hand-result-detail">
-        <span>{result.potText}</span>
-        {result.boardText ? <small>{result.boardText}</small> : null}
+
+      <div className="hand-result-pots" aria-label="Pot awards">
+        {result.pots.map((pot) => {
+          const awards = Object.entries(pot.awardsByParticipantId).filter(([, amount]) => amount > 0);
+          return (
+            <div key={pot.potIndex}>
+              <span>{pot.potIndex === 0 ? "Main pot" : `Side pot ${pot.potIndex}`} · {formatChips(pot.amount)}</span>
+              <strong>
+                {awards.map(([participantId, amount]) => `${namesById.get(participantId) ?? participantId} +${formatChips(amount)}`).join(" · ")}
+              </strong>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function readResult(view: unknown): { winnerText: string; potText: string; boardText: string | null } | null {
-  const viewObject = readObject(view);
-  const hand = readObject(viewObject?.hand);
-  const eventPayload = readObject(viewObject?.handResult);
-  if (eventPayload && isStaleHandResult(eventPayload, hand)) {
+function readResult(view: unknown): VisibleHandResult | null {
+  const flow = readObject(readObject(view)?.flow);
+  if (flow?.phase !== "hand-summary") {
     return null;
   }
 
-  const source = eventPayload ?? hand;
-  if (!source || (eventPayload ? false : hand?.finished !== true)) {
+  const source = readObject(flow.handResult);
+  if (!source || typeof source.handNumber !== "number" || !Array.isArray(source.players) || !Array.isArray(source.pots)) {
     return null;
   }
 
-  const winners = readWinners(source, viewObject);
-  const pot = typeof source.pot === "number" ? source.pot : 0;
-  const bigBlind = readBigBlind(viewObject);
-  const board = Array.isArray(source.board) ? source.board.filter((card): card is string => typeof card === "string") : [];
-
-  return {
-    winnerText: winners.length > 0 ? `${winners.join(", ")} wins` : "Result pending",
-    potText: pot > 0 ? formatBb(pot, bigBlind) : "Pot settled",
-    boardText: board.length > 0 ? board.join(" ") : null
-  };
-}
-
-function isStaleHandResult(result: Record<string, unknown>, hand: Record<string, unknown> | null): boolean {
-  if (!hand || hand.finished === true) {
-    return false;
-  }
-
-  const resultHandNumber = typeof result.handNumber === "number" ? result.handNumber : null;
-  const currentHandNumber = typeof hand.number === "number" ? hand.number : null;
-  return resultHandNumber !== null && currentHandNumber !== null && resultHandNumber !== currentHandNumber;
-}
-
-function readWinners(source: Record<string, unknown>, view: Record<string, unknown> | null): string[] {
-  const rawWinners = source.winners;
-  if (!Array.isArray(rawWinners)) {
-    return [];
-  }
-
-  return rawWinners.flatMap((winner) => {
-    if (typeof winner === "string") {
-      return [displayNameForParticipant(view, winner)];
-    }
-
-    const winnerObject = readObject(winner);
-    if (!winnerObject) {
+  const players = source.players.flatMap((candidate) => {
+    const player = readObject(candidate);
+    if (
+      typeof player?.participantId !== "string" ||
+      typeof player.displayName !== "string" ||
+      typeof player.startingChips !== "number" ||
+      typeof player.endingChips !== "number" ||
+      typeof player.netChips !== "number"
+    ) {
       return [];
     }
 
-    if (typeof winnerObject.displayName === "string") {
-      return [winnerObject.displayName];
-    }
-
-    return typeof winnerObject.participantId === "string" ? [displayNameForParticipant(view, winnerObject.participantId)] : [];
+    return [{
+      participantId: player.participantId,
+      displayName: player.displayName,
+      startingChips: player.startingChips,
+      endingChips: player.endingChips,
+      netChips: player.netChips
+    }];
   });
-}
 
-function displayNameForParticipant(view: Record<string, unknown> | null, participantId: string): string {
-  const seats = view?.seats;
-  if (!Array.isArray(seats)) {
-    return participantId;
-  }
-
-  for (const candidate of seats) {
-    const seat = readObject(candidate);
-    if (seat?.participantId === participantId && typeof seat.displayName === "string") {
-      return seat.displayName;
+  const pots = source.pots.flatMap((candidate) => {
+    const pot = readObject(candidate);
+    const awards = readObject(pot?.awardsByParticipantId);
+    if (typeof pot?.potIndex !== "number" || typeof pot.amount !== "number" || !awards) {
+      return [];
     }
-  }
 
-  return participantId;
+    return [{
+      potIndex: pot.potIndex,
+      amount: pot.amount,
+      awardsByParticipantId: Object.fromEntries(
+        Object.entries(awards).filter((entry): entry is [string, number] => typeof entry[1] === "number")
+      )
+    }];
+  });
+
+  return {
+    handNumber: source.handNumber,
+    board: Array.isArray(source.board) ? source.board.filter((card): card is string => typeof card === "string") : [],
+    players,
+    pots
+  };
 }
 
-function readBigBlind(view: Record<string, unknown> | null): number | null {
-  const settings = readObject(view?.settings);
-  return typeof settings?.bigBlind === "number" ? settings.bigBlind : null;
+function formatSigned(amount: number): string {
+  return `${amount > 0 ? "+" : ""}${formatChips(amount)}`;
 }
 
-function formatBb(amount: number, bigBlind?: number | null): string {
-  const blind = typeof bigBlind === "number" && bigBlind > 0 ? bigBlind : 20;
-  const value = amount / blind;
-  const rounded = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
-  return `${rounded} BB`;
+function formatChips(amount: number): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount);
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {

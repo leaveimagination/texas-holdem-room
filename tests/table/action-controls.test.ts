@@ -44,12 +44,13 @@ describe("ActionControls", () => {
     expect(html).not.toContain("Kh");
   });
 
-  it("renders quick bet controls without a persistent add chips tool while stacked", () => {
+  it("renders quick bet controls with a persistent add chips tool while stacked", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: "p1",
         localParticipantId: "p1",
         playerControls: true,
+        mode: "cash",
         heroStack: 2000,
         bigBlind: 20,
         pot: 80,
@@ -68,8 +69,8 @@ describe("ActionControls", () => {
     expect(html).toContain("1.5 BB");
     expect(html).toContain("Raise to");
     expect(html).toContain("4 BB");
-    expect(html).not.toContain("Add chips");
-    expect(html).not.toContain("rebuy-popover");
+    expect(html).toContain("Add chips");
+    expect(html).toContain("top-up-popover");
     expect(html).not.toContain("rebuy-modal");
   });
 
@@ -137,20 +138,23 @@ describe("ActionControls", () => {
     expect(html).not.toContain(">Raise to<");
   });
 
-  it("shows add chips as a modal only after the player is out of chips", () => {
+  it("keeps add chips in a lower-left popover after the player is out of chips", () => {
     const html = renderToStaticMarkup(
       createElement(ActionControls, {
         actorId: null,
         localParticipantId: "p1",
         playerControls: true,
+        mode: "cash",
         heroStack: 0,
         tableStatus: "lobby"
       })
     );
 
-    expect(html).toContain("rebuy-modal");
+    expect(html).toContain("top-up-popover");
     expect(html).toContain("Add chips");
     expect(html).toContain("Add chips amount");
+    expect(html).toContain("Add next hand");
+    expect(html).not.toContain("rebuy-modal");
   });
 
   it("allows an out-of-chips player to add chips after a finished hand while the room remains playing", () => {
@@ -159,15 +163,58 @@ describe("ActionControls", () => {
         actorId: null,
         localParticipantId: "p1",
         playerControls: true,
+        mode: "cash",
         heroStack: 0,
         tableStatus: "playing",
         canStartRoom: true
       })
     );
 
-    expect(html).toContain("rebuy-modal");
+    expect(html).toContain("top-up-popover");
     expect(html).toContain("Add chips");
     expect(html).not.toContain("Syncing actions");
+  });
+
+  it("shows the cumulative pending amount and hides top-up controls from ineligible viewers", () => {
+    const playerHtml = renderToStaticMarkup(createElement(ActionControls, {
+      playerControls: true,
+      mode: "cash",
+      heroStack: 2_000,
+      pendingTopUp: 800
+    }));
+    const spectatorHtml = renderToStaticMarkup(createElement(ActionControls, {
+      playerControls: false,
+      mode: "cash",
+      heroStack: 2_000
+    }));
+    const tournamentHtml = renderToStaticMarkup(createElement(ActionControls, {
+      playerControls: true,
+      mode: "tournament",
+      heroStack: 2_000
+    }));
+
+    expect(playerHtml).toContain("Pending +800");
+    expect(playerHtml).toContain("top-up-popover");
+    expect(spectatorHtml).not.toContain("top-up-popover");
+    expect(tournamentHtml).not.toContain("top-up-popover");
+  });
+
+  it("renders an idempotent host end-room state", () => {
+    const active = renderToStaticMarkup(createElement(ActionControls, {
+      hostControls: true,
+      connected: true,
+      onEndRoom: () => undefined
+    }));
+    const ending = renderToStaticMarkup(createElement(ActionControls, {
+      hostControls: true,
+      connected: true,
+      endAfterCurrentHand: true,
+      onEndRoom: () => undefined
+    }));
+
+    expect(active).toContain(">End room<");
+    expect(ending).toContain("Ending after this hand");
+    expect(ending).toMatch(/<button[^>]*disabled=""[^>]*>Ending after this hand<\/button>/);
   });
 
   it("renders live action buttons with client-style action weights", () => {

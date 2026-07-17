@@ -3,56 +3,47 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HandResultPanel } from "@/components/table/HandResultPanel";
 
+const result = {
+  handNumber: 19,
+  board: ["Ah", "Kd", "7c", "2s", "9d"],
+  winnerParticipantIds: ["p1", "p3"],
+  players: [
+    { participantId: "p1", displayName: "Alice", seatNumber: 1, startingChips: 1_000, committedChips: 1_000, potAward: 1_800, insuranceDelta: 0, endingChips: 1_800, netChips: 800 },
+    { participantId: "p2", displayName: "Bob", seatNumber: 2, startingChips: 1_000, committedChips: 500, potAward: 0, insuranceDelta: 0, endingChips: 500, netChips: -500 },
+    { participantId: "p3", displayName: "Cara", seatNumber: 3, startingChips: 1_000, committedChips: 700, potAward: 700, insuranceDelta: 0, endingChips: 1_000, netChips: 0 },
+    { participantId: "p4", displayName: "Dan", seatNumber: 4, startingChips: 1_000, committedChips: 300, potAward: 0, insuranceDelta: 0, endingChips: 700, netChips: -300 }
+  ],
+  pots: [
+    { potIndex: 0, amount: 1_800, eligibleParticipantIds: ["p1", "p2", "p3", "p4"], awardsByParticipantId: { p1: 1_800 } },
+    { potIndex: 1, amount: 700, eligibleParticipantIds: ["p1", "p3"], awardsByParticipantId: { p3: 700 } }
+  ]
+};
+
 describe("HandResultPanel", () => {
-  it("summarizes the finished hand with winner names, pot, and board cards", () => {
-    const html = renderToStaticMarkup(
-      createElement(HandResultPanel, {
-        view: {
-          settings: { bigBlind: 20 },
-          seats: [
-            { seatNumber: 1, participantId: "p1", displayName: "Alice", chips: 1120, occupied: true },
-            { seatNumber: 2, participantId: "p2", displayName: "Bob", chips: 880, occupied: true }
-          ],
-          hand: {
-            finished: true,
-            pot: 120,
-            board: ["Ah", "Kd", "7c", "2s", "9d"],
-            winners: ["p1"]
-          }
-        }
-      })
-    );
+  it("renders every dealt-in player, signed net chips, board, and exact pot winners", () => {
+    const html = renderToStaticMarkup(createElement(HandResultPanel, {
+      view: { flow: { phase: "hand-summary", handResult: result } }
+    }));
 
     expect(html).toContain("hand-result-card");
-    expect(html).toContain("Alice wins");
-    expect(html).toContain("6 BB");
+    expect(html).toContain("Hand 19 result");
     expect(html).toContain("Ah Kd 7c 2s 9d");
-    expect(html).not.toContain("Winner: p1");
+    expect(html).toContain("Alice");
+    expect(html).toContain("Bob");
+    expect(html).toContain("Cara");
+    expect(html).toContain("Dan");
+    expect(html).toContain("+800");
+    expect(html).toContain("-500");
+    expect(html).toContain("Main pot");
+    expect(html).toContain("Side pot 1");
   });
 
-  it("does not keep an old result visible after the next hand starts", () => {
-    const html = renderToStaticMarkup(
-      createElement(HandResultPanel, {
-        view: {
-          settings: { bigBlind: 20 },
-          handResult: {
-            handNumber: 1,
-            pot: 120,
-            board: ["Ah", "Kd", "7c"],
-            winners: [{ participantId: "p1", displayName: "Alice" }]
-          },
-          hand: {
-            number: 2,
-            finished: false,
-            pot: 30,
-            board: [],
-            winners: []
-          }
-        }
-      })
-    );
+  it("renders only during the authoritative hand-summary phase", () => {
+    const html = renderToStaticMarkup(createElement(HandResultPanel, {
+      view: { flow: { phase: "runout", handResult: result } }
+    }));
 
     expect(html).not.toContain("hand-result-card");
-    expect(html).not.toContain("Alice wins");
+    expect(html).not.toContain("Alice");
   });
 });

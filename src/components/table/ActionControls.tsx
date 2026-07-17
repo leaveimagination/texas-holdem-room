@@ -19,6 +19,10 @@ export function ActionControls({
   heroCards: _heroCards = [],
   heroName: _heroName,
   heroStack,
+  mode,
+  pendingTopUp = 0,
+  endAfterCurrentHand = false,
+  roomFinished = false,
   tableStatus,
   bigBlind = 20,
   pot = 0,
@@ -29,6 +33,7 @@ export function ActionControls({
   playerControls = false,
   connected = true,
   onStartRoom,
+  onEndRoom,
   onPlayerAction,
   onRebuy,
   onHandleDisconnect
@@ -40,6 +45,10 @@ export function ActionControls({
   heroCards?: string[];
   heroName?: string | null;
   heroStack?: number | null;
+  mode?: "cash" | "tournament" | null;
+  pendingTopUp?: number;
+  endAfterCurrentHand?: boolean;
+  roomFinished?: boolean;
   tableStatus?: string | null;
   bigBlind?: number | null;
   pot?: number | null;
@@ -50,6 +59,7 @@ export function ActionControls({
   playerControls?: boolean;
   connected?: boolean;
   onStartRoom?: () => void;
+  onEndRoom?: () => void;
   onPlayerAction?: (action: PlayerAction) => void;
   onRebuy?: (amount: number) => void;
   onHandleDisconnect?: (participantId: string) => void;
@@ -78,8 +88,14 @@ export function ActionControls({
   const visibleActions = actions.length > 0 ? actions.map((action) => action.type) : showBettingControls ? [] : FALLBACK_ACTIONS;
   const actionButtons = buildActionButtons(actions, visibleActions);
   const canUsePlayerActions = connected && playerControls && (!hasActiveTurn || isPlayerTurn);
-  const canRebuyNow = canStartRoom || (tableStatus ?? "lobby") !== "playing";
-  const showRebuyModal = Boolean(playerControls && canRebuyNow && typeof heroStack === "number" && heroStack <= 0);
+  const showTopUp = Boolean(
+    connected &&
+    playerControls &&
+    mode === "cash" &&
+    typeof heroStack === "number" &&
+    !roomFinished &&
+    tableStatus !== "finished"
+  );
   const statusText = !connected
     ? "Reconnecting to table"
     : isPlayerTurn
@@ -246,6 +262,12 @@ export function ActionControls({
             <summary>Host tools</summary>
             <div className="popover-body host-controls is-anchored-host-controls" aria-label="Host controls">
               <button type="button" onClick={onStartRoom} disabled={!connected || !canStartRoom}>{canStartRoom ? "Start room" : "Hand in progress"}</button>
+              <button
+                type="button"
+                className="is-danger-action"
+                onClick={onEndRoom}
+                disabled={!connected || endAfterCurrentHand || roomFinished}
+              >{endAfterCurrentHand ? "Ending after this hand" : "End room"}</button>
               <label>
                 Disconnected participant
                 <input
@@ -261,28 +283,35 @@ export function ActionControls({
         </div>
       ) : null}
 
-      {showRebuyModal ? (
-        <div className="rebuy-modal-backdrop">
-          <section className="rebuy-modal" role="dialog" aria-label="Add chips">
-            <div className="rebuy-modal-copy">
-              <span>Stack empty</span>
-              <strong>Add chips</strong>
-              <p>{tableStatus === "playing" ? "Top up now and return when the next hand is ready." : "Add virtual chips to sit back in."}</p>
-            </div>
-            <label>
-              Add chips amount
-              <input
-                aria-label="Add chips amount"
-                inputMode="numeric"
-                min={1}
-                type="number"
-                value={rebuyAmount}
-                disabled={!connected || !playerControls}
-                onChange={(event) => setRebuyAmount(event.target.value)}
-              />
-            </label>
-            <button type="button" onClick={sendRebuy} disabled={!connected || !playerControls}>Add chips</button>
-          </section>
+      {showTopUp ? (
+        <div className="top-up-utility" aria-label="Add chips controls">
+          <details className="top-up-popover">
+            <summary>
+              <span>Add chips</span>
+              {pendingTopUp > 0 ? <strong>Pending +{pendingTopUp}</strong> : null}
+            </summary>
+            <form
+              className="top-up-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                sendRebuy();
+              }}
+            >
+              <label>
+                Add chips amount
+                <input
+                  aria-label="Add chips amount"
+                  inputMode="numeric"
+                  min={1}
+                  type="number"
+                  value={rebuyAmount}
+                  onChange={(event) => setRebuyAmount(event.target.value)}
+                />
+              </label>
+              <p>Applied at the start of the next hand.</p>
+              <button type="submit">Add next hand</button>
+            </form>
+          </details>
         </div>
       ) : null}
     </section>

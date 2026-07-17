@@ -3,6 +3,7 @@ import { ActionControls } from "./ActionControls";
 import { HandResultPanel } from "./HandResultPanel";
 import { PlayingCard } from "./PlayingCard";
 import { SeatRing } from "./SeatRing";
+import { SessionResultPanel } from "./SessionResultPanel";
 import type { ClientMessage } from "@/lib/realtime/messages";
 
 type PlayerAction = Extract<ClientMessage, { type: "player_action" }>["action"];
@@ -18,6 +19,7 @@ export function PokerTable({
   localDisplayName,
   onClaimSeat,
   onStartRoom,
+  onEndRoom,
   onPlayerAction,
   onInsuranceDecision,
   onRebuy,
@@ -32,6 +34,7 @@ export function PokerTable({
   localDisplayName?: string | null;
   onClaimSeat?: (seatNumber: number) => void;
   onStartRoom?: () => void;
+  onEndRoom?: () => void;
   onPlayerAction?: (action: PlayerAction) => void;
   onInsuranceDecision?: InsuranceDecision;
   onRebuy?: (amount: number) => void;
@@ -44,6 +47,8 @@ export function PokerTable({
   const currentBet = readCurrentBet(view);
   const settings = readSettings(view);
   const tableStatus = readTableStatus(view);
+  const tableMode = readTableMode(view);
+  const flowPhase = readFlowPhase(view);
   const actorId = readActorId(view);
   const actorName = readActorName(view);
   const heroCards = readHeroCards(view, localParticipantId);
@@ -53,11 +58,14 @@ export function PokerTable({
   const showHostControls = hostControls || readHostControls(view);
   const snapshotLegalActions = readLegalActions(view);
   const resolvedLegalActions = snapshotLegalActions ?? legalActions;
-  const isSettlementHold = Boolean(readObject(view)?.handResult);
+  const isSettlementHold = flowPhase === "hand-summary" || flowPhase === "session-summary";
   const insuranceOffer = readInsuranceOffer(view);
   const showdown = readShowdown(view);
-  const isRunoutReveal = Boolean(showdown && board.length >= 4);
+  const isRunoutReveal = flowPhase === "runout";
   const collectPot = readCollectPot(view, localParticipantId, localDisplayName);
+  const pendingTopUp = readPendingTopUp(view, localParticipantId);
+  const endAfterCurrentHand = readEndAfterCurrentHand(view);
+  const roomFinished = tableStatus === "finished" || flowPhase === "session-summary";
 
   return (
     <section className="table-surface poker-client-shell" aria-label="Table">
@@ -119,6 +127,10 @@ export function PokerTable({
         heroCards={heroCards}
         heroName={readSeatName(heroSeat)}
         heroStack={readSeatStack(heroSeat)}
+        mode={tableMode}
+        pendingTopUp={pendingTopUp}
+        endAfterCurrentHand={endAfterCurrentHand}
+        roomFinished={roomFinished}
         tableStatus={tableStatus}
         bigBlind={settings.bigBlind}
         pot={pot}
@@ -129,6 +141,7 @@ export function PokerTable({
         playerControls={playerControls}
         connected={connected}
         onStartRoom={onStartRoom}
+        onEndRoom={onEndRoom}
         onPlayerAction={onPlayerAction}
         onRebuy={onRebuy}
         onHandleDisconnect={onHandleDisconnect}
@@ -142,6 +155,7 @@ export function PokerTable({
         onDecision={onInsuranceDecision}
       />
       <HandResultPanel view={view} />
+      <SessionResultPanel view={view} />
     </section>
   );
 }
@@ -245,31 +259,9 @@ function formatPercent(value: number): string {
 function readShowdown(view: unknown): null | { players: Array<{ name: string; cards: string[]; winner: boolean }> } {
   const viewObject = readObject(view);
   const hand = readObject(viewObject?.hand);
-  const handResult = readObject(viewObject?.handResult);
-  const eventShowdownPlayers = handResult?.showdownPlayers;
-  if (Array.isArray(eventShowdownPlayers)) {
-    const winnerIds = readWinnerIdSet(viewObject, hand);
-    const players = eventShowdownPlayers.flatMap((candidate) => {
-      const player = readObject(candidate);
-      if (!player || !Array.isArray(player.holeCards)) {
-        return [];
-      }
-
-      const cards = player.holeCards.filter((card): card is string => typeof card === "string");
-      const participantId = typeof player.participantId === "string" ? player.participantId : null;
-      const name = typeof player.displayName === "string"
-        ? player.displayName
-        : participantId
-          ? displayNameForParticipant(viewObject, participantId)
-          : "Player";
-
-      return cards.length === 2 ? [{ name, cards, winner: Boolean(participantId && winnerIds.has(participantId)) }] : [];
-    });
-
-    return players.length >= 2 ? { players } : null;
-  }
-
-  if (hand?.finished !== true) {
+  const phase = readFlowPhase(view);
+  const isLegacyFinishedSnapshot = phase === null && hand?.finished === true;
+  if (!["showdown-reveal", "runout", "hand-summary"].includes(phase ?? "") && !isLegacyFinishedSnapshot) {
     return null;
   }
 
@@ -278,7 +270,7 @@ function readShowdown(view: unknown): null | { players: Array<{ name: string; ca
     return null;
   }
 
-  const winnerIds = readWinnerIdSet(viewObject, hand);
+  const winnerIds = readWinnerIdSet(viewObject, hand, phase);
   const players = handSeats.flatMap((candidate) => {
     const seat = readObject(candidate);
     if (!seat || typeof seat.participantId !== "string" || !Array.isArray(seat.holeCards)) {
@@ -307,9 +299,13 @@ function readCollectPot(
 ): null | { winners: Array<{ name: string; slot: number }> } {
   const viewObject = readObject(view);
   const hand = readObject(viewObject?.hand);
-  const handResult = readObject(viewObject?.handResult);
-  const source = handResult ?? (hand?.finished === true ? hand : null);
-  const rawWinners = source?.winners;
+  const phase = readFlowPhase(view);
+  const flowResult = readObject(readObject(viewObject?.flow)?.handResult);
+  const rawWinners = phase === "hand-summary"
+    ? flowResult?.winnerParticipantIds
+    : phase === null && hand?.finished === true
+      ? hand.winners
+      : null;
   if (!Array.isArray(rawWinners) || rawWinners.length === 0) {
     return null;
   }
@@ -330,11 +326,18 @@ function readCollectPot(
   return winners.length > 0 ? { winners } : null;
 }
 
-function readWinnerIdSet(view: Record<string, unknown> | null, hand: Record<string, unknown> | null): Set<string> {
+function readWinnerIdSet(
+  view: Record<string, unknown> | null,
+  hand: Record<string, unknown> | null,
+  phase: string | null
+): Set<string> {
   const result = new Set<string>();
-  const handResult = readObject(view?.handResult);
-  const source = handResult ?? (hand?.finished === true ? hand : null);
-  const winners = source?.winners;
+  const flowResult = readObject(readObject(view?.flow)?.handResult);
+  const winners = phase === "hand-summary"
+    ? flowResult?.winnerParticipantIds
+    : phase === null && hand?.finished === true
+      ? hand.winners
+      : null;
   if (!Array.isArray(winners)) {
     return result;
   }
@@ -346,22 +349,10 @@ function readWinnerIdSet(view: Record<string, unknown> | null, hand: Record<stri
     }
 
     const winnerObject = readObject(winner);
-    if (typeof winnerObject?.participantId === "string") {
-      result.add(winnerObject.participantId);
-    }
+    if (typeof winnerObject?.participantId === "string") result.add(winnerObject.participantId);
   }
 
   return result;
-}
-
-function isStaleHandResult(result: Record<string, unknown>, hand: Record<string, unknown> | null): boolean {
-  if (!hand || hand.finished === true) {
-    return false;
-  }
-
-  const resultHandNumber = typeof result.handNumber === "number" ? result.handNumber : null;
-  const currentHandNumber = typeof hand.number === "number" ? hand.number : null;
-  return resultHandNumber !== null && currentHandNumber !== null && resultHandNumber !== currentHandNumber;
 }
 
 function displayNameForParticipant(view: Record<string, unknown> | null, participantId: string): string {
@@ -546,6 +537,30 @@ function readSettings(view: unknown): { bigBlind: number | null } {
 function readTableStatus(view: unknown): string | null {
   const status = readObject(view)?.status;
   return typeof status === "string" ? status : null;
+}
+
+function readTableMode(view: unknown): "cash" | "tournament" | null {
+  const mode = readObject(view)?.mode;
+  return mode === "cash" || mode === "tournament" ? mode : null;
+}
+
+function readFlowPhase(view: unknown): string | null {
+  const phase = readObject(readObject(view)?.flow)?.phase;
+  return typeof phase === "string" ? phase : null;
+}
+
+function readPendingTopUp(view: unknown, localParticipantId?: string | null): number {
+  if (!localParticipantId) {
+    return 0;
+  }
+
+  const pending = readObject(readObject(view)?.pendingTopUps);
+  const localPending = readObject(pending?.[localParticipantId]);
+  return typeof localPending?.amount === "number" ? localPending.amount : 0;
+}
+
+function readEndAfterCurrentHand(view: unknown): boolean {
+  return readObject(view)?.endAfterCurrentHand === true;
 }
 
 function readActorId(view: unknown): string | null {

@@ -7,8 +7,6 @@ import { PokerTable } from "@/components/table/PokerTable";
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 import type { ClientMessage, ServerMessage } from "@/lib/realtime/messages";
 
-export const HAND_RESULT_ANIMATION_MS = 6200;
-
 export function RoomClient({ roomId }: { roomId: string }) {
   const { connected, error, messages, send } = useRoomSocket(roomId);
   const [displayName, setDisplayName] = useState("Player");
@@ -18,25 +16,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [hostToken, setHostToken] = useState<string | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
-  const latestHandResult = findLatestPayload(messages, ["hand_finished"]);
-  const [visibleHandResult, setVisibleHandResult] = useState<unknown>(null);
-  const tableView = attachHandResult(roomView, visibleHandResult);
 
   useEffect(() => {
     setHasParticipantToken(Boolean(getParticipantToken(roomId)));
     setParticipantId(getParticipantId(roomId));
     setHostToken(readHostToken());
   }, [roomId]);
-
-  useEffect(() => {
-    if (!latestHandResult) {
-      return;
-    }
-
-    setVisibleHandResult(latestHandResult);
-    const timeout = window.setTimeout(() => setVisibleHandResult(null), HAND_RESULT_ANIMATION_MS);
-    return () => window.clearTimeout(timeout);
-  }, [latestHandResult]);
 
   useEffect(() => {
     const visibleParticipantId = readVisibleParticipantId(roomView);
@@ -85,6 +70,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
 
     send({ type: "start_room", roomId, hostToken });
+  }
+
+  function endRoom() {
+    if (!connected || !hostToken) {
+      return;
+    }
+
+    send(createEndRoomMessage(roomId, hostToken));
   }
 
   function sendPlayerAction(action: Extract<ClientMessage, { type: "player_action" }>["action"]) {
@@ -163,7 +156,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
       ) : null}
 
       <PokerTable
-        view={tableView}
+        view={roomView}
         legalActions={legalActions}
         hostControls={Boolean(hostToken)}
         playerControls={hasParticipantToken}
@@ -172,6 +165,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
         localDisplayName={displayName}
         onClaimSeat={claimSeat}
         onStartRoom={startRoom}
+        onEndRoom={endRoom}
         onPlayerAction={sendPlayerAction}
         onInsuranceDecision={sendInsuranceDecision}
         onRebuy={rebuy}
@@ -231,6 +225,26 @@ function findLatestTableEvent(messages: ServerMessage[]): string | null {
       return formatHandFinishedEvent(message.payload);
     }
 
+    if (message.type === "top_up_queued") {
+      const { displayName, submittedAmount, pendingTotal, targetHandNumber } = message.payload;
+      return `${displayName} queued ${submittedAmount} chips · ${pendingTotal} pending for hand ${targetHandNumber}`;
+    }
+
+    if (message.type === "top_up_applied") {
+      const { displayName, amount, handNumber } = message.payload;
+      return `${displayName} added ${amount} chips for hand ${handNumber}`;
+    }
+
+    if (message.type === "room_end_requested") {
+      return message.payload.finalHandNumber === null
+        ? "Room ending before the next hand"
+        : `Hand ${message.payload.finalHandNumber} is the final hand`;
+    }
+
+    if (message.type === "room_finished") {
+      return "Room finished";
+    }
+
     if (message.type === "system_message" && /\badded \d+ chips\b/i.test(message.payload.message)) {
       return message.payload.message;
     }
@@ -278,15 +292,6 @@ function formatHandFinishedEvent(payload: unknown): string | null {
   return names.length > 0 ? `${names.join(", ")} wins the pot` : null;
 }
 
-function attachHandResult(roomView: unknown, handResult: unknown): unknown {
-  const view = readObject(roomView);
-  if (!view || !handResult) {
-    return roomView;
-  }
-
-  return { ...view, handResult };
-}
-
 function findLatestPayload(messages: ServerMessage[], types: ServerMessage["type"][]): unknown {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -296,6 +301,13 @@ function findLatestPayload(messages: ServerMessage[], types: ServerMessage["type
   }
 
   return null;
+}
+
+export function createEndRoomMessage(
+  roomId: string,
+  hostToken: string
+): Extract<ClientMessage, { type: "end_room" }> {
+  return { type: "end_room", roomId, hostToken };
 }
 
 function getParticipantToken(roomId: string): string | null {

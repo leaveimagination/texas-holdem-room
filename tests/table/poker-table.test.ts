@@ -11,6 +11,7 @@ describe("PokerTable", () => {
         localDisplayName: "Hero",
         playerControls: true,
         view: {
+          mode: "cash",
           status: "playing",
           settings: { bigBlind: 20 },
           seats: [
@@ -211,6 +212,7 @@ describe("PokerTable", () => {
         localDisplayName: "Hero",
         playerControls: true,
         view: {
+          mode: "cash",
           status: "playing",
           settings: { bigBlind: 20 },
           seats: [
@@ -248,6 +250,7 @@ describe("PokerTable", () => {
         playerControls: true,
         view: {
           status: "playing",
+          flow: { phase: "hand-summary", handResult: tableHandResult(8, ["p1"]) },
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
@@ -286,6 +289,7 @@ describe("PokerTable", () => {
         playerControls: true,
         view: {
           status: "playing",
+          flow: { phase: "hand-summary", handResult: tableHandResult(9, ["p1"]) },
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
@@ -310,7 +314,7 @@ describe("PokerTable", () => {
     expect(html).toContain("collect-pot-burst");
   });
 
-  it("keeps the recent showdown and collect animation visible after the next hand snapshot arrives", () => {
+  it("drops the old showdown and re-enables actions when the next hand snapshot arrives", () => {
     const html = renderToStaticMarkup(
       createElement(PokerTable, {
         localParticipantId: "p1",
@@ -318,6 +322,7 @@ describe("PokerTable", () => {
         playerControls: true,
         view: {
           status: "playing",
+          flow: { phase: "betting", handResult: null },
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
@@ -354,15 +359,12 @@ describe("PokerTable", () => {
       })
     );
 
-    expect(html).toContain("showdown-overlay");
-    expect(html).toContain("Showdown");
-    expect(html).toContain("Hero");
-    expect(html).toContain("Villain");
-    expect(html).toContain("collect-pot-burst");
-    expect(html).not.toContain("YOUR TURN");
-    expect(html).not.toContain(">Check<");
-    expect(html).not.toContain(">Bet<");
-    expect(html).not.toContain(">All in<");
+    expect(html).not.toContain("showdown-overlay");
+    expect(html).not.toContain("collect-pot-burst");
+    expect(html).toContain("YOUR TURN");
+    expect(html).toContain(">Check<");
+    expect(html).toContain(">Bet<");
+    expect(html).toContain(">All in<");
   });
 
   it("marks all-in runout boards with a slower one-by-one reveal cadence", () => {
@@ -373,6 +375,7 @@ describe("PokerTable", () => {
         playerControls: true,
         view: {
           status: "playing",
+          flow: { phase: "runout", handResult: null },
           settings: { bigBlind: 20 },
           seats: [
             { seatNumber: 1, displayName: "Hero", chips: 1120, status: "active", occupied: true },
@@ -380,14 +383,14 @@ describe("PokerTable", () => {
           ],
           hand: {
             number: 10,
-            finished: true,
+            finished: false,
             pot: 240,
             board: ["Ah", "Kd", "7c", "2s", "9d"],
             seats: [
               { seatNumber: 1, participantId: "p1", holeCards: ["As", "Ad"] },
               { seatNumber: 2, participantId: "p2", holeCards: ["Kh", "Kc"] }
             ],
-            winners: ["p1"]
+            winners: []
           }
         }
       })
@@ -397,3 +400,16 @@ describe("PokerTable", () => {
     expect(html).toContain("board is-featured-board is-runout-board");
   });
 });
+
+function tableHandResult(handNumber: number, winnerParticipantIds: string[]) {
+  return {
+    handNumber,
+    board: ["Ah", "Kd", "7c", "2s", "9d"],
+    winnerParticipantIds,
+    players: [
+      { participantId: "p1", displayName: "Hero", seatNumber: 1, startingChips: 1_000, committedChips: 120, potAward: 240, insuranceDelta: 0, endingChips: 1_120, netChips: 120 },
+      { participantId: "p2", displayName: "Villain", seatNumber: 2, startingChips: 1_000, committedChips: 120, potAward: 0, insuranceDelta: 0, endingChips: 880, netChips: -120 }
+    ],
+    pots: [{ potIndex: 0, amount: 240, eligibleParticipantIds: ["p1", "p2"], awardsByParticipantId: { p1: 240 } }]
+  };
+}
