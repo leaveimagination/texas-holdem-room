@@ -24,6 +24,8 @@ describe("hand history review shape", () => {
       players: [
         {
           holeCards: ["Ah", "Ad"],
+          startingChips: 1_000,
+          endingChips: 1_150,
           participant: { id: "p1", displayName: "Ada", seatNumber: 1 }
         }
       ],
@@ -45,11 +47,19 @@ describe("hand history review shape", () => {
       ]
     });
 
-    expect(Object.keys(publicHand)).toEqual(["handNumber", "board", "winners", "potSize", "actions"]);
+    expect(Object.keys(publicHand)).toEqual(["handNumber", "board", "winners", "players", "potSize", "actions"]);
     expect(publicHand).toEqual({
       handNumber: 3,
       board: ["As", "Kd", "Qc", "2h", "9s"],
       winners: [{ participantId: "p1", displayName: "Ada", seatNumber: 1 }],
+      players: [{
+        participantId: "p1",
+        displayName: "Ada",
+        seatNumber: 1,
+        startingChips: 1_000,
+        endingChips: 1_150,
+        netChips: 150
+      }],
       potSize: 150,
       actions: [
         {
@@ -72,6 +82,7 @@ describe("hand history review shape", () => {
         handNumber: 1,
         board: ["As", "Kd", "Qc"],
         winners: [{ participantId: "p1", displayName: "Ada", seatNumber: 1 }],
+        players: [{ participantId: "p1", displayName: "Ada", seatNumber: 1, startingChips: 1_000, endingChips: 1_120, netChips: 120 }],
         potSize: 120,
         actions: [
           {
@@ -122,12 +133,35 @@ describe("hand history review shape", () => {
     ]);
   });
 
+  it("uses authoritative starting stacks and per-pot awards for side pots", () => {
+    const details = createHandPersistenceDetails(finishedSidePotRoom());
+
+    expect(details.players).toEqual(expect.arrayContaining([
+      expect.objectContaining({ participantId: "p1", startingChips: 50, endingChips: 150 }),
+      expect.objectContaining({ participantId: "p2", startingChips: 100, endingChips: 100 }),
+      expect.objectContaining({ participantId: "p3", startingChips: 100, endingChips: 0 })
+    ]));
+    expect(details.pots).toEqual([
+      expect.objectContaining({
+        amount: 150,
+        eligibleParticipantIds: ["p1", "p2", "p3"],
+        winnerParticipantIds: ["p1"]
+      }),
+      expect.objectContaining({
+        amount: 100,
+        eligibleParticipantIds: ["p2", "p3"],
+        winnerParticipantIds: ["p2"]
+      })
+    ]);
+  });
+
   it("renders public hand history on the review page", async () => {
     vi.spyOn(RoomRepository.prototype, "listPublicHandReviews").mockResolvedValue([
       {
         handNumber: 1,
         board: ["As", "Kd", "Qc"],
         winners: [{ participantId: "p1", displayName: "Ada", seatNumber: 1 }],
+        players: [{ participantId: "p1", displayName: "Ada", seatNumber: 1, startingChips: 1_000, endingChips: 1_120, netChips: 120 }],
         potSize: 120,
         actions: [
           {
@@ -164,7 +198,22 @@ function finishedRoom(): RoomState {
     status: "playing",
     handCounter: 1,
     buttonSeat: 1,
-    flow: { phase: "betting", sequence: 0, deadlineAt: null, nextRunoutStep: null, handResult: null },
+    flow: {
+      phase: "hand-summary",
+      sequence: 1,
+      deadlineAt: 2_000,
+      nextRunoutStep: null,
+      handResult: {
+        handNumber: 1,
+        board: [],
+        winnerParticipantIds: ["p1"],
+        players: [
+          { participantId: "p1", displayName: "Ada", seatNumber: 1, startingChips: 1000, committedChips: 10, potAward: 40, insuranceDelta: 0, endingChips: 1030, netChips: 30 },
+          { participantId: "p2", displayName: "Linus", seatNumber: 2, startingChips: 1000, committedChips: 20, potAward: 0, insuranceDelta: 0, endingChips: 980, netChips: -20 }
+        ],
+        pots: [{ potIndex: 0, amount: 20, eligibleParticipantIds: ["p1"], awardsByParticipantId: { p1: 20 } }]
+      }
+    },
     pendingTopUps: {},
     endAfterCurrentHand: false,
     sessionEndedAt: null,
@@ -204,6 +253,60 @@ function finishedRoom(): RoomState {
       actions: [{ playerId: "p2", type: "fold", street: "preflop" }],
       finished: true,
       winners: ["p1"]
+    }
+  };
+}
+
+function finishedSidePotRoom(): RoomState {
+  const room = finishedRoom();
+  return {
+    ...room,
+    settings: { ...room.settings, seats: 3 },
+    seats: [
+      { seatNumber: 1, participantId: "p1", displayName: "Ada", chips: 150, status: "all-in", cumulativeBuyIn: 50 },
+      { seatNumber: 2, participantId: "p2", displayName: "Linus", chips: 100, status: "all-in", cumulativeBuyIn: 100 },
+      { seatNumber: 3, participantId: "p3", displayName: "Grace", chips: 0, status: "eliminated", cumulativeBuyIn: 100 }
+    ],
+    flow: {
+      ...room.flow,
+      handResult: {
+        handNumber: 1,
+        board: ["2c", "3d", "4h", "7s", "9c"],
+        winnerParticipantIds: ["p1", "p2"],
+        players: [
+          { participantId: "p1", displayName: "Ada", seatNumber: 1, startingChips: 50, committedChips: 50, potAward: 150, insuranceDelta: 0, endingChips: 150, netChips: 100 },
+          { participantId: "p2", displayName: "Linus", seatNumber: 2, startingChips: 100, committedChips: 100, potAward: 100, insuranceDelta: 0, endingChips: 100, netChips: 0 },
+          { participantId: "p3", displayName: "Grace", seatNumber: 3, startingChips: 100, committedChips: 100, potAward: 0, insuranceDelta: 0, endingChips: 0, netChips: -100 }
+        ],
+        pots: [
+          { potIndex: 0, amount: 150, eligibleParticipantIds: ["p1", "p2", "p3"], awardsByParticipantId: { p1: 150 } },
+          { potIndex: 1, amount: 100, eligibleParticipantIds: ["p2", "p3"], awardsByParticipantId: { p2: 100 } }
+        ]
+      }
+    },
+    hand: {
+      ...room.hand!,
+      street: "river",
+      board: [
+        { rank: "2", suit: "c" },
+        { rank: "3", suit: "d" },
+        { rank: "4", suit: "h" },
+        { rank: "7", suit: "s" },
+        { rank: "9", suit: "c" }
+      ],
+      startingChipsByParticipantId: { p1: 50, p2: 100, p3: 100 },
+      betting: {
+        street: "river",
+        currentBet: 100,
+        minRaise: 20,
+        actorId: "p3",
+        players: [
+          { id: "p1", stack: 0, committed: 50, streetCommitted: 50, folded: false, allIn: true },
+          { id: "p2", stack: 0, committed: 100, streetCommitted: 100, folded: false, allIn: true },
+          { id: "p3", stack: 0, committed: 100, streetCommitted: 100, folded: false, allIn: true }
+        ]
+      },
+      actions: []
     }
   };
 }

@@ -2,8 +2,9 @@ import { Prisma } from "@prisma/client";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { nanoid } from "nanoid";
 import type { RoomState } from "@/lib/poker/engine";
-import { buildPots } from "@/lib/poker/betting";
 import { serializeCard, type Card } from "@/lib/poker/cards";
+import { SessionSummarySchema } from "@/lib/poker/schemas";
+import type { PendingTopUp, SessionPlayerResult } from "@/lib/poker/types";
 import { prisma } from "@/server/db";
 
 export class RoomRepository {
@@ -16,6 +17,8 @@ export class RoomRepository {
         board: true,
         players: {
           select: {
+            startingChips: true,
+            endingChips: true,
             participant: {
               select: {
                 id: true,
@@ -108,6 +111,31 @@ export class RoomRepository {
     });
   }
 
+  async recordTopUp(roomId: string, pending: PendingTopUp): Promise<void> {
+    const id = `buyin_${roomId}_${pending.participantId}_hand_${pending.targetHandNumber}`;
+    await prisma.buyIn.upsert({
+      where: { id },
+      create: {
+        id,
+        roomId,
+        participantId: pending.participantId,
+        amount: pending.amount
+      },
+      update: { amount: pending.amount }
+    });
+  }
+
+  async finishRoom(roomId: string, endedAt: Date, summary: SessionPlayerResult[]): Promise<void> {
+    const validated = SessionSummarySchema.parse(summary);
+    await prisma.room.update({
+      where: { id: roomId },
+      data: {
+        endedAt,
+        sessionSummary: validated as Prisma.InputJsonValue
+      }
+    });
+  }
+
   createId(prefix: string): string {
     return `${prefix}_${nanoid(12)}`;
   }
@@ -165,6 +193,7 @@ export interface PublicHandReview {
   handNumber: number;
   board: string[];
   winners: PublicHandWinner[];
+  players: PublicHandPlayer[];
   potSize: number;
   actions: PublicHandAction[];
 }
@@ -173,6 +202,15 @@ export interface PublicHandWinner {
   participantId: string;
   displayName: string;
   seatNumber: number | null;
+}
+
+export interface PublicHandPlayer {
+  participantId: string;
+  displayName: string;
+  seatNumber: number | null;
+  startingChips: number;
+  endingChips: number;
+  netChips: number;
 }
 
 export interface PublicHandAction {
@@ -199,6 +237,8 @@ interface HandReviewRow {
   handNumber: number;
   board: unknown;
   players?: Array<{
+    startingChips: number;
+    endingChips: number;
     participant: {
       id: string;
       displayName: string;
@@ -218,6 +258,14 @@ export function mapHandToPublicReview(hand: HandReviewRow): PublicHandReview {
     (hand.players ?? []).map((player) => [player.participant.id, player.participant])
   );
   const winnerIds = hand.pots.flatMap((pot) => toStringArray(pot.winnerParticipantIds));
+  const players = (hand.players ?? []).map((player) => ({
+    participantId: player.participant.id,
+    displayName: player.participant.displayName,
+    seatNumber: player.participant.seatNumber,
+    startingChips: player.startingChips,
+    endingChips: player.endingChips,
+    netChips: player.endingChips - player.startingChips
+  }));
 
   return {
     handNumber: hand.handNumber,
@@ -231,6 +279,7 @@ export function mapHandToPublicReview(hand: HandReviewRow): PublicHandReview {
         seatNumber: participant?.seatNumber ?? null
       };
     }),
+    players,
     potSize: hand.pots.reduce((sum, pot) => sum + pot.amount, 0),
     actions: hand.actions.map((action) => ({
       sequenceNumber: action.sequenceNumber,
@@ -261,7 +310,7 @@ export function createHandPersistenceDetails(room: RoomState): HandPersistenceDe
       handId: hand.id,
       participantId: seat.participantId,
       seatNumber: seat.seatNumber,
-      startingChips: betting.stack + betting.committed,
+      startingChips: hand.startingChipsByParticipantId[seat.participantId],
       endingChips: seat.chips,
       holeCards: Prisma.NullableJsonNullValueInput.JsonNull
     }];
@@ -280,15 +329,15 @@ export function createHandPersistenceDetails(room: RoomState): HandPersistenceDe
       resultingStack: player?.stack ?? room.seats.find((seat) => seat.participantId === action.playerId)?.chips ?? 0
     };
   });
-  const builtPots = buildPots(hand.betting.players);
-  const winnerParticipantIds = hand.winners;
-  const pots = builtPots.map((pot, index): Prisma.PotCreateManyInput => ({
+  const pots = (room.flow.handResult?.pots ?? []).map((pot, index): Prisma.PotCreateManyInput => ({
     id: `${hand.id}-pot-${index + 1}`,
     handId: hand.id,
     potType: index === 0 ? "main" : "side",
     amount: pot.amount,
-    eligibleParticipantIds: pot.eligiblePlayerIds as unknown as Prisma.InputJsonValue,
-    winnerParticipantIds: winnerParticipantIds.filter((winnerId) => pot.eligiblePlayerIds.includes(winnerId)) as unknown as Prisma.InputJsonValue
+    eligibleParticipantIds: pot.eligibleParticipantIds as unknown as Prisma.InputJsonValue,
+    winnerParticipantIds: pot.eligibleParticipantIds.filter(
+      (participantId) => (pot.awardsByParticipantId[participantId] ?? 0) > 0
+    ) as unknown as Prisma.InputJsonValue
   }));
 
   return { players, actions, pots };

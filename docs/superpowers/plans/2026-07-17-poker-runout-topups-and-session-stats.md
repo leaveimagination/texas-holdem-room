@@ -341,7 +341,7 @@ git commit -m "feat: coordinate and recover room flow deadlines"
 - Consumes: exact `HandResult.pots`, `startingChipsByParticipantId`, `PendingTopUp`, and `SessionPlayerResult[]`.
 - Produces: `recordTopUp(roomId, pending)`, `finishRoom(roomId, endedAt, summary)`, exact durable pot winners, and public hand-player net results.
 
-- [ ] **Step 1: Write failing migration and repository tests**
+- [x] **Step 1: Write failing migration and repository tests**
 
 ```ts
 expect(migrationSql).toContain('ALTER TABLE "Room" ADD COLUMN "sessionSummary" JSONB');
@@ -361,25 +361,25 @@ await repository.finishRoom("r1", new Date(10_000), summary);
 expect(roomUpdateMock).toHaveBeenCalledWith({ where: { id: "r1" }, data: { endedAt: new Date(10_000), sessionSummary: summary } });
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `npx vitest run tests/server/migration.test.ts tests/server/room-repository.test.ts tests/realtime/hand-history.test.ts`
 
 Expected: FAIL because schema, migration, repository operations, and exact result mapping are absent.
 
-- [ ] **Step 3: Implement idempotent persistence**
+- [x] **Step 3: Implement idempotent persistence**
 
 Add `sessionSummary Json?` to `Room`. Create the exact SQL migration. Change hand persistence to use `hand.startingChipsByParticipantId` and `flow.handResult.pots`; never filter a global winner list into each pot.
 
 Implement top-up upsert with ID `buyin_${roomId}_${participantId}_hand_${targetHandNumber}` and an unchanged amount update. Validate session summary using a shared Zod schema before updating `endedAt` and `sessionSummary`. Extend public hand review players with starting, ending, and signed net chips without exposing hole cards.
 
-- [ ] **Step 4: Generate Prisma and verify GREEN**
+- [x] **Step 4: Generate Prisma and verify GREEN**
 
 Run: `npm run prisma:generate && npx vitest run tests/server/migration.test.ts tests/server/room-repository.test.ts tests/realtime/hand-history.test.ts && npm run typecheck`
 
 Expected: Prisma generation succeeds, focused persistence tests pass, and type checking passes.
 
-- [ ] **Step 5: Commit the persistence slice**
+- [x] **Step 5: Commit the persistence slice**
 
 ```bash
 git add prisma/schema.prisma prisma/migrations/20260717090000_add_room_session_summary/migration.sql src/server/repositories/room-repository.ts tests/server/migration.test.ts tests/server/room-repository.test.ts tests/realtime/hand-history.test.ts

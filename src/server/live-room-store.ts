@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { RoomState } from "@/lib/poker/engine";
 import { RoomSettingsSchema, validateRoomSettings } from "@/lib/room/settings";
 import { RANKS, SUITS } from "@/lib/poker/cards";
+import { SessionPlayerResultSchema } from "@/lib/poker/schemas";
 
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
@@ -58,14 +59,6 @@ const HandResultSchema = z.object({
   winnerParticipantIds: z.array(z.string()),
   players: z.array(HandPlayerResultSchema),
   pots: z.array(PotAwardSchema)
-});
-const SessionPlayerResultSchema = z.object({
-  participantId: z.string(),
-  displayName: z.string(),
-  initialChips: z.number().int().nonnegative(),
-  topUpChips: z.number().int().nonnegative(),
-  finalChips: z.number().int().nonnegative(),
-  netChips: z.number().int()
 });
 const TableFlowStateSchema = z.object({
   phase: z.enum(["betting", "insurance-pending", "showdown-reveal", "runout", "hand-summary", "session-summary"]),

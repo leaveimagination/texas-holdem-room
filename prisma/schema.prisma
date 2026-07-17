@@ -20,6 +20,7 @@ model Room {
   settings       Json
   createdAt      DateTime          @default(now())
   endedAt        DateTime?
+  sessionSummary Json?
   participants   RoomParticipant[]
   hands          Hand[]
   buyIns         BuyIn[]
