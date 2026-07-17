@@ -1,15 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RoomRepository, hashToken } from "@/server/repositories/room-repository";
 
-const { buyInUpsertMock, createMock, findFirstMock, roomUpdateMock } = vi.hoisted(() => ({
+const {
+  buyInUpsertMock,
+  createMock,
+  findFirstMock,
+  roomUpdateMock,
+  transactionMock,
+  potDeleteManyMock,
+  handActionDeleteManyMock,
+  handPlayerDeleteManyMock,
+  handDeleteManyMock,
+  buyInDeleteManyMock,
+  tournamentResultDeleteManyMock,
+  participantDeleteManyMock,
+  roomDeleteMock
+} = vi.hoisted(() => ({
   buyInUpsertMock: vi.fn(),
   createMock: vi.fn(),
   findFirstMock: vi.fn(),
-  roomUpdateMock: vi.fn()
+  roomUpdateMock: vi.fn(),
+  transactionMock: vi.fn(),
+  potDeleteManyMock: vi.fn(),
+  handActionDeleteManyMock: vi.fn(),
+  handPlayerDeleteManyMock: vi.fn(),
+  handDeleteManyMock: vi.fn(),
+  buyInDeleteManyMock: vi.fn(),
+  tournamentResultDeleteManyMock: vi.fn(),
+  participantDeleteManyMock: vi.fn(),
+  roomDeleteMock: vi.fn()
 }));
 
 vi.mock("@/server/db", () => ({
   prisma: {
+    $transaction: transactionMock,
     buyIn: {
       upsert: buyInUpsertMock
     },
@@ -29,6 +53,15 @@ describe("RoomRepository participant tokens", () => {
     createMock.mockReset();
     findFirstMock.mockReset();
     roomUpdateMock.mockReset();
+    transactionMock.mockReset();
+    potDeleteManyMock.mockReset();
+    handActionDeleteManyMock.mockReset();
+    handPlayerDeleteManyMock.mockReset();
+    handDeleteManyMock.mockReset();
+    buyInDeleteManyMock.mockReset();
+    tournamentResultDeleteManyMock.mockReset();
+    participantDeleteManyMock.mockReset();
+    roomDeleteMock.mockReset();
   });
 
   it("creates a participant with a persisted token hash and returns the raw token once", async () => {
@@ -120,5 +153,66 @@ describe("RoomRepository participant tokens", () => {
       netChips: Number.NaN
     }])).rejects.toThrow();
     expect(roomUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("finds an ownership marker only within the exact room and run prefix", async () => {
+    findFirstMock.mockResolvedValue({ id: "participant_1" });
+    const repository = new RoomRepository();
+
+    await expect(repository.hasRunMarkerParticipant("room_exact", "run_exact")).resolves.toBe(true);
+
+    expect(findFirstMock).toHaveBeenCalledWith({
+      where: {
+        roomId: "room_exact",
+        displayName: { startsWith: "SITE-run_exact-" }
+      },
+      select: { id: true }
+    });
+  });
+
+  it("deletes only the exact room graph in relation-safe transaction order", async () => {
+    transactionMock.mockImplementation(async (operation) => operation({
+      pot: { deleteMany: potDeleteManyMock },
+      handAction: { deleteMany: handActionDeleteManyMock },
+      handPlayer: { deleteMany: handPlayerDeleteManyMock },
+      hand: { deleteMany: handDeleteManyMock },
+      buyIn: { deleteMany: buyInDeleteManyMock },
+      tournamentResult: { deleteMany: tournamentResultDeleteManyMock },
+      roomParticipant: { deleteMany: participantDeleteManyMock },
+      room: { delete: roomDeleteMock }
+    }));
+    const repository = new RoomRepository();
+
+    await repository.deleteExactRoom("room_exact");
+
+    expect(potDeleteManyMock).toHaveBeenCalledWith({ where: { hand: { roomId: "room_exact" } } });
+    expect(handActionDeleteManyMock).toHaveBeenCalledWith({ where: { hand: { roomId: "room_exact" } } });
+    expect(handPlayerDeleteManyMock).toHaveBeenCalledWith({ where: { hand: { roomId: "room_exact" } } });
+    expect(handDeleteManyMock).toHaveBeenCalledWith({ where: { roomId: "room_exact" } });
+    expect(buyInDeleteManyMock).toHaveBeenCalledWith({ where: { roomId: "room_exact" } });
+    expect(tournamentResultDeleteManyMock).toHaveBeenCalledWith({ where: { roomId: "room_exact" } });
+    expect(participantDeleteManyMock).toHaveBeenCalledWith({ where: { roomId: "room_exact" } });
+    expect(roomDeleteMock).toHaveBeenCalledWith({ where: { id: "room_exact" } });
+    const deletionCallOrder = [
+      potDeleteManyMock,
+      handActionDeleteManyMock,
+      handPlayerDeleteManyMock,
+      handDeleteManyMock,
+      buyInDeleteManyMock,
+      tournamentResultDeleteManyMock,
+      participantDeleteManyMock,
+      roomDeleteMock
+    ].map((mock) => mock.mock.invocationCallOrder[0]);
+    expect(deletionCallOrder).toEqual([...deletionCallOrder].sort((left, right) => left - right));
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, ["room_exact"]])("rejects non-exact room IDs without opening a transaction", async (roomId) => {
+    const repository = new RoomRepository();
+
+    await expect(repository.deleteExactRoom(roomId as unknown as string)).rejects.toThrow(
+      "An exact room ID is required"
+    );
+    expect(transactionMock).not.toHaveBeenCalled();
   });
 });

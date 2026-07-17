@@ -8,6 +8,35 @@ import type { PendingTopUp, SessionPlayerResult } from "@/lib/poker/types";
 import { prisma } from "@/server/db";
 
 export class RoomRepository {
+  async hasRunMarkerParticipant(roomId: string, runId: string): Promise<boolean> {
+    const participant = await prisma.roomParticipant.findFirst({
+      where: {
+        roomId,
+        displayName: { startsWith: `SITE-${runId}-` }
+      },
+      select: { id: true }
+    });
+
+    return participant !== null;
+  }
+
+  async deleteExactRoom(roomId: string): Promise<void> {
+    if (typeof roomId !== "string" || roomId.length === 0) {
+      throw new TypeError("An exact room ID is required");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.pot.deleteMany({ where: { hand: { roomId } } });
+      await tx.handAction.deleteMany({ where: { hand: { roomId } } });
+      await tx.handPlayer.deleteMany({ where: { hand: { roomId } } });
+      await tx.hand.deleteMany({ where: { roomId } });
+      await tx.buyIn.deleteMany({ where: { roomId } });
+      await tx.tournamentResult.deleteMany({ where: { roomId } });
+      await tx.roomParticipant.deleteMany({ where: { roomId } });
+      await tx.room.delete({ where: { id: roomId } });
+    });
+  }
+
   async listPublicHandReviews(roomId: string): Promise<PublicHandReview[]> {
     const hands = await prisma.hand.findMany({
       where: { roomId },

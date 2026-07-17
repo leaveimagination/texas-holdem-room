@@ -2,8 +2,9 @@ import { createServer } from "node:http";
 import process from "node:process";
 import next from "next";
 import { loadLocalEnv } from "./env";
-import { LiveRoomStore, type KeyValueStore } from "./live-room-store";
+import { LiveRoomStore } from "./live-room-store";
 import { createGameServer, handleGameServerUpgrade } from "./realtime/game-server";
+import { createRedisKeyValueStore } from "./redis-key-value-store";
 import { RoomRepository } from "./repositories/room-repository";
 import { createRedisClient } from "./redis";
 
@@ -40,7 +41,7 @@ void (async () => {
 
     const gameServer = createGameServer({
       server,
-      liveRooms: new LiveRoomStore(createKeyValueStore(redisClient)),
+      liveRooms: new LiveRoomStore(createRedisKeyValueStore(redisClient)),
       auth: {
         verifyParticipantToken: (roomId, token) => roomRepository.verifyParticipantToken(roomId, token),
         verifyHostToken: (roomId, token) => roomRepository.verifyHostToken(roomId, token)
@@ -63,21 +64,3 @@ void (async () => {
     process.exit(1);
   }
 })();
-
-function createKeyValueStore(client: ReturnType<typeof createRedisClient>): KeyValueStore {
-  return {
-    get(key) {
-      return client.get(key);
-    },
-    set(key, value, mode, ttlSeconds) {
-      if (mode === "EX" && ttlSeconds !== undefined) {
-        return client.set(key, value, "EX", ttlSeconds);
-      }
-
-      return client.set(key, value);
-    },
-    del(key) {
-      return client.del(key);
-    }
-  };
-}
