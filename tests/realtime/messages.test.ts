@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientMessageSchema } from "@/lib/realtime/messages";
+import { ClientMessageSchema, type ServerMessage } from "@/lib/realtime/messages";
 
 describe("realtime messages", () => {
   it("accepts player actions", () => {
@@ -93,5 +93,57 @@ describe("realtime messages", () => {
         seatNumber: 10
       })
     ).toThrow();
+  });
+
+  it("rejects unsafe top-up amounts", () => {
+    expect(
+      ClientMessageSchema.safeParse({
+        type: "rebuy",
+        roomId: "room1",
+        participantToken: "token",
+        amount: Number.MAX_SAFE_INTEGER + 1
+      }).success
+    ).toBe(false);
+  });
+
+  it("defines the authoritative flow event messages", () => {
+    const messages = [
+      {
+        type: "showdown_started",
+        payload: { handNumber: 1, phaseSequence: 2, revealedParticipantIds: ["p1", "p2"], deadline: 2_000 }
+      },
+      {
+        type: "runout_card_revealed",
+        payload: { handNumber: 1, phaseSequence: 3, street: "flop", cardIndex: 0, card: "As", deadline: 3_000 }
+      },
+      {
+        type: "top_up_queued",
+        payload: { participantId: "p1", displayName: "P1", submittedAmount: 500, pendingTotal: 800, targetHandNumber: 2 }
+      },
+      {
+        type: "top_up_applied",
+        payload: { participantId: "p1", displayName: "P1", amount: 800, handNumber: 2 }
+      },
+      { type: "room_end_requested", payload: { finalHandNumber: 1 } },
+      {
+        type: "room_finished",
+        payload: {
+          players: [
+            { participantId: "p1", displayName: "P1", initialChips: 1_000, topUpChips: 0, finalChips: 1_100, netChips: 100 }
+          ]
+        }
+      },
+      { type: "error", payload: { code: "PRESENTATION_IN_PROGRESS", message: "Hand presentation is in progress" } }
+    ] satisfies ServerMessage[];
+
+    expect(messages.map((message) => message.type)).toEqual([
+      "showdown_started",
+      "runout_card_revealed",
+      "top_up_queued",
+      "top_up_applied",
+      "room_end_requested",
+      "room_finished",
+      "error"
+    ]);
   });
 });

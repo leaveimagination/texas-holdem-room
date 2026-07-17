@@ -17,6 +17,17 @@ const state: RoomState = {
   status: "playing",
   handCounter: 1,
   buttonSeat: 1,
+  flow: {
+    phase: "betting",
+    sequence: 0,
+    deadlineAt: null,
+    nextRunoutStep: null,
+    handResult: null
+  },
+  pendingTopUps: {},
+  endAfterCurrentHand: false,
+  sessionEndedAt: null,
+  sessionSummary: null,
   seats: [
     {
       seatNumber: 1,
@@ -56,6 +67,7 @@ const state: RoomState = {
       p1: [parseCard("As"), parseCard("Ah")],
       p2: [parseCard("Kd"), parseCard("Kh")]
     },
+    startingChipsByParticipantId: { p1: 1000, p2: 1000 },
     actions: [],
     finished: false,
     winners: []

@@ -51,3 +51,67 @@ export interface Seat {
   cumulativeBuyIn: number;
   holeCards?: Card[];
 }
+
+export type TableFlowPhase =
+  | "betting"
+  | "insurance-pending"
+  | "showdown-reveal"
+  | "runout"
+  | "hand-summary"
+  | "session-summary";
+
+export interface RunoutStep {
+  street: "flop" | "turn" | "river";
+  cardIndexOnStreet: number;
+}
+
+export interface PendingTopUp {
+  participantId: string;
+  targetHandNumber: number;
+  amount: number;
+  requestCount: number;
+}
+
+export interface PotAward {
+  potIndex: number;
+  amount: number;
+  eligibleParticipantIds: string[];
+  awardsByParticipantId: Record<string, number>;
+}
+
+export interface HandPlayerResult {
+  participantId: string;
+  displayName: string;
+  seatNumber: number;
+  startingChips: number;
+  committedChips: number;
+  potAward: number;
+  insuranceDelta: number;
+  endingChips: number;
+  netChips: number;
+}
+
+export interface HandResult {
+  handNumber: number;
+  board: string[];
+  winnerParticipantIds: string[];
+  players: HandPlayerResult[];
+  pots: PotAward[];
+}
+
+export interface SessionPlayerResult {
+  participantId: string;
+  displayName: string;
+  initialChips: number;
+  topUpChips: number;
+  finalChips: number;
+  netChips: number;
+}
+
+export interface TableFlowState {
+  phase: TableFlowPhase;
+  sequence: number;
+  deadlineAt: number | null;
+  nextRunoutStep: RunoutStep | null;
+  handResult: HandResult | null;
+}

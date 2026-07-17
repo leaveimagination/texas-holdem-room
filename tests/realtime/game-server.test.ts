@@ -470,6 +470,7 @@ function createFinishedHeadsUpRoomWithBustedPlayer(): RoomState {
         ]
       },
       holeCardsByParticipantId: {},
+      startingChipsByParticipantId: { p1: 3000, p2: 1000 },
       actions: [],
       finished: true,
       winners: ["p1"]

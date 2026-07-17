@@ -195,6 +195,7 @@ function createPlayingCashRoom() {
         ]
       },
       holeCardsByParticipantId: {},
+      startingChipsByParticipantId: { p1: 1000, p2: 1000 },
       actions: [],
       finished: false,
       winners: []
@@ -247,6 +248,7 @@ function createPlayingTournamentRoom() {
         ]
       },
       holeCardsByParticipantId: {},
+      startingChipsByParticipantId: { p1: 1000, p2: 1000, p3: 1000 },
       actions: [],
       finished: false,
       winners: []
@@ -298,6 +300,7 @@ function createPlayingHeadsUpTournamentRoom() {
         ]
       },
       holeCardsByParticipantId: {},
+      startingChipsByParticipantId: { p1: 1000, p2: 1000 },
       actions: [],
       finished: false,
       winners: []

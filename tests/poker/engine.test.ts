@@ -76,6 +76,25 @@ function createSparseFourSeatState() {
 }
 
 describe("engine", () => {
+  it("initializes authoritative flow and pending room state", () => {
+    const room = createInitialRoomState(
+      { mode: "cash", seats: 2, initialChips: 1000, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null },
+      "room-flow"
+    );
+
+    expect(room.flow).toEqual({
+      phase: "betting",
+      sequence: 0,
+      deadlineAt: null,
+      nextRunoutStep: null,
+      handResult: null
+    });
+    expect(room.pendingTopUps).toEqual({});
+    expect(room.endAfterCurrentHand).toBe(false);
+    expect(room.sessionEndedAt).toBeNull();
+    expect(room.sessionSummary).toBeNull();
+  });
+
   it("posts normal blinds, deals hole cards, and assigns the opening actor heads up", () => {
     const started = startHand(createReadyHeadsUpState(), fixedDeck);
 
@@ -88,6 +107,7 @@ describe("engine", () => {
     expect(started.hand?.actorId).toBe("p1");
     expect(started.hand?.actorId).toBe(started.hand?.betting.actorId);
     expect(started.hand?.holeCardsByParticipantId.p1).toHaveLength(2);
+    expect(started.hand?.startingChipsByParticipantId).toEqual({ p1: 1000, p2: 1000 });
   });
 
   it("awards the pot to the remaining player when the opener folds", () => {
@@ -343,6 +363,11 @@ function createTurnAllInInsuranceState(): RoomState {
     status: "playing",
     handCounter: 1,
     buttonSeat: 1,
+    flow: { phase: "betting", sequence: 0, deadlineAt: null, nextRunoutStep: null, handResult: null },
+    pendingTopUps: {},
+    endAfterCurrentHand: false,
+    sessionEndedAt: null,
+    sessionSummary: null,
     seats: [
       { seatNumber: 1, participantId: "p1", displayName: "Aces", chips: 0, cumulativeBuyIn: 1000, status: "all-in" },
       { seatNumber: 2, participantId: "p2", displayName: "Kings", chips: 0, cumulativeBuyIn: 1000, status: "all-in" }
@@ -368,6 +393,7 @@ function createTurnAllInInsuranceState(): RoomState {
         p1: ["As", "Ah"].map(parseCard),
         p2: ["Ks", "Kh"].map(parseCard)
       },
+      startingChipsByParticipantId: { p1: 100, p2: 100 },
       actions: [
         { playerId: "p1", type: "all-in", street: "turn", amount: 100 },
         { playerId: "p2", type: "call", street: "turn", amount: 100 }

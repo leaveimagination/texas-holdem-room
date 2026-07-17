@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SessionPlayerResult } from "@/lib/poker/types";
 
 const BettingActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("fold"), playerId: z.string() }).strict(),
@@ -28,7 +29,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("end_room"), roomId: z.string(), hostToken: z.string() }).strict(),
   z.object({ type: z.literal("player_action"), roomId: z.string(), participantToken: z.string(), action: BettingActionSchema }).strict(),
   z.object({ type: z.literal("insurance_decision"), roomId: z.string(), participantToken: z.string(), accepted: z.boolean() }).strict(),
-  z.object({ type: z.literal("rebuy"), roomId: z.string(), participantToken: z.string(), amount: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("rebuy"), roomId: z.string(), participantToken: z.string(), amount: z.number().int().positive().safe() }).strict(),
   z.object({
     type: z.literal("quick_phrase"),
     roomId: z.string(),
@@ -46,6 +47,17 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
 
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
+export type RealtimeErrorCode =
+  | "INVALID_MESSAGE"
+  | "ROOM_NOT_FOUND"
+  | "INVALID_PARTICIPANT_TOKEN"
+  | "INVALID_HOST_TOKEN"
+  | "PRESENTATION_IN_PROGRESS"
+  | "TOP_UP_NOT_ALLOWED"
+  | "TOP_UP_AMOUNT_INVALID"
+  | "ROOM_FINISHED"
+  | "SERVER_BUSY";
+
 export type ServerMessage =
   | { type: "room_snapshot"; payload: unknown }
   | { type: "table_update"; payload: unknown }
@@ -55,10 +67,40 @@ export type ServerMessage =
   | { type: "street_changed"; payload: unknown }
   | { type: "action_recorded"; payload: unknown }
   | { type: "hand_finished"; payload: unknown }
+  | {
+      type: "showdown_started";
+      payload: { handNumber: number; phaseSequence: number; revealedParticipantIds: string[]; deadline: number };
+    }
+  | {
+      type: "runout_card_revealed";
+      payload: {
+        handNumber: number;
+        phaseSequence: number;
+        street: "flop" | "turn" | "river";
+        cardIndex: number;
+        card: string;
+        deadline: number;
+      };
+    }
+  | {
+      type: "top_up_queued";
+      payload: {
+        participantId: string;
+        displayName: string;
+        submittedAmount: number;
+        pendingTotal: number;
+        targetHandNumber: number;
+      };
+    }
+  | {
+      type: "top_up_applied";
+      payload: { participantId: string; displayName: string; amount: number; handNumber: number };
+    }
+  | { type: "room_end_requested"; payload: { finalHandNumber: number | null } }
   | { type: "blind_level_changed"; payload: unknown }
   | { type: "player_disconnected"; payload: unknown }
   | { type: "player_reconnected"; payload: unknown }
   | { type: "player_eliminated"; payload: unknown }
-  | { type: "room_finished"; payload: unknown }
+  | { type: "room_finished"; payload: { players: SessionPlayerResult[] } }
   | { type: "system_message"; payload: { message: string } }
-  | { type: "error"; payload: { message: string } };
+  | { type: "error"; payload: { code?: RealtimeErrorCode; message: string } };

@@ -29,6 +29,54 @@ const CardSchema = z.object({
   rank: z.enum(RANKS),
   suit: z.enum(SUITS)
 });
+const PendingTopUpSchema = z.object({
+  participantId: z.string(),
+  targetHandNumber: z.number().int().nonnegative(),
+  amount: z.number().int().positive(),
+  requestCount: z.number().int().positive()
+});
+const PotAwardSchema = z.object({
+  potIndex: z.number().int().nonnegative(),
+  amount: z.number().int().nonnegative(),
+  eligibleParticipantIds: z.array(z.string()),
+  awardsByParticipantId: z.record(z.string(), z.number().int().nonnegative())
+});
+const HandPlayerResultSchema = z.object({
+  participantId: z.string(),
+  displayName: z.string(),
+  seatNumber: z.number().int().positive(),
+  startingChips: z.number().int().nonnegative(),
+  committedChips: z.number().int().nonnegative(),
+  potAward: z.number().int().nonnegative(),
+  insuranceDelta: z.number().int(),
+  endingChips: z.number().int().nonnegative(),
+  netChips: z.number().int()
+});
+const HandResultSchema = z.object({
+  handNumber: z.number().int().nonnegative(),
+  board: z.array(z.string()),
+  winnerParticipantIds: z.array(z.string()),
+  players: z.array(HandPlayerResultSchema),
+  pots: z.array(PotAwardSchema)
+});
+const SessionPlayerResultSchema = z.object({
+  participantId: z.string(),
+  displayName: z.string(),
+  initialChips: z.number().int().nonnegative(),
+  topUpChips: z.number().int().nonnegative(),
+  finalChips: z.number().int().nonnegative(),
+  netChips: z.number().int()
+});
+const TableFlowStateSchema = z.object({
+  phase: z.enum(["betting", "insurance-pending", "showdown-reveal", "runout", "hand-summary", "session-summary"]),
+  sequence: z.number().int().nonnegative(),
+  deadlineAt: z.number().int().nonnegative().nullable(),
+  nextRunoutStep: z.object({
+    street: z.enum(["flop", "turn", "river"]),
+    cardIndexOnStreet: z.number().int().nonnegative()
+  }).nullable(),
+  handResult: HandResultSchema.nullable()
+});
 const SeatSchema = z
   .object({
     seatNumber: z.number().int().positive(),
@@ -66,6 +114,7 @@ const HandStateSchema = z
     actorId: z.string(),
     betting: BettingStateSchema,
     holeCardsByParticipantId: z.record(z.string(), z.array(CardSchema)),
+    startingChipsByParticipantId: z.record(z.string(), z.number().int().nonnegative()),
     actions: z.array(HandActionRecordSchema),
     insuranceOffer: InsuranceOfferSchema.optional(),
     finished: z.boolean(),
@@ -81,7 +130,12 @@ const RoomStateSchema = z
     handCounter: z.number().int().nonnegative(),
     buttonSeat: z.number().int().positive().nullable(),
     seats: z.array(SeatSchema),
-    hand: HandStateSchema.nullable()
+    hand: HandStateSchema.nullable(),
+    flow: TableFlowStateSchema,
+    pendingTopUps: z.record(z.string(), PendingTopUpSchema),
+    endAfterCurrentHand: z.boolean(),
+    sessionEndedAt: z.number().int().nonnegative().nullable(),
+    sessionSummary: z.array(SessionPlayerResultSchema).nullable()
   })
   .strict();
 

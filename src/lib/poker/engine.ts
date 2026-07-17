@@ -2,7 +2,16 @@ import type { RoomSettings } from "@/lib/room/settings";
 import { applyBettingAction, buildPots } from "./betting";
 import { type Card, shuffledDeck } from "./cards";
 import { compareHands, evaluateSeven } from "./hand-evaluator";
-import type { BettingAction, BettingState, RoomMode, Seat, Street } from "./types";
+import type {
+  BettingAction,
+  BettingState,
+  PendingTopUp,
+  RoomMode,
+  Seat,
+  SessionPlayerResult,
+  Street,
+  TableFlowState
+} from "./types";
 
 type ActiveSeat = Seat & { participantId: string };
 
@@ -15,6 +24,11 @@ export interface RoomState {
   buttonSeat: number | null;
   seats: Seat[];
   hand: HandState | null;
+  flow: TableFlowState;
+  pendingTopUps: Record<string, PendingTopUp>;
+  endAfterCurrentHand: boolean;
+  sessionEndedAt: number | null;
+  sessionSummary: SessionPlayerResult[] | null;
 }
 
 export interface HandActionRecord {
@@ -33,6 +47,7 @@ export interface HandState {
   actorId: string;
   betting: BettingState;
   holeCardsByParticipantId: Record<string, Card[]>;
+  startingChipsByParticipantId: Record<string, number>;
   actions: HandActionRecord[];
   insuranceOffer?: InsuranceOffer;
   finished: boolean;
@@ -66,7 +81,18 @@ export function createInitialRoomState(settings: RoomSettings, roomId: string): 
       status: "empty",
       cumulativeBuyIn: 0
     })),
-    hand: null
+    hand: null,
+    flow: {
+      phase: "betting",
+      sequence: 0,
+      deadlineAt: null,
+      nextRunoutStep: null,
+      handResult: null
+    },
+    pendingTopUps: {},
+    endAfterCurrentHand: false,
+    sessionEndedAt: null,
+    sessionSummary: null
   };
 }
 
@@ -189,6 +215,9 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
   const deck = [...(providedDeck ?? shuffledDeck())];
   const seats = state.seats.map((seat) => ({ ...seat }));
   const holeCardsByParticipantId: Record<string, Card[]> = {};
+  const startingChipsByParticipantId = Object.fromEntries(
+    activeSeats.map((seat) => [seat.participantId, seat.chips])
+  );
 
   for (const seat of activeSeats) {
     const updatedSeat = seats.find((candidate) => candidate.seatNumber === seat.seatNumber)!;
@@ -248,6 +277,7 @@ export function startHand(state: RoomState, providedDeck?: Card[]): RoomState {
         players: bettingPlayers
       },
       holeCardsByParticipantId,
+      startingChipsByParticipantId,
       actions: [],
       finished: false,
       winners: []

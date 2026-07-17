@@ -164,6 +164,11 @@ function finishedRoom(): RoomState {
     status: "playing",
     handCounter: 1,
     buttonSeat: 1,
+    flow: { phase: "betting", sequence: 0, deadlineAt: null, nextRunoutStep: null, handResult: null },
+    pendingTopUps: {},
+    endAfterCurrentHand: false,
+    sessionEndedAt: null,
+    sessionSummary: null,
     seats: [
       { seatNumber: 1, participantId: "p1", displayName: "Ada", chips: 1030, status: "active", cumulativeBuyIn: 1000 },
       { seatNumber: 2, participantId: "p2", displayName: "Linus", chips: 980, status: "folded", cumulativeBuyIn: 1000 }
@@ -195,6 +200,7 @@ function finishedRoom(): RoomState {
           { rank: "7", suit: "h" }
         ]
       },
+      startingChipsByParticipantId: { p1: 1000, p2: 1000 },
       actions: [{ playerId: "p2", type: "fold", street: "preflop" }],
       finished: true,
       winners: ["p1"]

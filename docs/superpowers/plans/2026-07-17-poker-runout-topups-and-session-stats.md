@@ -35,7 +35,7 @@
 - Consumes: existing `Card`, `Seat`, `RoomState`, `HandState`, and strict Zod client-message parsing.
 - Produces: `TableFlowPhase`, `TableFlowState`, `PendingTopUp`, `PotAward`, `HandPlayerResult`, `HandResult`, `SessionPlayerResult`, `RealtimeErrorCode`, typed server event payloads, default room flow, and per-hand starting stacks.
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 Add assertions that unsafe top-up amounts fail parsing, new event messages type-check, and initial/started rooms contain the new state:
 
@@ -62,13 +62,13 @@ const started = startHand(readyRoom, fixedDeck);
 expect(started.hand?.startingChipsByParticipantId).toEqual({ p1: 1000, p2: 1000 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run: `npx vitest run tests/realtime/messages.test.ts tests/poker/engine.test.ts`
 
 Expected: FAIL because the new fields and safe-integer schema do not exist.
 
-- [ ] **Step 3: Add the shared contracts and defaults**
+- [x] **Step 3: Add the shared contracts and defaults**
 
 Define and export the canonical shapes in `types.ts`:
 
@@ -93,13 +93,13 @@ export type RealtimeErrorCode = "INVALID_MESSAGE" | "ROOM_NOT_FOUND" | "INVALID_
 
 and make `error.payload` equal `{ code: RealtimeErrorCode; message: string }`.
 
-- [ ] **Step 4: Run focused tests and type checking and verify GREEN**
+- [x] **Step 4: Run focused tests and type checking and verify GREEN**
 
 Run: `npx vitest run tests/realtime/messages.test.ts tests/poker/engine.test.ts && npm run typecheck`
 
 Expected: both test files pass and TypeScript reports no errors.
 
-- [ ] **Step 5: Commit the contract slice**
+- [x] **Step 5: Commit the contract slice**
 
 ```bash
 git add src/lib/poker/types.ts src/lib/poker/engine.ts src/lib/realtime/messages.ts tests/realtime/messages.test.ts tests/poker/engine.test.ts
