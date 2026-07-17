@@ -59,7 +59,29 @@ function assertNoKnownSecret(
   source: string,
   secrets: readonly string[]
 ): void {
-  if (secrets.some((secret) => content.includes(secret))) {
+  let percentDecoded = content;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decoded = percentDecoded.replace(
+      /(?:%[0-9a-f]{2})+/gi,
+      (encoded) => {
+        try {
+          return decodeURIComponent(encoded);
+        } catch {
+          return encoded;
+        }
+      }
+    );
+    if (decoded === percentDecoded) {
+      break;
+    }
+    percentDecoded = decoded;
+  }
+
+  if (
+    secrets.some(
+      (secret) => content.includes(secret) || percentDecoded.includes(secret)
+    )
+  ) {
     throw new Error(`Known secret found in evidence: ${source}`);
   }
 }
@@ -95,6 +117,10 @@ function assertMonotonicEvents(events: readonly EvidenceEvent[], source: string)
   }
 }
 
+function isOutsideRoot(relativePath: string): boolean {
+  return isAbsolute(relativePath) || relativePath.split(/[\\/]+/, 1)[0] === "..";
+}
+
 function safeArtifactPath(outputRoot: string, artifactPath: string): string {
   if (
     isAbsolute(artifactPath) ||
@@ -105,7 +131,7 @@ function safeArtifactPath(outputRoot: string, artifactPath: string): string {
 
   const resolved = resolve(outputRoot, artifactPath);
   const fromRoot = relative(outputRoot, resolved);
-  if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
+  if (isOutsideRoot(fromRoot)) {
     throw new Error(`Artifact path traversal rejected: ${artifactPath}`);
   }
   return resolved;
@@ -276,15 +302,20 @@ export async function validateEvidencePack(
     );
   }
   for (const event of events) {
+    const matchesCase = report.cases.some(
+      (caseContext) =>
+        event.caseId === caseContext.caseId &&
+        event.attemptId === caseContext.attemptId
+    );
     const matchesReport =
       event.runId === report.runId &&
-      (report.kind === "run" ||
-        report.cases.some(
-          (caseContext) =>
-            event.caseId === caseContext.caseId &&
-            event.attemptId === caseContext.attemptId
-        ));
+      matchesCase;
     if (!matchesReport) {
+      if (report.kind === "run" && event.runId === report.runId) {
+        throw new Error(
+          `Evidence event ${event.id} does not match any run report case`
+        );
+      }
       throw new Error(
         `Evidence event ${event.id} does not match report context`
       );
@@ -344,7 +375,7 @@ export async function validateEvidencePack(
     }
     const canonicalArtifact = await realpath(artifactPath);
     const fromRoot = relative(canonicalRoot, canonicalArtifact);
-    if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
+    if (isOutsideRoot(fromRoot)) {
       throw new Error(`Artifact path traversal rejected: ${artifact.path}`);
     }
   }
@@ -358,20 +389,18 @@ export async function validateEvidencePack(
         throw new Error(`Invalid trace ZIP: ${path}`, { cause: error });
       }
       for (const [entryName, bytes] of Object.entries(entries)) {
+        const content = strFromU8(bytes);
+        assertNoKnownSecret(content, `${path}!${entryName}`, secrets);
         if (isLikelyText(bytes)) {
           textEntriesScanned += 1;
-          assertNoKnownSecret(
-            strFromU8(bytes),
-            `${path}!${entryName}`,
-            secrets
-          );
         }
       }
     } else {
       const bytes = new Uint8Array(await readFile(path));
+      const content = strFromU8(bytes);
+      assertNoKnownSecret(content, path, secrets);
       if (isLikelyText(bytes)) {
         textEntriesScanned += 1;
-        assertNoKnownSecret(strFromU8(bytes), path, secrets);
       }
     }
   }

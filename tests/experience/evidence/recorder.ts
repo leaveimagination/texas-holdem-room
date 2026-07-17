@@ -75,26 +75,28 @@ export class EvidenceRecorder {
     return this.enqueue(async () => {
       await mkdir(this.options.outputRoot, { recursive: true });
       const seq = this.events.length + 1;
-      const event = EvidenceEventSchema.parse({
-        id: `${this.options.caseId}-${this.options.attemptId}-E-${String(seq).padStart(6, "0")}`,
-        runId: this.options.runId,
-        caseId: this.options.caseId,
-        attemptId: this.options.attemptId,
-        actor: input.actor ?? this.options.actor,
-        seq,
-        timestamp: input.timestamp ?? new Date().toISOString(),
-        monotonicMs: input.monotonicMs ?? performance.now(),
-        stage: input.stage,
-        type: input.type,
-        status: input.status,
-        details: redactForEvidence(
-          input.details,
+      const event = EvidenceEventSchema.parse(
+        redactForEvidence(
+          {
+            id: `${this.options.caseId}-${this.options.attemptId}-E-${String(seq).padStart(6, "0")}`,
+            runId: this.options.runId,
+            caseId: this.options.caseId,
+            attemptId: this.options.attemptId,
+            actor: input.actor ?? this.options.actor,
+            seq,
+            timestamp: input.timestamp ?? new Date().toISOString(),
+            monotonicMs: input.monotonicMs ?? performance.now(),
+            stage: input.stage,
+            type: input.type,
+            status: input.status,
+            details: input.details,
+            handNumber: input.handNumber,
+            flowSequence: input.flowSequence,
+            artifactIds: input.artifactIds ?? []
+          },
           this.options.knownSecrets
-        ),
-        handNumber: input.handNumber,
-        flowSequence: input.flowSequence,
-        artifactIds: input.artifactIds ?? []
-      });
+        )
+      );
       const events = [...this.events, event];
       await atomicWriteJson(join(this.options.outputRoot, "events.json"), events);
       this.events.push(event);

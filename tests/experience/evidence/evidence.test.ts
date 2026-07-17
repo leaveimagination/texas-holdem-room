@@ -285,6 +285,33 @@ describe("EvidenceRecorder", () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0].id).toBe("ART-RECOVERED");
   });
+
+  it("redacts known secrets from every string-bearing event field", async () => {
+    const root = await temporaryRoot();
+    const secret = "host-credential";
+    const recorder = new EvidenceRecorder({
+      outputRoot: root,
+      runId: `RUN-${secret}`,
+      caseId: `EXP-${secret}`,
+      attemptId: `A-${secret}`,
+      actor: `actor-${secret}`,
+      knownSecrets: [secret]
+    });
+
+    const recorded = await recorder.recordEvent({
+      actor: `override-${secret}`,
+      stage: `stage-${secret}`,
+      type: `type-${secret}`,
+      status: `status-${secret}`,
+      details: {},
+      artifactIds: [`ART-${secret}`]
+    });
+    const persisted = await readFile(join(root, "events.json"), "utf8");
+
+    expect(JSON.stringify(recorded)).not.toContain(secret);
+    expect(persisted).not.toContain(secret);
+    expect(EvidenceEventSchema.parse(recorded)).toEqual(recorded);
+  });
 });
 
 describe("redactForEvidence", () => {
@@ -358,6 +385,25 @@ describe("redactForEvidence", () => {
       holeCardsByParticipantId: { visible: true, cardCount: 4 }
     });
   });
+
+  it("summarizes private cards serialized inside string evidence", () => {
+    const redacted = redactForEvidence(
+      {
+        responseBody: JSON.stringify({
+          status: "ok",
+          holeCards: ["AS", "KD"]
+        })
+      },
+      []
+    ) as { responseBody: string };
+
+    expect(redacted.responseBody).not.toContain("AS");
+    expect(redacted.responseBody).not.toContain("KD");
+    expect(JSON.parse(redacted.responseBody)).toEqual({
+      status: "ok",
+      holeCards: { visible: true, cardCount: 2 }
+    });
+  });
 });
 
 describe("validateEvidencePack", () => {
@@ -409,6 +455,22 @@ describe("validateEvidencePack", () => {
     ]);
 
     await expect(validateEvidencePack(root, [])).rejects.toThrow(/path traversal/i);
+  });
+
+  it("allows an in-root artifact whose name begins with two dots", async () => {
+    const root = await temporaryRoot();
+    await writeFile(join(root, "..foo.txt"), "safe evidence");
+    await writePack(root, [
+      {
+        id: "ART-SAFE",
+        path: "..foo.txt",
+        description: "Safe in-root artifact"
+      }
+    ]);
+
+    await expect(validateEvidencePack(root, [])).resolves.toMatchObject({
+      artifactCount: 1
+    });
   });
 
   it("rejects non-monotonic event sequence numbers", async () => {
@@ -507,6 +569,42 @@ describe("validateEvidencePack", () => {
     );
   });
 
+  it("rejects unrelated case events from a run report", async () => {
+    const root = await temporaryRoot();
+    await writePack(root, [], [
+      event,
+      {
+        ...event,
+        id: "E-UNRELATED",
+        caseId: "EXP-999",
+        attemptId: "A-999",
+        seq: 2,
+        monotonicMs: 11
+      }
+    ]);
+    const reportPath = join(root, "report.json");
+    const caseReport = JSON.parse(await readFile(reportPath, "utf8"));
+    await writeFile(
+      reportPath,
+      JSON.stringify({
+        schemaVersion: "1.0",
+        runId: "RUN-001",
+        startedAt: "2026-07-17T00:00:00.000Z",
+        finishedAt: "2026-07-17T00:00:01.000Z",
+        verdict: "PASS",
+        results: passingPlanes,
+        thresholds: EXPERIENCE_THRESHOLDS,
+        cases: [caseReport],
+        resources: [],
+        artifacts: []
+      })
+    );
+
+    await expect(validateEvidencePack(root, [])).rejects.toThrow(
+      /evidence event E-UNRELATED does not match any run report case/i
+    );
+  });
+
   it("rejects duplicate artifact IDs", async () => {
     const root = await temporaryRoot();
     await mkdir(join(root, "screenshots"));
@@ -558,6 +656,20 @@ describe("validateEvidencePack", () => {
     ).rejects.toThrow(/known secret.*diagnostics[\\/]browser\.har/i);
   });
 
+  it("rejects a known secret in NUL-prefixed evidence bytes", async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, "diagnostics"));
+    await writeFile(
+      join(root, "diagnostics", "nul-prefixed.bin"),
+      Buffer.concat([Buffer.from([0]), Buffer.from("participant-secret")])
+    );
+    await writePack(root);
+
+    await expect(
+      validateEvidencePack(root, ["participant-secret"])
+    ).rejects.toThrow(/known secret.*diagnostics[\\/]nul-prefixed\.bin/i);
+  });
+
   it.each([
     { query: "host", secret: "host-trace-secret" },
     { query: "participantToken", secret: "participant-trace-secret" }
@@ -580,6 +692,32 @@ describe("validateEvidencePack", () => {
         id: "ART-TRACE",
         path: "traces/EXP-001-host.zip",
         description: "Host trace",
+        kind: "trace"
+      }
+    ]);
+
+    await expect(validateEvidencePack(root, [secret])).rejects.toThrow(
+      /known secret.*trace\.trace/i
+    );
+  });
+
+  it("rejects a percent-encoded known token in a decompressed trace entry", async () => {
+    const root = await temporaryRoot();
+    const secret = "host/trace?secret";
+    await mkdir(join(root, "traces"));
+    await writeFile(
+      join(root, "traces", "EXP-001-encoded.zip"),
+      zipSync({
+        "trace.trace": strToU8(
+          `{"url":"https://poker.test/?host=${encodeURIComponent(secret)}"}`
+        )
+      })
+    );
+    await writePack(root, [
+      {
+        id: "ART-ENCODED-TRACE",
+        path: "traces/EXP-001-encoded.zip",
+        description: "Encoded trace",
         kind: "trace"
       }
     ]);

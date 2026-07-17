@@ -108,6 +108,20 @@ export function redactForEvidence(
 
   const visit = (current: unknown): unknown => {
     if (typeof current === "string") {
+      const trimmed = current.trim();
+      if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+      ) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown;
+          if (parsed !== null && typeof parsed === "object") {
+            return JSON.stringify(visit(parsed));
+          }
+        } catch {
+          // Preserve non-JSON diagnostic strings and apply scalar redaction.
+        }
+      }
       return redactString(current, secrets);
     }
     if (
