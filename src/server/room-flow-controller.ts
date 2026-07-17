@@ -56,7 +56,8 @@ export class RoomFlowController {
   }
 
   completeHandBoundary(room: RoomState, now = this.clock(), providedDeck?: Card[]): RoomState {
-    if (!this.isHandBoundaryDue(room, now)) {
+    const waitingBetweenHands = room.flow.phase === "betting" && room.hand?.finished === true;
+    if (!this.isHandBoundaryDue(room, now) && !waitingBetweenHands) {
       return room;
     }
     return completeHandBoundary(room, now, providedDeck);

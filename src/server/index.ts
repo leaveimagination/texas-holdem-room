@@ -44,7 +44,8 @@ void (async () => {
       auth: {
         verifyParticipantToken: (roomId, token) => roomRepository.verifyParticipantToken(roomId, token),
         verifyHostToken: (roomId, token) => roomRepository.verifyHostToken(roomId, token)
-      }
+      },
+      roomRepository
     });
     server.on("upgrade", (req, socket, head) => {
       if (handleGameServerUpgrade(gameServer, req, socket, head)) {

@@ -103,4 +103,4 @@ export type ServerMessage =
   | { type: "player_eliminated"; payload: unknown }
   | { type: "room_finished"; payload: { players: SessionPlayerResult[] } }
   | { type: "system_message"; payload: { message: string } }
-  | { type: "error"; payload: { code?: RealtimeErrorCode; message: string } };
+  | { type: "error"; payload: { code: RealtimeErrorCode; message: string } };

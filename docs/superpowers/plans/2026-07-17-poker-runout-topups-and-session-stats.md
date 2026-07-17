@@ -398,7 +398,7 @@ git commit -m "feat: persist exact hand and room results"
 - Consumes: Tasks 1-5 contracts, controller, coordinator, persistence methods, auth, sessions, and participant-filtered snapshots.
 - Produces: save-before-broadcast transition execution, one timer per connected room, join/command catch-up, queue/application/final events, functional `end_room`, coded errors, and 16 KiB payload protection.
 
-- [ ] **Step 1: Write failing realtime scenarios with fake timers**
+- [x] **Step 1: Write failing realtime scenarios with fake timers**
 
 Use `vi.useFakeTimers()` and injectable `now`, `setTimer`, and `clearTimer` options. Assert:
 
@@ -421,13 +421,13 @@ expect(recordTopUp).not.toHaveBeenCalled();
 
 Also test forged tokens, action rejection during presentation, stale timer no-op, reconnect catch-up, save failure before broadcast, finalization failure, `SERVER_BUSY`, and `maxPayload: 16 * 1024`.
 
-- [ ] **Step 2: Run realtime tests and verify RED**
+- [x] **Step 2: Run realtime tests and verify RED**
 
 Run: `npx vitest run tests/realtime/game-server.test.ts tests/realtime/room-flow-events.test.ts`
 
 Expected: FAIL because the server still settles synchronously, omits `end_room`, and applies rebuys immediately.
 
-- [ ] **Step 3: Implement serialized transition execution**
+- [x] **Step 3: Implement serialized transition execution**
 
 Extend `GameServerOptions` with the full persistence pick and optional clock/timer functions. Construct `WebSocketServer({ noServer: true, maxPayload: 16 * 1024 })`. Route every parsed message through `coordinator.run(roomId, ..., "client")`; run catch-up before auth-dependent commands.
 
@@ -446,13 +446,13 @@ At a due hand-summary boundary, persist applicable top-ups before applying/clear
 
 If a summary expires without enough eligible players, save the deadline-free waiting-between-hands state. A later accepted top-up performs the readiness check again and, when sufficient, persists the aggregate, applies it, emits `top_up_applied` before `hand_started`, saves, broadcasts, and schedules the newly started hand.
 
-- [ ] **Step 4: Verify realtime GREEN**
+- [x] **Step 4: Verify realtime GREEN**
 
 Run: `npx vitest run tests/realtime/game-server.test.ts tests/realtime/room-flow-events.test.ts tests/realtime/spectator-and-disconnect.test.ts tests/realtime/messages.test.ts && npm run typecheck`
 
 Expected: realtime/auth/flow tests pass; no future card or unpersisted result is broadcast.
 
-- [ ] **Step 5: Commit the realtime slice**
+- [x] **Step 5: Commit the realtime slice**
 
 ```bash
 git add src/server/realtime/game-server.ts src/server/index.ts tests/realtime/game-server.test.ts tests/realtime/room-flow-events.test.ts

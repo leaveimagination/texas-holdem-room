@@ -245,12 +245,17 @@ describe("createGameServer", () => {
     expect(room?.hand).toBeNull();
   });
 
-  it("automatically starts the next hand after a hand finishes when enough players remain", async () => {
+  it("persists and holds a finished hand for the authoritative summary window", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createReadyHeadsUpRoomState());
 
     const recordHand = vi.fn().mockResolvedValue(undefined);
-    const { url } = await startTestServer(liveRooms, validAuth, { recordHand, recordBuyIn: vi.fn() });
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand,
+      recordBuyIn: vi.fn(),
+      recordTopUp: vi.fn(),
+      finishRoom: vi.fn()
+    });
     const playerSocket = connect(url);
 
     await waitForOpen(playerSocket);
@@ -275,7 +280,15 @@ describe("createGameServer", () => {
       })
     );
 
-    const [actionRecorded, handFinished, nextHandSnapshot] = await actionSequence;
+    const [summarySnapshot, actionRecorded, handFinished] = await actionSequence;
+
+    expect(summarySnapshot).toMatchObject({
+      type: "room_snapshot",
+      payload: {
+        status: "playing",
+        hand: { number: 1, finished: true }
+      }
+    });
 
     expect(actionRecorded).toMatchObject({
       type: "action_recorded",
@@ -295,21 +308,12 @@ describe("createGameServer", () => {
       }
     });
 
-    expect(nextHandSnapshot).toMatchObject({
-      type: "room_snapshot",
-      payload: {
-        status: "playing",
-        hand: {
-          number: 2,
-          finished: false
-        }
-      }
-    });
     expect(recordHand).toHaveBeenCalledOnce();
 
     const room = await liveRooms.getRoom(roomId);
-    expect(room?.hand?.number).toBe(2);
-    expect(room?.hand?.finished).toBe(false);
+    expect(room?.hand?.number).toBe(1);
+    expect(room?.hand?.finished).toBe(true);
+    expect(room?.flow.phase).toBe("hand-summary");
   });
 
   it("does not emit a hand result before the authoritative runout advances", async () => {
@@ -318,7 +322,12 @@ describe("createGameServer", () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createReadyHeadsUpRoomState());
 
-    const { url } = await startTestServer(liveRooms, validAuth, { recordHand: vi.fn(), recordBuyIn: vi.fn() });
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(),
+      recordBuyIn: vi.fn(),
+      recordTopUp: vi.fn(),
+      finishRoom: vi.fn()
+    });
     const p1Socket = connect(url);
     const p2Socket = connect(url);
 
@@ -348,7 +357,7 @@ describe("createGameServer", () => {
     );
     await afterAllIn;
 
-    const showdownMessages = nextMessages(p1Socket, 2);
+    const showdownMessages = nextMessages(p1Socket, 3);
     p2Socket.send(
       JSON.stringify({
         type: "player_action",
@@ -358,12 +367,13 @@ describe("createGameServer", () => {
       })
     );
 
-    const [actionRecorded, showdownSnapshot] = await showdownMessages;
-    expect(actionRecorded).toMatchObject({ type: "action_recorded" });
+    const [showdownSnapshot, actionRecorded, showdownStarted] = await showdownMessages;
     expect(showdownSnapshot).toMatchObject({
       type: "room_snapshot",
       payload: { hand: { number: 1, board: [], finished: false, winners: [] } }
     });
+    expect(actionRecorded).toMatchObject({ type: "action_recorded" });
+    expect(showdownStarted).toMatchObject({ type: "showdown_started", payload: { handNumber: 1 } });
 
     const room = await liveRooms.getRoom(roomId);
     expect(room).toMatchObject({
@@ -377,7 +387,13 @@ describe("createGameServer", () => {
     await liveRooms.saveRoom(createFinishedHeadsUpRoomWithBustedPlayer());
 
     const recordBuyIn = vi.fn().mockResolvedValue(undefined);
-    const { url } = await startTestServer(liveRooms, validAuth, { recordHand: vi.fn(), recordBuyIn });
+    const recordTopUp = vi.fn().mockResolvedValue(undefined);
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(),
+      recordBuyIn,
+      recordTopUp,
+      finishRoom: vi.fn()
+    });
     const playerSocket = connect(url);
 
     await waitForOpen(playerSocket);
@@ -388,10 +404,10 @@ describe("createGameServer", () => {
     );
     await joined;
 
-    const firstMessage = nextMessage(playerSocket);
+    const messages = nextMessages(playerSocket, 4);
     playerSocket.send(JSON.stringify({ type: "rebuy", roomId, participantToken: "p2-token", amount: 1000 }));
 
-    const nextHandSnapshot = await firstMessage;
+    const [nextHandSnapshot, queued, applied, handStarted] = await messages;
     expect(nextHandSnapshot).toMatchObject({
       type: "room_snapshot",
       payload: {
@@ -402,7 +418,16 @@ describe("createGameServer", () => {
         }
       }
     });
-    expect(recordBuyIn).toHaveBeenCalledWith(roomId, "p2", 1000);
+    expect(queued).toMatchObject({ type: "top_up_queued", payload: { participantId: "p2", pendingTotal: 1000 } });
+    expect(applied).toMatchObject({ type: "top_up_applied", payload: { participantId: "p2", amount: 1000, handNumber: 2 } });
+    expect(handStarted).toMatchObject({ type: "hand_started", payload: { handNumber: 2 } });
+    expect(recordTopUp).toHaveBeenCalledWith(roomId, {
+      participantId: "p2",
+      targetHandNumber: 2,
+      amount: 1000,
+      requestCount: 1
+    });
+    expect(recordBuyIn).not.toHaveBeenCalled();
 
     const room = await liveRooms.getRoom(roomId);
     expect(room?.hand?.number).toBe(2);

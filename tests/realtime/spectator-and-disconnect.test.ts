@@ -63,13 +63,16 @@ describe("spectator and disconnect realtime rules", () => {
     serversToClose.clear();
   });
 
-  it("allows authenticated cash players to rebuy without revealing cards to spectators", async () => {
+  it("allows authenticated cash players to queue next-hand chips without revealing cards to spectators", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createBustedCashRoom());
     const recordBuyIn = vi.fn().mockResolvedValue(undefined);
+    const recordTopUp = vi.fn().mockResolvedValue(undefined);
     const { url } = await startTestServer(liveRooms, {
       recordHand: vi.fn().mockResolvedValue(undefined),
-      recordBuyIn
+      recordBuyIn,
+      recordTopUp,
+      finishRoom: vi.fn().mockResolvedValue(undefined)
     });
     const playerSocket = connect(url);
     const spectatorSocket = connect(url);
@@ -90,11 +93,12 @@ describe("spectator and disconnect realtime rules", () => {
 
     const [[playerSnapshot, playerNotice], [spectatorSnapshot, spectatorNotice]] = await Promise.all([playerRebuy, spectatorRebuy]);
 
-    expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
-    expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 500, cumulativeBuyIn: 1500 });
-    expect(playerNotice).toMatchObject({ type: "system_message", payload: { message: "Player 1 added 500 chips" } });
-    expect(spectatorNotice).toMatchObject({ type: "system_message", payload: { message: "Player 1 added 500 chips" } });
-    expect(recordBuyIn).toHaveBeenCalledWith(roomId, "p1", 500);
+    expect(getSeat(playerSnapshot, 1)).toMatchObject({ chips: 0, cumulativeBuyIn: 1000 });
+    expect(getSeat(spectatorSnapshot, 1)).toMatchObject({ chips: 0, cumulativeBuyIn: 1000 });
+    expect(playerNotice).toMatchObject({ type: "top_up_queued", payload: { participantId: "p1", submittedAmount: 500, pendingTotal: 500 } });
+    expect(spectatorNotice).toMatchObject({ type: "top_up_queued", payload: { participantId: "p1", submittedAmount: 500, pendingTotal: 500 } });
+    expect(recordBuyIn).not.toHaveBeenCalled();
+    expect(recordTopUp).not.toHaveBeenCalled();
     expect(getHandSeat(spectatorSnapshot, "p1")?.holeCards).toBeUndefined();
   });
 
@@ -180,7 +184,12 @@ function createBustedCashRoom(): RoomState {
 
 async function startTestServer(
   liveRooms: LiveRoomStore,
-  roomRepository = { recordHand: vi.fn().mockResolvedValue(undefined), recordBuyIn: vi.fn().mockResolvedValue(undefined) }
+  roomRepository = {
+    recordHand: vi.fn().mockResolvedValue(undefined),
+    recordBuyIn: vi.fn().mockResolvedValue(undefined),
+    recordTopUp: vi.fn().mockResolvedValue(undefined),
+    finishRoom: vi.fn().mockResolvedValue(undefined)
+  }
 ): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
   const gameServer = createGameServer({ server, liveRooms, auth, roomRepository });

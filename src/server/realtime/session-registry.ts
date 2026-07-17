@@ -24,6 +24,15 @@ export class SessionRegistry {
     this.sessions.delete(session);
   }
 
+  hasRoom(roomId: string): boolean {
+    for (const session of this.sessions) {
+      if (session.roomId === roomId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   broadcast(roomId: string, makeMessage: (session: Session) => ServerMessage): void {
     for (const session of this.sessions) {
       if (session.roomId !== roomId) {
