@@ -1,0 +1,39 @@
+services:
+  postgres:
+    ports: !override
+      - target: 5432
+        published: "${SITE_TEST_POSTGRES_PORT:?SITE_TEST_POSTGRES_PORT is required}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    labels:
+      com.texas-holdem.site-test-run: "${SITE_TEST_RUN_ID:?SITE_TEST_RUN_ID is required}"
+    restart: "no"
+
+  redis:
+    ports: !override
+      - target: 6379
+        published: "${SITE_TEST_REDIS_PORT:?SITE_TEST_REDIS_PORT is required}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    labels:
+      com.texas-holdem.site-test-run: "${SITE_TEST_RUN_ID:?SITE_TEST_RUN_ID is required}"
+    restart: "no"
+
+  app:
+    image: "${SITE_TEST_IMAGE:?SITE_TEST_IMAGE is required}"
+    ports: !override
+      - target: 3000
+        published: "${SITE_TEST_APP_PORT:?SITE_TEST_APP_PORT is required}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    labels:
+      com.texas-holdem.site-test-run: "${SITE_TEST_RUN_ID:?SITE_TEST_RUN_ID is required}"
+    restart: "no"
+
+volumes:
+  postgres-data:
+    labels:
+      com.texas-holdem.site-test-run: "${SITE_TEST_RUN_ID:?SITE_TEST_RUN_ID is required}"
+  redis-data:
+    labels:
+      com.texas-holdem.site-test-run: "${SITE_TEST_RUN_ID:?SITE_TEST_RUN_ID is required}"

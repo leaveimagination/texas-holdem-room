@@ -17,7 +17,12 @@ writeFileSync(
   [
     "APP_PORT=43000",
     "APP_ORIGIN=http://example.test:43000",
-    "POSTGRES_PASSWORD=0123456789abcdef0123456789abcdef0123456789abcdef"
+    "POSTGRES_PASSWORD=0123456789abcdef0123456789abcdef0123456789abcdef",
+    "SITE_TEST_APP_PORT=43100",
+    "SITE_TEST_POSTGRES_PORT=45432",
+    "SITE_TEST_REDIS_PORT=46379",
+    "SITE_TEST_IMAGE=example.test/holdem@sha256:fixture",
+    "SITE_TEST_RUN_ID=run-001"
   ].join("\n"),
   "utf8"
 );
@@ -113,5 +118,59 @@ describe("production Docker deployment", () => {
     expect(config.services.app.environment?.APP_ORIGIN).toBe("http://example.test:43000");
     expect(config.volumes).toHaveProperty("postgres-data");
     expect(config.volumes).toHaveProperty("redis-data");
+  });
+
+  test("renders an isolated loopback-only experience stack with run ownership labels", () => {
+    const rendered = execFileSync(
+      "docker",
+      [
+        "compose",
+        "--project-name",
+        "holdem-site-run-001",
+        "--env-file",
+        envPath,
+        "-f",
+        join(root, "docker-compose.prod.yml"),
+        "-f",
+        join(root, "docker-compose.experience.yml"),
+        "config",
+        "--format",
+        "json"
+      ],
+      { cwd: root, encoding: "utf8" }
+    );
+    const config = JSON.parse(rendered) as {
+      name: string;
+      services: Record<
+        string,
+        {
+          image?: string;
+          labels?: Record<string, string>;
+          ports?: Array<{ host_ip?: string; target: number; published: string }>;
+        }
+      >;
+      volumes?: Record<string, { labels?: Record<string, string> }>;
+    };
+
+    expect(config.name).toBe("holdem-site-run-001");
+    expect(config.services.app.image).toBe("example.test/holdem@sha256:fixture");
+    expect(config.services.app.ports).toEqual([
+      expect.objectContaining({ host_ip: "127.0.0.1", published: "43100", target: 3000 })
+    ]);
+    expect(config.services.postgres.ports).toEqual([
+      expect.objectContaining({ host_ip: "127.0.0.1", published: "45432", target: 5432 })
+    ]);
+    expect(config.services.redis.ports).toEqual([
+      expect.objectContaining({ host_ip: "127.0.0.1", published: "46379", target: 6379 })
+    ]);
+    for (const service of Object.values(config.services)) {
+      expect(service.labels?.["com.texas-holdem.site-test-run"]).toBe("run-001");
+    }
+    expect(config.volumes?.["postgres-data"]?.labels?.["com.texas-holdem.site-test-run"]).toBe(
+      "run-001"
+    );
+    expect(config.volumes?.["redis-data"]?.labels?.["com.texas-holdem.site-test-run"]).toBe(
+      "run-001"
+    );
   });
 });
