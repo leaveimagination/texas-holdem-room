@@ -1,0 +1,543 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+import playwrightConfig from "../../playwright.experience.config";
+import {
+  DEFAULT_SITE_TEST_CASE_IDS,
+  EnvironmentStageError,
+  SITE_TEST_HARD_DEADLINE_MS,
+  injectProductFailureEvidence,
+  parseSiteTestArguments,
+  runFullSiteTest,
+  type CollectedCaseEvidence,
+  type SiteTestRunContext,
+  type SiteTestRunnerDependencies
+} from "../../scripts/run-full-site-test";
+import { runPlaywrightGroup } from "../../scripts/site-test/playwright-group";
+import { writeDefaultMetadata } from "../../scripts/site-test/runner-defaults";
+import type { DockerSiteTestStackSnapshot } from "../../scripts/site-test/docker-stack";
+import {
+  EXPERIENCE_THRESHOLDS,
+  type CaseReport,
+  type EvidenceEvent
+} from "../experience/evidence/contracts";
+import { writeExperienceReport } from "../experience/evidence/report-writer";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) =>
+      rm(directory, { force: true, recursive: true })
+    )
+  );
+});
+
+describe("site test argument contract", () => {
+  test("selects EXP-001 through EXP-010 by default", () => {
+    const selection = parseSiteTestArguments([]);
+
+    expect(selection.caseIds).toEqual(DEFAULT_SITE_TEST_CASE_IDS);
+    expect(selection.caseIds).toEqual(
+      Array.from({ length: 10 }, (_, index) => `EXP-${String(index + 1).padStart(3, "0")}`)
+    );
+    expect(selection.injectProductFailure).toBeUndefined();
+    expect(selection.injectEnvironmentFailure).toBeUndefined();
+  });
+
+  test("accepts only exact known case IDs and preserves an explicit filter", () => {
+    expect(parseSiteTestArguments(["--cases=EXP-004,EXP-001"]).caseIds).toEqual([
+      "EXP-004",
+      "EXP-001"
+    ]);
+    expect(() => parseSiteTestArguments(["--cases=EXP-001,EXP-011"])).toThrow(
+      /unknown experience case.*EXP-011/i
+    );
+    expect(() => parseSiteTestArguments(["--cases=EXP-001,EXP-001"])).toThrow(
+      /duplicate experience case/i
+    );
+  });
+
+  test("validates private fault-injection coordinates", () => {
+    expect(
+      parseSiteTestArguments(["--inject-product-failure=EXP-001/A-001"])
+        .injectProductFailure
+    ).toEqual({ caseId: "EXP-001", attemptId: "A-001" });
+    expect(
+      parseSiteTestArguments(["--inject-environment-failure=postgres-health"])
+        .injectEnvironmentFailure
+    ).toBe("postgres-health");
+    expect(() =>
+      parseSiteTestArguments(["--inject-environment-failure=redis-health"])
+    ).toThrow(/unsupported environment failure/i);
+  });
+});
+
+describe("dedicated Playwright group", () => {
+  test("uses Chromium serially with manual actor traces and run-scoped output", () => {
+    expect(playwrightConfig.testDir).toMatch(/tests[\\/]experience[\\/]scenarios$/);
+    expect(playwrightConfig.workers).toBe(1);
+    expect(playwrightConfig.retries).toBe(0);
+    expect(playwrightConfig.reporter).toEqual([["line"]]);
+    expect(playwrightConfig.outputDir).toMatch(
+      /outputs[\\/]site-test[\\/]manual[\\/]diagnostics[\\/]playwright$/
+    );
+    expect(playwrightConfig.use?.trace).toBe("off");
+    expect(playwrightConfig.use?.video).toBe("off");
+    expect(playwrightConfig.projects).toHaveLength(1);
+    expect(playwrightConfig.projects?.[0]).toMatchObject({
+      name: "chromium",
+      use: { browserName: "chromium" }
+    });
+  });
+
+  test("passes exact IDs and URLs through argv/env without shell interpolation", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const run = vi.fn(async (_command, _args, options) => {
+      options?.onLog?.({ stream: "stdout", text: "one pw\n" });
+      options?.onLog?.({ stream: "stderr", text: "two\n" });
+      return { exitCode: 0, stdout: "one pw\n", stderr: "two\n" };
+    });
+
+    const result = await runPlaywrightGroup({
+      rootDirectory: "C:\\repo with spaces",
+      runId: "run-01",
+      outputRoot: "C:\\output with spaces\\run-01",
+      caseOutputRoot: "C:\\temp evidence\\run-01",
+      caseIds: ["EXP-001", "EXP-003"],
+      isolatedBaseUrl: "http://127.0.0.1:43000",
+      redisUrl: "redis://127.0.0.1:46379",
+      databaseUrl: "postgresql://holdem:pw@127.0.0.1:45432/holdem?schema=public",
+      smokeBaseUrl: "http://localhost:3000",
+      timeoutMs: 45_000,
+      run,
+      writeStdout: (text) => stdout.push(text),
+      writeStderr: (text) => stderr.push(text)
+    });
+
+    expect(result).toEqual({ exitCode: 0, stdout: "one pw\n", stderr: "two\n" });
+    expect(stdout).toEqual(["one [REDACTED]\n"]);
+    expect(stderr).toEqual(["two\n"]);
+    expect(run).toHaveBeenCalledTimes(1);
+    const [command, args, options] = run.mock.calls[0];
+    expect(command).toBe(process.execPath);
+    expect(args).toContain("test");
+    expect(args).toContain("--config");
+    expect(args).toContain("--grep");
+    expect(args).toContain("\\b(?:EXP-001|EXP-003)\\b");
+    expect(args.every((argument: string) => !argument.includes("&&"))).toBe(true);
+    expect(options).toMatchObject({
+      cwd: "C:\\repo with spaces",
+      timeoutMs: 45_000,
+      env: {
+        SITE_TEST_RUN_ID: "run-01",
+        SITE_TEST_OUTPUT_ROOT: "C:\\output with spaces\\run-01",
+        SITE_TEST_CASE_OUTPUT_ROOT: "C:\\temp evidence\\run-01",
+        SITE_TEST_CASE_IDS: "EXP-001,EXP-003",
+        SITE_TEST_ISOLATED_BASE_URL: "http://127.0.0.1:43000",
+        SITE_TEST_REDIS_URL: "redis://127.0.0.1:46379",
+        SITE_TEST_DATABASE_URL:
+          "postgresql://holdem:pw@127.0.0.1:45432/holdem?schema=public",
+        SITE_TEST_SMOKE_URL: "http://localhost:3000"
+      }
+    });
+  });
+});
+
+describe("full site runner", () => {
+  test("writes pre-execution Git, image, browser, deadline, and threshold metadata", async () => {
+    const harness = await createHarness();
+
+    await writeDefaultMetadata(
+      harness.context,
+      parseSiteTestArguments(["--cases=EXP-001,EXP-002"])
+    );
+
+    const metadata = JSON.parse(
+      await readFile(
+        join(harness.context.outputRoot, "diagnostics", "metadata.json"),
+        "utf8"
+      )
+    );
+    expect(metadata).toMatchObject({
+      schemaVersion: "1.0",
+      runId: "run-01",
+      image: "holdem:test",
+      hardDeadlineMs: SITE_TEST_HARD_DEADLINE_MS,
+      selectedCaseIds: ["EXP-001", "EXP-002"],
+      thresholds: EXPERIENCE_THRESHOLDS
+    });
+    expect(metadata.gitRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(metadata.playwrightVersion).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  test("runs ordered isolated and smoke stages under one 30-minute deadline", async () => {
+    const harness = await createHarness();
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001,EXP-010"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 0, verdict: "PASS" });
+    expect(harness.deadlines).toEqual([SITE_TEST_HARD_DEADLINE_MS]);
+    expect(SITE_TEST_HARD_DEADLINE_MS).toBe(30 * 60 * 1_000);
+    expect(harness.playwrightTimeouts).toHaveLength(2);
+    expect(
+      harness.playwrightTimeouts.every(
+        (timeoutMs) => timeoutMs > 0 && timeoutMs < SITE_TEST_HARD_DEADLINE_MS
+      )
+    ).toBe(true);
+    expect(harness.calls).toEqual([
+      "allocate",
+      "metadata",
+      "inspect-image",
+      "start-stack",
+      "preflight",
+      "playwright:EXP-001",
+      "collect:EXP-001",
+      "aggregate",
+      "validate:isolated",
+      "playwright:EXP-010",
+      "collect:EXP-010",
+      "aggregate",
+      "validate:final",
+      "docker-diagnostics",
+      "persist-diagnostics",
+      "validate:finalized-pack",
+      "cleanup",
+      "aggregate:cleanup-status"
+    ]);
+  });
+
+  test("never touches deployed smoke when EXP-010 is omitted", async () => {
+    const harness = await createHarness();
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-002"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(harness.playwrightGroups).toEqual([["EXP-002"]]);
+    expect(harness.calls.some((call) => call.includes("EXP-010"))).toBe(false);
+  });
+
+  test("rejects a started stack whose app image changed after inspection", async () => {
+    const harness = await createHarness({ stackImageId: "sha256:replacement-image" });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001,EXP-010"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.calls).not.toContain("preflight");
+    expect(harness.playwrightGroups).toEqual([]);
+    expect(result.report?.results.environment.status).toBe("inconclusive");
+  });
+
+  test("skips deployed smoke after an isolated product failure and returns exit 1", async () => {
+    const harness = await createHarness({
+      evidenceFor: (caseIds) => evidence(caseIds, "FAIL")
+    });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-001,EXP-010"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 1, verdict: "FAIL" });
+    expect(harness.playwrightGroups).toEqual([["EXP-001"]]);
+    expect(harness.calls).not.toContain("playwright:EXP-010");
+  });
+
+  test("finalizes partial evidence for injected environment failure before exact cleanup", async () => {
+    const harness = await createHarness({
+      preflight: async () => {
+        throw new EnvironmentStageError("Injected PostgreSQL health failure", "postgres-health");
+      }
+    });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments([
+        "--cases=EXP-001,EXP-010",
+        "--inject-environment-failure=postgres-health"
+      ]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 2, verdict: "INCONCLUSIVE" });
+    expect(harness.playwrightGroups).toEqual([]);
+    expect(harness.calls).toContain("docker-diagnostics");
+    expect(harness.calls.indexOf("aggregate")).toBeLessThan(
+      harness.calls.indexOf("validate:final")
+    );
+    expect(harness.calls.indexOf("validate:final")).toBeLessThan(
+      harness.calls.indexOf("cleanup")
+    );
+    expect(harness.calls.indexOf("persist-diagnostics")).toBeLessThan(
+      harness.calls.indexOf("cleanup")
+    );
+    expect(harness.calls.indexOf("validate:finalized-pack")).toBeGreaterThan(
+      harness.calls.indexOf("persist-diagnostics")
+    );
+    expect(harness.calls.indexOf("validate:finalized-pack")).toBeLessThan(
+      harness.calls.indexOf("cleanup")
+    );
+    expect(result.report).toBeDefined();
+    expect(result.report!.cases[0]).toMatchObject({
+      caseId: "EXP-001",
+      verdict: "INCONCLUSIVE",
+      results: { environment: { status: "inconclusive" } }
+    });
+  });
+
+  test("records an injected product assertion and artifact and returns exit 1", async () => {
+    const harness = await createHarness({ useRealProductInjection: true });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments([
+        "--cases=EXP-001",
+        "--inject-product-failure=EXP-001/A-001"
+      ]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result).toMatchObject({ exitCode: 1, verdict: "FAIL" });
+    expect(result.report).toBeDefined();
+    const injected = result.report!.cases[0];
+    expect(injected.assertions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ outcome: "fail", id: "EXP-001-INJECTED-PRODUCT-FAILURE" })
+      ])
+    );
+    const artifact = injected.artifacts.find(({ id }) => id.includes("INJECTED"));
+    expect(artifact).toBeDefined();
+    expect(await readFile(join(harness.context.outputRoot, artifact!.path), "utf8")).toMatch(
+      /deliberate product failure/i
+    );
+  });
+
+  test("does not clean the stack when no report became durable", async () => {
+    const harness = await createHarness({
+      writeReport: async () => {
+        throw new Error("disk full before atomic report rename");
+      }
+    });
+
+    const result = await runFullSiteTest({
+      selection: parseSiteTestArguments(["--cases=EXP-010"]),
+      dependencies: harness.dependencies
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(harness.calls).not.toContain("cleanup");
+    expect(result.report).toBeUndefined();
+  });
+});
+
+interface HarnessOptions {
+  evidenceFor?(caseIds: readonly string[]): CollectedCaseEvidence;
+  preflight?: SiteTestRunnerDependencies["preflight"];
+  writeReport?: SiteTestRunnerDependencies["writeReport"];
+  useRealProductInjection?: boolean;
+  stackImageId?: string;
+}
+
+async function createHarness(options: HarnessOptions = {}) {
+  const base = await mkdtemp(join(tmpdir(), "site-runner-test-"));
+  temporaryDirectories.push(base);
+  const context: SiteTestRunContext = {
+    runId: "run-01",
+    rootDirectory: process.cwd(),
+    outputRoot: join(base, "outputs", "site-test", "run-01"),
+    caseOutputRoot: join(base, "outputs", "site-test", ".case-evidence-run-01"),
+    startedAt: "2026-07-17T00:00:00.000Z",
+    image: "holdem:test",
+    ports: { app: 43000, postgres: 45432, redis: 46379 },
+    postgresPassword: "fixture-password",
+    isolatedBaseUrl: "http://127.0.0.1:43000",
+    redisUrl: "redis://127.0.0.1:46379",
+    databaseUrl:
+      "postgresql://holdem:fixture-password@127.0.0.1:45432/holdem?schema=public",
+    smokeBaseUrl: "http://localhost:3000",
+    knownSecrets: ["fixture-password"]
+  };
+  const calls: string[] = [];
+  const deadlines: number[] = [];
+  const playwrightGroups: string[][] = [];
+  const playwrightTimeouts: number[] = [];
+  let writeCount = 0;
+  const stackSnapshot = snapshot(options.stackImageId);
+  const stack = {
+    snapshot: stackSnapshot,
+    collectDiagnostics: async () => {
+      calls.push("docker-diagnostics");
+      return "docker diagnostics";
+    },
+    stop: async () => {
+      calls.push("cleanup");
+    }
+  };
+
+  const dependencies: SiteTestRunnerDependencies = {
+    withDeadline: async (timeoutMs, task) => {
+      deadlines.push(timeoutMs);
+      return await task(new AbortController().signal, () => timeoutMs);
+    },
+    allocateRun: async () => {
+      calls.push("allocate");
+      return context;
+    },
+    writeMetadata: async () => {
+      calls.push("metadata");
+    },
+    inspectImage: async () => {
+      calls.push("inspect-image");
+      return "sha256:image";
+    },
+    startStack: async () => {
+      calls.push("start-stack");
+      return stack;
+    },
+    preflight:
+      options.preflight ??
+      (async () => {
+        calls.push("preflight");
+      }),
+    runPlaywrightGroup: async (input) => {
+      const ids = [...input.caseIds];
+      playwrightGroups.push(ids);
+      playwrightTimeouts.push(input.timeoutMs);
+      calls.push(`playwright:${ids.join(",")}`);
+      return { exitCode: 0, stdout: `${ids.join(",")} stdout`, stderr: "" };
+    },
+    collectCaseEvidence: async (_context, caseIds) => {
+      calls.push(`collect:${caseIds.join(",")}`);
+      return options.evidenceFor?.(caseIds) ?? evidence(caseIds, "PASS");
+    },
+    injectProductFailure: options.useRealProductInjection
+      ? injectProductFailureEvidence
+      : async (_context, current) => current,
+    writeReport:
+      options.writeReport ??
+      (async (input) => {
+        calls.push(writeCount < 2 ? "aggregate" : "aggregate:cleanup-status");
+        writeCount += 1;
+        return await writeExperienceReport(input);
+      }),
+    validateEvidence: async (_outputRoot, _knownSecrets, phase) => {
+      calls.push(`validate:${phase}`);
+      return { filesScanned: 4, textEntriesScanned: 4, artifactCount: 0 };
+    },
+    persistDiagnostics: async () => {
+      calls.push("persist-diagnostics");
+    },
+    now: () => "2026-07-17T00:01:00.000Z"
+  };
+
+  return {
+    calls,
+    context,
+    deadlines,
+    dependencies,
+    playwrightGroups,
+    playwrightTimeouts
+  };
+}
+
+function evidence(
+  caseIds: readonly string[],
+  verdict: "PASS" | "FAIL" | "INCONCLUSIVE"
+): CollectedCaseEvidence {
+  const cases = caseIds.map((caseId) => caseReport(caseId, verdict));
+  const events = cases.map((report) => eventFor(report));
+  return { cases, events };
+}
+
+function caseReport(caseId: string, verdict: "PASS" | "FAIL" | "INCONCLUSIVE"): CaseReport {
+  const fail = verdict === "FAIL";
+  const inconclusive = verdict === "INCONCLUSIVE";
+  return {
+    schemaVersion: "1.0",
+    runId: "run-01",
+    caseId,
+    attemptId: "A-001",
+    startedAt: "2026-07-17T00:00:00.000Z",
+    finishedAt: "2026-07-17T00:00:30.000Z",
+    verdict,
+    results: {
+      product: {
+        status: fail ? "fail" : inconclusive ? "inconclusive" : "pass",
+        summary: fail ? "A product assertion failed." : inconclusive ? "Not judged." : "Passed.",
+        evidenceEventIds: []
+      },
+      harness: {
+        status: inconclusive ? "inconclusive" : "pass",
+        summary: inconclusive ? "Harness interrupted." : "Harness passed.",
+        evidenceEventIds: []
+      },
+      environment: { status: "pass", summary: "Environment passed.", evidenceEventIds: [] }
+    },
+    assertions: [
+      {
+        id: `${caseId}-ASSERTION`,
+        outcome: fail ? "fail" : inconclusive ? "inconclusive" : "pass",
+        evidenceEventIds: [],
+        summary: fail ? "Failed." : inconclusive ? "Not judged." : "Passed."
+      }
+    ],
+    failures: fail
+      ? [
+          {
+            code: "PRODUCT_ASSERTION_FAILED",
+            summary: "A product assertion failed.",
+            stage: "fixture",
+            evidenceEventIds: []
+          }
+        ]
+      : [],
+    artifacts: []
+  };
+}
+
+function eventFor(report: CaseReport): EvidenceEvent {
+  return {
+    id: `${report.caseId}-${report.attemptId}-E-000001`,
+    runId: report.runId,
+    caseId: report.caseId,
+    attemptId: report.attemptId,
+    actor: "runner",
+    seq: 1,
+    timestamp: report.startedAt,
+    monotonicMs: 1,
+    stage: "fixture",
+    type: "checkpoint",
+    status: report.verdict === "PASS" ? "pass" : "fail",
+    details: {},
+    artifactIds: []
+  };
+}
+
+function snapshot(appImageId = "sha256:image"): DockerSiteTestStackSnapshot {
+  const projectName = "holdem-site-run-01";
+  return {
+    runId: "run-01",
+    projectName,
+    image: "holdem:test",
+    imageId: appImageId,
+    ports: { app: 43000, postgres: 45432, redis: 46379 },
+    services: (["app", "postgres", "redis"] as const).map((service) => ({
+      service,
+      containerId: `${service}-container`,
+      projectName,
+      runLabel: "run-01",
+      status: "running",
+      health: "healthy",
+      imageId: service === "app" ? appImageId : `${service}:image`
+    }))
+  };
+}

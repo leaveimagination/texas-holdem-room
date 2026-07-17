@@ -8,5 +8,9 @@ test-results/
 playwright-report/
 output/
 outputs/
+outputs/site-test/
+outputs/site-test/.case-evidence-*/
+.site-test-*.env
+*.site-test.env.tmp
 tmp/
 tmp-dev*.log

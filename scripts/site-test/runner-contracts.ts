@@ -1,0 +1,233 @@
+import { EXPERIENCE_CASES, experienceAttemptIds } from "../../tests/experience/case-catalog";
+import type {
+  CaseReport,
+  EvidenceEvent,
+  OverallVerdict,
+  RunReport
+} from "../../tests/experience/evidence/contracts";
+import type { KnownSecret } from "../../tests/experience/evidence/redaction";
+import type {
+  WriteExperienceReportInput
+} from "../../tests/experience/evidence/report-writer";
+import type { EvidenceValidationResult } from "../../tests/experience/evidence/validator";
+import type { DockerSiteTestStackSnapshot } from "./docker-stack";
+import type { RunPlaywrightGroupInput } from "./playwright-group";
+import type { ProcessResult } from "./process-runner";
+
+export const SITE_TEST_HARD_DEADLINE_MS = 30 * 60 * 1_000;
+export const SITE_TEST_FINALIZATION_RESERVE_MS = 195_000;
+export const DEFAULT_SITE_TEST_CASE_IDS = Object.freeze(
+  EXPERIENCE_CASES.map(({ caseId }) => caseId)
+);
+export const SMOKE_CASE_ID = "EXP-010";
+
+const SUPPORTED_ENVIRONMENT_INJECTION = "postgres-health";
+const knownCaseIds = new Set(DEFAULT_SITE_TEST_CASE_IDS);
+
+export interface ProductFailureInjection {
+  caseId: string;
+  attemptId: string;
+}
+
+export interface SiteTestSelection {
+  caseIds: readonly string[];
+  injectProductFailure?: ProductFailureInjection;
+  injectEnvironmentFailure?: typeof SUPPORTED_ENVIRONMENT_INJECTION;
+}
+
+export interface SiteTestRunContext {
+  runId: string;
+  rootDirectory: string;
+  outputRoot: string;
+  caseOutputRoot: string;
+  startedAt: string;
+  image: string;
+  ports: { app: number; postgres: number; redis: number };
+  postgresPassword: string;
+  isolatedBaseUrl: string;
+  redisUrl: string;
+  databaseUrl: string;
+  smokeBaseUrl: string;
+  knownSecrets: readonly KnownSecret[];
+}
+
+export interface CollectedCaseEvidence {
+  cases: readonly CaseReport[];
+  events: readonly EvidenceEvent[];
+  issues?: readonly Error[];
+}
+
+export interface SiteTestStackHandle {
+  snapshot: DockerSiteTestStackSnapshot;
+  collectDiagnostics(): Promise<string>;
+  stop(): Promise<void>;
+}
+
+export interface SiteTestDiagnostics {
+  imageId?: string;
+  docker?: string;
+  playwright: Array<{
+    caseIds: readonly string[];
+    result: ProcessResult;
+  }>;
+  issues: string[];
+}
+
+export interface SiteTestRunnerDependencies {
+  withDeadline<T>(
+    timeoutMs: number,
+    task: (signal: AbortSignal, remainingMs: () => number) => Promise<T>
+  ): Promise<T>;
+  allocateRun(selection: SiteTestSelection): Promise<SiteTestRunContext>;
+  writeMetadata(
+    context: SiteTestRunContext,
+    selection: SiteTestSelection
+  ): Promise<void>;
+  inspectImage(context: SiteTestRunContext, signal: AbortSignal): Promise<string>;
+  startStack(
+    context: SiteTestRunContext,
+    signal: AbortSignal
+  ): Promise<SiteTestStackHandle>;
+  preflight(
+    context: SiteTestRunContext,
+    stack: SiteTestStackHandle,
+    injection: SiteTestSelection["injectEnvironmentFailure"],
+    signal: AbortSignal
+  ): Promise<void>;
+  runPlaywrightGroup(input: RunPlaywrightGroupInput): Promise<ProcessResult>;
+  collectCaseEvidence(
+    context: SiteTestRunContext,
+    caseIds: readonly string[]
+  ): Promise<CollectedCaseEvidence>;
+  injectProductFailure(
+    context: SiteTestRunContext,
+    evidence: CollectedCaseEvidence,
+    injection: ProductFailureInjection
+  ): Promise<CollectedCaseEvidence>;
+  writeReport(input: WriteExperienceReportInput): Promise<RunReport>;
+  validateEvidence(
+    outputRoot: string,
+    knownSecrets: readonly KnownSecret[],
+    phase: "isolated" | "final" | "finalized-pack"
+  ): Promise<EvidenceValidationResult>;
+  persistDiagnostics(
+    context: SiteTestRunContext,
+    diagnostics: SiteTestDiagnostics
+  ): Promise<void>;
+  now(): string;
+}
+
+export interface RunFullSiteTestOptions {
+  selection: SiteTestSelection;
+  dependencies: SiteTestRunnerDependencies;
+}
+
+export interface SiteTestRunResult {
+  exitCode: 0 | 1 | 2;
+  verdict: OverallVerdict;
+  outputRoot?: string;
+  report?: RunReport;
+}
+
+export class EnvironmentStageError extends Error {
+  constructor(message: string, readonly stage: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "EnvironmentStageError";
+  }
+}
+
+export class HarnessStageError extends Error {
+  constructor(message: string, readonly stage: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "HarnessStageError";
+  }
+}
+
+export class OverallDeadlineError extends HarnessStageError {
+  constructor(readonly timeoutMs: number) {
+    super(`Full site test exceeded its ${timeoutMs}ms hard deadline`, "overall-deadline");
+    this.name = "OverallDeadlineError";
+  }
+}
+
+export function parseSiteTestArguments(args: readonly string[]): SiteTestSelection {
+  let filteredCaseIds: string[] | undefined;
+  let productInjection: ProductFailureInjection | undefined;
+  let environmentInjection: SiteTestSelection["injectEnvironmentFailure"];
+
+  for (const argument of args) {
+    if (argument.startsWith("--cases=")) {
+      if (filteredCaseIds !== undefined) {
+        throw new Error("The --cases option may be supplied only once");
+      }
+      filteredCaseIds = argument.slice("--cases=".length).split(",");
+      if (filteredCaseIds.some((caseId) => caseId.length === 0)) {
+        throw new Error("The --cases option requires a comma-separated list of case IDs");
+      }
+      continue;
+    }
+    if (argument.startsWith("--inject-product-failure=")) {
+      if (productInjection !== undefined) {
+        throw new Error("The product failure injection may be supplied only once");
+      }
+      const coordinate = argument.slice("--inject-product-failure=".length);
+      const parts = coordinate.split("/");
+      if (parts.length !== 2 || parts.some((part) => part.length === 0)) {
+        throw new Error("Product failure injection must use CASE-ID/ATTEMPT-ID");
+      }
+      productInjection = { caseId: parts[0], attemptId: parts[1] };
+      continue;
+    }
+    if (argument.startsWith("--inject-environment-failure=")) {
+      const stage = argument.slice("--inject-environment-failure=".length);
+      if (stage !== SUPPORTED_ENVIRONMENT_INJECTION) {
+        throw new Error(`Unsupported environment failure injection: ${stage}`);
+      }
+      if (environmentInjection !== undefined) {
+        throw new Error("The environment failure injection may be supplied only once");
+      }
+      environmentInjection = stage;
+      continue;
+    }
+    throw new Error(`Unknown site test argument: ${argument}`);
+  }
+
+  const caseIds = filteredCaseIds ?? [...DEFAULT_SITE_TEST_CASE_IDS];
+  const seen = new Set<string>();
+  for (const caseId of caseIds) {
+    if (!knownCaseIds.has(caseId)) {
+      throw new Error(`Unknown experience case: ${caseId}`);
+    }
+    if (seen.has(caseId)) {
+      throw new Error(`Duplicate experience case: ${caseId}`);
+    }
+    seen.add(caseId);
+  }
+  if (productInjection !== undefined) {
+    if (!knownCaseIds.has(productInjection.caseId)) {
+      throw new Error(`Unknown experience case: ${productInjection.caseId}`);
+    }
+    const attempts: readonly string[] = experienceAttemptIds(productInjection.caseId);
+    if (!attempts.includes(productInjection.attemptId)) {
+      throw new Error(
+        `Unknown experience attempt: ${productInjection.caseId}/${productInjection.attemptId}`
+      );
+    }
+    if (!seen.has(productInjection.caseId)) {
+      throw new Error("The injected product-failure case must be selected by --cases");
+    }
+  }
+  if (productInjection !== undefined && environmentInjection !== undefined) {
+    throw new Error("Product and environment failure injections are mutually exclusive");
+  }
+
+  return {
+    caseIds: Object.freeze([...caseIds]),
+    injectProductFailure: productInjection,
+    injectEnvironmentFailure: environmentInjection
+  };
+}
+
+export function exitCodeForVerdict(verdict: OverallVerdict): 0 | 1 | 2 {
+  return verdict === "PASS" ? 0 : verdict === "FAIL" ? 1 : 2;
+}

@@ -10,6 +10,7 @@
     "railway:build": "prisma generate && next build",
     "railway:start": "tsx src/server/index.ts --prod",
     "test": "vitest run",
+    "test:site": "tsx scripts/run-full-site-test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test --pass-with-no-tests",
     "test:long-run": "tsx scripts/simulate-six-player-session.ts",
