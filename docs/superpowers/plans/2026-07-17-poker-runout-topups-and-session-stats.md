@@ -469,7 +469,7 @@ git commit -m "feat: orchestrate authoritative realtime room flow"
 - Consumes: authoritative room flow, pending top-ups, hand/session results, folded state, and viewer identity.
 - Produces: snapshot fields needed by UI without server deck, folded cards, tokens, or premature results.
 
-- [ ] **Step 1: Write failing visibility matrix tests**
+- [x] **Step 1: Write failing visibility matrix tests**
 
 ```ts
 expect(toParticipantView(bettingRoom, spectator).hand?.seats.flatMap((seat) => seat.holeCards ?? [])).toEqual([]);
@@ -481,23 +481,23 @@ expect(toParticipantView(summaryRoom, spectator).flow.handResult?.players).toHav
 expect(toParticipantView(sessionRoom, spectator).sessionSummary).toHaveLength(4);
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `npx vitest run tests/poker/visibility.test.ts`
 
 Expected: FAIL because spectators never see legal showdown hands and new snapshot fields are absent.
 
-- [ ] **Step 3: Implement phase-aware projection**
+- [x] **Step 3: Implement phase-aware projection**
 
 Expose `flow`, viewer-safe pending totals, `endAfterCurrentHand`, and `sessionSummary`. Reveal a hand when the viewer owns it or when phase is `showdown-reveal`, `runout`, or `hand-summary` and that participant is a non-folded pot contender. Return no legal actions outside `betting` and `insurance-pending`. Never include `deck` or raw token fields.
 
-- [ ] **Step 4: Verify visibility GREEN**
+- [x] **Step 4: Verify visibility GREEN**
 
 Run: `npx vitest run tests/poker/visibility.test.ts tests/realtime/spectator-and-disconnect.test.ts && npm run typecheck`
 
 Expected: visibility and spectator regressions pass.
 
-- [ ] **Step 5: Commit the visibility slice**
+- [x] **Step 5: Commit the visibility slice**
 
 ```bash
 git add src/lib/poker/visibility.ts tests/poker/visibility.test.ts

@@ -1,6 +1,7 @@
 import { serializeCard } from "./cards";
 import { getLegalActions } from "./betting";
 import type { RoomState } from "./engine";
+import type { HandResult, RunoutStep, SessionPlayerResult, TableFlowPhase } from "./types";
 
 export interface Viewer {
   participantId: string | null;
@@ -19,6 +20,17 @@ export interface ParticipantRoomView {
   };
   buttonSeat: number | null;
   hostControls: boolean;
+  flow: {
+    phase: TableFlowPhase;
+    sequence: number;
+    deadlineAt: number | null;
+    nextRunoutStep: RunoutStep | null;
+    handResult: HandResult | null;
+  };
+  pendingTopUps: Record<string, { amount: number; targetHandNumber: number }>;
+  endAfterCurrentHand: boolean;
+  sessionEndedAt: number | null;
+  sessionSummary: SessionPlayerResult[] | null;
   seats: Array<{
     seatNumber: number;
     displayName: string | null;
@@ -73,6 +85,22 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
     },
     buttonSeat: state.buttonSeat,
     hostControls: viewer.host,
+    flow: {
+      phase: state.flow.phase,
+      sequence: state.flow.sequence,
+      deadlineAt: state.flow.deadlineAt,
+      nextRunoutStep: state.flow.nextRunoutStep,
+      handResult: state.flow.phase === "hand-summary" ? state.flow.handResult : null
+    },
+    pendingTopUps: Object.fromEntries(
+      Object.entries(state.pendingTopUps).map(([participantId, pending]) => [
+        participantId,
+        { amount: pending.amount, targetHandNumber: pending.targetHandNumber }
+      ])
+    ),
+    endAfterCurrentHand: state.endAfterCurrentHand,
+    sessionEndedAt: state.flow.phase === "session-summary" ? state.sessionEndedAt : null,
+    sessionSummary: state.flow.phase === "session-summary" ? state.sessionSummary : null,
     seats: state.seats.map((seat) => ({
       seatNumber: seat.seatNumber,
       displayName: seat.displayName,
@@ -98,13 +126,16 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
               role: seatRole(state, seat.seatNumber),
               committed: player?.committed ?? 0,
               streetCommitted: player?.streetCommitted ?? 0,
-              ...(seat.participantId && shouldRevealHoleCards(hand, seat.participantId, viewer)
+              ...(seat.participantId && shouldRevealHoleCards(hand, state.flow.phase, seat.participantId, viewer)
                 ? { holeCards: hand.holeCardsByParticipantId[seat.participantId]?.map(serializeCard) }
                 : {})
             };
           }),
           actions: hand.actions,
-          legalActions: hand.finished || hand.insuranceOffer?.status === "pending" ? [] : getLegalActions(hand.betting, hand.actorId),
+          legalActions:
+            state.flow.phase !== "betting" || hand.finished || hand.insuranceOffer?.status === "pending"
+              ? []
+              : getLegalActions(hand.betting, hand.actorId),
           ...(hand.insuranceOffer
             ? {
                 insuranceOffer: {
@@ -119,7 +150,7 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
               }
             : {}),
           finished: hand.finished,
-          winners: hand.winners
+          winners: state.flow.phase === "hand-summary" || state.flow.phase === "session-summary" ? hand.winners : []
         }
       : null
   };
@@ -165,12 +196,17 @@ function nextSeatAfter(currentSeat: number, seats: ReadonlyArray<{ seatNumber: n
 
 function shouldRevealHoleCards(
   hand: RoomState["hand"],
+  phase: TableFlowPhase,
   ownerId: string,
   viewer: Viewer
 ): boolean {
-  if (viewer.role !== "player") {
-    return false;
+  if (viewer.role === "player" && viewer.participantId === ownerId) {
+    return true;
   }
 
-  return viewer.participantId === ownerId;
+  if (!hand || !["showdown-reveal", "runout", "hand-summary"].includes(phase)) {
+    return false;
+  }
+  const contenders = hand.betting.players.filter((player) => !player.folded);
+  return contenders.length >= 2 && contenders.some((player) => player.id === ownerId);
 }

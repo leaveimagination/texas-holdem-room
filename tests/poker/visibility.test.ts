@@ -134,4 +134,146 @@ describe("visibility", () => {
     expect(viewer.hand?.seats[1].holeCards).toBeUndefined();
     expect(winner.hand?.seats[1].holeCards).toEqual(["Kd", "Kh"]);
   });
+
+  it("reveals only non-folded contenders once a multiway showdown starts", () => {
+    const showdown = threeWayShowdownState();
+    const spectatorView = toParticipantView(showdown, { participantId: null, role: "spectator", host: false });
+    const hostView = toParticipantView(showdown, { participantId: null, role: "spectator", host: true });
+
+    expect(spectatorView.hand?.seats.find((seat) => seat.participantId === "p1")?.holeCards).toEqual(["As", "Ah"]);
+    expect(spectatorView.hand?.seats.find((seat) => seat.participantId === "p2")?.holeCards).toEqual(["Kd", "Kh"]);
+    expect(spectatorView.hand?.seats.find((seat) => seat.participantId === "folded")?.holeCards).toBeUndefined();
+    expect(hostView.hand?.seats.find((seat) => seat.participantId === "folded")?.holeCards).toBeUndefined();
+  });
+
+  it("exposes reconstructable flow and safe pending totals without premature results", () => {
+    const runout: RoomState = {
+      ...state,
+      pendingTopUps: {
+        p1: { participantId: "p1", targetHandNumber: 2, amount: 800, requestCount: 2 }
+      },
+      endAfterCurrentHand: true,
+      flow: {
+        phase: "runout",
+        sequence: 3,
+        deadlineAt: 5_000,
+        nextRunoutStep: { street: "turn", cardIndexOnStreet: 0 },
+        handResult: sampleHandResult()
+      },
+      hand: {
+        ...state.hand!,
+        board: [parseCard("2c"), parseCard("3d"), parseCard("4h")],
+        deck: [parseCard("5s"), parseCard("6c")],
+        winners: ["p1"]
+      }
+    };
+
+    const view = toParticipantView(runout, { participantId: null, role: "spectator", host: false });
+
+    expect(view.flow).toMatchObject({
+      phase: "runout",
+      sequence: 3,
+      deadlineAt: 5_000,
+      nextRunoutStep: { street: "turn", cardIndexOnStreet: 0 },
+      handResult: null
+    });
+    expect(view.pendingTopUps).toEqual({ p1: { amount: 800, targetHandNumber: 2 } });
+    expect(view.endAfterCurrentHand).toBe(true);
+    expect(view.hand?.winners).toEqual([]);
+    expect(JSON.stringify(view)).not.toContain("requestCount");
+    expect(JSON.stringify(view)).not.toContain("deck");
+    expect(JSON.stringify(view)).not.toContain("5s");
+  });
+
+  it("exposes the exact hand result only during hand summary", () => {
+    const summary: RoomState = {
+      ...state,
+      flow: {
+        phase: "hand-summary",
+        sequence: 7,
+        deadlineAt: 12_000,
+        nextRunoutStep: null,
+        handResult: sampleHandResult()
+      },
+      hand: { ...state.hand!, finished: true, winners: ["p1"] }
+    };
+
+    const view = toParticipantView(summary, { participantId: null, role: "spectator", host: false });
+
+    expect(view.flow.handResult?.players).toHaveLength(2);
+    expect(view.hand?.winners).toEqual(["p1"]);
+    expect(view.hand?.legalActions).toEqual([]);
+  });
+
+  it("exposes the durable final session summary and no betting actions", () => {
+    const sessionRoom: RoomState = {
+      ...state,
+      status: "finished",
+      sessionEndedAt: 20_000,
+      sessionSummary: [
+        { participantId: "p1", displayName: "A", initialChips: 1_000, topUpChips: 500, finalChips: 1_700, netChips: 200 },
+        { participantId: "p2", displayName: "B", initialChips: 1_000, topUpChips: 0, finalChips: 800, netChips: -200 }
+      ],
+      flow: {
+        phase: "session-summary",
+        sequence: 8,
+        deadlineAt: null,
+        nextRunoutStep: null,
+        handResult: null
+      }
+    };
+
+    const view = toParticipantView(sessionRoom, { participantId: null, role: "spectator", host: false });
+
+    expect(view.sessionEndedAt).toBe(20_000);
+    expect(view.sessionSummary).toHaveLength(2);
+    expect(view.flow.phase).toBe("session-summary");
+    expect(view.hand?.legalActions).toEqual([]);
+  });
 });
+
+function threeWayShowdownState(): RoomState {
+  return {
+    ...state,
+    settings: { ...state.settings, seats: 3 },
+    flow: {
+      phase: "showdown-reveal",
+      sequence: 1,
+      deadlineAt: 2_000,
+      nextRunoutStep: { street: "flop", cardIndexOnStreet: 0 },
+      handResult: null
+    },
+    seats: [
+      ...state.seats,
+      { seatNumber: 3, participantId: "folded", displayName: "C", chips: 900, status: "folded", cumulativeBuyIn: 1_000 }
+    ],
+    hand: {
+      ...state.hand!,
+      betting: {
+        ...state.hand!.betting,
+        players: [
+          ...state.hand!.betting.players,
+          { id: "folded", stack: 900, committed: 100, streetCommitted: 100, folded: true, allIn: false }
+        ]
+      },
+      holeCardsByParticipantId: {
+        ...state.hand!.holeCardsByParticipantId,
+        folded: [parseCard("Qc"), parseCard("Qd")]
+      },
+      startingChipsByParticipantId: { ...state.hand!.startingChipsByParticipantId, folded: 1_000 }
+    }
+  };
+}
+
+function sampleHandResult() {
+  return {
+    handNumber: 1,
+    board: ["2c", "3d", "4h", "5s", "6c"],
+    winnerParticipantIds: ["p1"],
+    players: [
+      { participantId: "p1", displayName: "A", seatNumber: 1, startingChips: 1_000, committedChips: 1_000, potAward: 2_000, insuranceDelta: 0, endingChips: 2_000, netChips: 1_000 },
+      { participantId: "p2", displayName: "B", seatNumber: 2, startingChips: 1_000, committedChips: 1_000, potAward: 0, insuranceDelta: 0, endingChips: 0, netChips: -1_000 }
+    ],
+    pots: [{ potIndex: 0, amount: 2_000, eligibleParticipantIds: ["p1", "p2"], awardsByParticipantId: { p1: 2_000 } }]
+  };
+}
