@@ -25,6 +25,7 @@ export interface SpawnProcessOptions {
 export interface SpawnedProcess extends EventEmitter {
   stdout: Readable;
   stderr: Readable;
+  kill(signal?: NodeJS.Signals | number): boolean;
 }
 
 export type SpawnProcess = (
@@ -37,6 +38,7 @@ export interface RunProcessOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  terminationGraceMs?: number;
   spawn?: SpawnProcess;
   redact?(value: string): string;
   onLog?(entry: ProcessLogEntry): void;
@@ -109,6 +111,10 @@ export async function runProcess(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new RangeError("Process timeout must be a positive number of milliseconds");
   }
+  const terminationGraceMs = options.terminationGraceMs ?? 1_000;
+  if (!Number.isFinite(terminationGraceMs) || terminationGraceMs <= 0) {
+    throw new RangeError("Process termination grace must be a positive number of milliseconds");
+  }
 
   const processArgs = [...args];
   const controller = new AbortController();
@@ -169,63 +175,94 @@ export async function runProcess(
     stdio: ["ignore", "pipe", "pipe"]
   });
 
-  child.stdout.on("data", (chunk: Buffer | string) => {
-    const text = chunk.toString();
-    stdout += text;
-    streamRedactedLines("stdout", text);
-  });
-  child.stderr.on("data", (chunk: Buffer | string) => {
-    const text = chunk.toString();
-    stderr += text;
-    streamRedactedLines("stderr", text);
-  });
-
   return await new Promise<ProcessResult>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort(new Error(`Process deadline exceeded after ${timeoutMs}ms`));
-    }, timeoutMs);
-    timer.unref?.();
+    let closed = false;
+    let escalationTimer: NodeJS.Timeout | undefined;
+
+    const onStdoutData = (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      stdout += text;
+      streamRedactedLines("stdout", text);
+    };
+    const onStderrData = (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      stderr += text;
+      streamRedactedLines("stderr", text);
+    };
+    const lateErrorGuard = () => {
+      // A timed-out child can emit an AbortError or kill error after the caller has settled.
+    };
+
+    child.stdout.on("data", onStdoutData);
+    child.stderr.on("data", onStderrData);
+    child.on("error", lateErrorGuard);
 
     const finish = (callback: () => void) => {
       if (settled) {
         return;
       }
       settled = true;
-      clearTimeout(timer);
+      clearTimeout(deadlineTimer);
       callback();
     };
 
-    child.once("error", (error: Error) => {
+    const detachOutputListeners = () => {
+      child.stdout.off("data", onStdoutData);
+      child.stderr.off("data", onStderrData);
+    };
+
+    const safelyKill = (signal: NodeJS.Signals) => {
+      try {
+        child.kill(signal);
+      } catch {
+        // The caller is already settling; kill errors must not replace the process result.
+      }
+    };
+
+    const redactedFailureOutput = () => ({
+      stdout: redact(stdout),
+      stderr: redact(stderr)
+    });
+
+    const onError = (error: Error) => {
       if (timedOut) {
         return;
       }
       flushRedactedLogs();
+      detachOutputListeners();
+      child.off("close", onClose);
+      child.off("error", onError);
       finish(() =>
         reject(
           new ProcessExecutionError(`Failed to start process ${command}: ${redact(error.message)}`, {
             command,
             args: processArgs,
-            stdout,
-            stderr,
+            ...redactedFailureOutput(),
             exitCode: null,
             signal: null,
             cause: error
           })
         )
       );
-    });
+    };
 
-    child.once("close", (code: number | null, signal: NodeJS.Signals | null) => {
+    const onClose = (code: number | null, signal: NodeJS.Signals | null) => {
+      closed = true;
+      if (escalationTimer !== undefined) {
+        clearTimeout(escalationTimer);
+      }
       flushRedactedLogs();
+      detachOutputListeners();
+      child.off("error", onError);
+      child.off("error", lateErrorGuard);
+      child.off("close", onClose);
       finish(() => {
         if (timedOut) {
           reject(
             new ProcessTimeoutError(`Process ${command} exceeded its ${timeoutMs}ms deadline`, {
               command,
               args: processArgs,
-              stdout,
-              stderr,
+              ...redactedFailureOutput(),
               timeoutMs
             })
           );
@@ -239,8 +276,7 @@ export async function runProcess(
               {
                 command,
                 args: processArgs,
-                stdout,
-                stderr,
+                ...redactedFailureOutput(),
                 exitCode: code,
                 signal
               }
@@ -250,6 +286,44 @@ export async function runProcess(
         }
         resolve({ exitCode: code, stdout, stderr });
       });
-    });
+    };
+
+    child.on("error", onError);
+    child.once("close", onClose);
+
+    const deadlineTimer = setTimeout(() => {
+      if (settled || closed) {
+        return;
+      }
+      timedOut = true;
+      flushRedactedLogs();
+      detachOutputListeners();
+      child.off("error", onError);
+      finish(() =>
+        reject(
+          new ProcessTimeoutError(`Process ${command} exceeded its ${timeoutMs}ms deadline`, {
+            command,
+            args: processArgs,
+            ...redactedFailureOutput(),
+            timeoutMs
+          })
+        )
+      );
+
+      controller.abort(new Error(`Process deadline exceeded after ${timeoutMs}ms`));
+      if (closed) {
+        return;
+      }
+      safelyKill("SIGTERM");
+      if (closed) {
+        return;
+      }
+      escalationTimer = setTimeout(() => {
+        safelyKill("SIGKILL");
+        child.off("close", onClose);
+      }, terminationGraceMs);
+      escalationTimer.unref?.();
+    }, timeoutMs);
+    deadlineTimer.unref?.();
   });
 }

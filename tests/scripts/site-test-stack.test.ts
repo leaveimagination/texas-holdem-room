@@ -73,6 +73,52 @@ describe("loopback port reservation", () => {
 });
 
 describe("safe process runner", () => {
+  test("settles at the deadline and bounds termination when the child never closes", async () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const child = new EventEmitter() as SpawnedProcess & {
+      kill: ReturnType<typeof vi.fn<(signal?: NodeJS.Signals | number) => boolean>>;
+    };
+    child.stdout = stdout;
+    child.stderr = stderr;
+    child.kill = vi.fn(() => true);
+    const spawn: SpawnProcess = vi.fn(() => child);
+
+    const settlement = Promise.race([
+      runProcess("stuck-command", [], {
+        timeoutMs: 10,
+        terminationGraceMs: 5,
+        spawn
+      }),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("runProcess did not settle independently")), 80);
+      })
+    ]);
+    const error = await settlement.then(
+      () => undefined,
+      (reason: unknown) => reason
+    );
+    if (error instanceof Error && error.message === "runProcess did not settle independently") {
+      child.emit("close", null, "SIGKILL");
+    }
+
+    expect(error).toMatchObject({
+      name: "ProcessTimeoutError",
+      command: "stuck-command",
+      timeoutMs: 10
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(child.kill.mock.calls).toEqual([["SIGTERM"], ["SIGKILL"]]);
+    expect(child.stdout.listenerCount("data")).toBe(0);
+    expect(child.stderr.listenerCount("data")).toBe(0);
+    expect(child.listenerCount("close")).toBe(0);
+    expect(() => {
+      child.emit("error", new Error("late error one"));
+      child.emit("error", new Error("late error two"));
+      child.emit("close", null, "SIGKILL");
+    }).not.toThrow();
+  });
+
   test("aborts at the deadline while preserving partial output and redacting streamed logs", async () => {
     const stdout = new PassThrough();
     const stderr = new PassThrough();
@@ -89,7 +135,7 @@ describe("safe process runner", () => {
         { once: true }
       );
       queueMicrotask(() => {
-        stdout.write("partial stdout\n");
+        stdout.write("partial secret-value stdout\n");
         stderr.write("token=secret-");
         stderr.write("value\n");
       });
@@ -108,8 +154,8 @@ describe("safe process runner", () => {
       name: "ProcessTimeoutError",
       command: "fixture-command",
       args: ["--literal", "a value"],
-      stdout: "partial stdout\n",
-      stderr: "token=secret-value\n"
+      stdout: "partial [REDACTED] stdout\n",
+      stderr: "token=[REDACTED]\n"
     });
     expect(streamed.map((entry) => `${entry.stream}:${entry.text}`).join("")).toContain(
       "stderr:token=[REDACTED]"
@@ -120,6 +166,65 @@ describe("safe process runner", () => {
       ["--literal", "a value"],
       expect.objectContaining({ shell: false, windowsHide: true })
     );
+  });
+
+  test("redacts stdout and stderr fields surfaced for a nonzero exit", async () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const child = new EventEmitter() as SpawnedProcess;
+    child.stdout = stdout;
+    child.stderr = stderr;
+    const spawn: SpawnProcess = vi.fn(() => {
+      queueMicrotask(() => {
+        stdout.write("stdout secret-value\n");
+        stderr.write("stderr secret-value\n");
+        child.emit("close", 7, null);
+      });
+      return child;
+    });
+
+    const error = await runProcess("failed-command", [], {
+      spawn,
+      redact: (value) => value.replaceAll("secret-value", "[REDACTED]")
+    }).then(
+      () => undefined,
+      (reason: unknown) => reason
+    );
+
+    expect(error).toMatchObject({
+      name: "ProcessExecutionError",
+      exitCode: 7,
+      stdout: "stdout [REDACTED]\n",
+      stderr: "stderr [REDACTED]\n"
+    });
+    expect(String(error)).not.toContain("secret-value");
+  });
+
+  test("retains raw stdout and stderr for successful process parsing", async () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const child = new EventEmitter() as SpawnedProcess;
+    child.stdout = stdout;
+    child.stderr = stderr;
+    const spawn: SpawnProcess = vi.fn(() => {
+      queueMicrotask(() => {
+        stdout.write('{"token":"secret-value"}\n');
+        stderr.write("successful secret-value diagnostic\n");
+        child.emit("close", 0, null);
+      });
+      return child;
+    });
+
+    const result = await runProcess("successful-command", [], {
+      spawn,
+      redact: (value) => value.replaceAll("secret-value", "[REDACTED]")
+    });
+
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: '{"token":"secret-value"}\n',
+      stderr: "successful secret-value diagnostic\n"
+    });
   });
 });
 
