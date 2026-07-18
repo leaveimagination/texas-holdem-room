@@ -59,7 +59,8 @@ describe("experience support", () => {
           board: ["Ac", "Kd", "7h"],
           pot: 180,
           actorId: "p2",
-          seats: [{ participantId: "p1", holeCards: ["As", "Ah"] }]
+          seats: [{ participantId: "p1", holeCards: ["As", "Ah"] }],
+          actions: [{ playerId: "p1", type: "all-in" }, { playerId: "p2", type: "call", amount: 80 }]
         }
       }
     }));
@@ -71,6 +72,10 @@ describe("experience support", () => {
       handNumber: 4,
       street: "flop",
       boardLength: 3,
+      board: ["Ac", "Kd", "7h"],
+      actionIds: ["h4-a1-p1-all-in", "h4-a2-p2-call-80"],
+      resultId: null,
+      privateCardVisibility: { visible: true, cardCount: 2 },
       pot: 180,
       actor: "p2",
       privateCardKeyPresent: true
@@ -85,10 +90,30 @@ describe("experience support", () => {
       handNumber: null,
       street: null,
       boardLength: null,
+      board: [],
+      actionIds: [],
+      resultId: null,
+      privateCardVisibility: { visible: false, cardCount: 0 },
       pot: null,
       actor: null,
       privateCardKeyPresent: false
     });
+  });
+
+  it("does not classify documented showdown hole-card reveals as private payload", () => {
+    const projection = projectWebSocketPayload(JSON.stringify({
+      type: "room_snapshot",
+      payload: { flow: { phase: "runout", sequence: 3 }, hand: { number: 1, seats: [{ participantId: "p1", holeCards: ["As", "Ah"] }] } }
+    }));
+    expect(projection.privateCardKeyPresent).toBe(true);
+    expect(projection.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
+  });
+
+  it("still classifies private and undocumented hole-card paths during public reveal phases", () => {
+    const malicious = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "runout" }, privateCards: ["As", "Ah"] } }));
+    const undocumented = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "hand-summary" }, audit: { holeCards: ["Ks", "Kh"] } } }));
+    expect(malicious.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
+    expect(undocumented.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
   });
 
   it("installs telemetry before navigation and surfaces asynchronous sink failures on flush", async () => {
@@ -152,6 +177,10 @@ describe("experience support", () => {
           handNumber: null,
           street: null,
           boardLength: null,
+          board: [],
+          actionIds: [],
+          resultId: null,
+          privateCardVisibility: { visible: false, cardCount: 0 },
           pot: null,
           actor: "p1",
           privateCardKeyPresent: false

@@ -7,6 +7,10 @@ export interface SafeWebSocketProjection {
   handNumber: number | null;
   street: string | null;
   boardLength: number | null;
+  board: string[];
+  actionIds: string[];
+  resultId: string | null;
+  privateCardVisibility: { visible: boolean; cardCount: number };
   pot: number | null;
   actor: string | null;
   privateCardKeyPresent: boolean;
@@ -52,16 +56,24 @@ export function projectWebSocketPayload(payload: unknown): SafeWebSocketProjecti
   const flow = record(body.flow) ?? record(message.flow);
   const hand = record(body.hand) ?? record(message.hand);
   const board = hand?.board;
+  const handNumber = numberField(hand?.number) ?? numberField(body.handNumber);
+  const actions = Array.isArray(hand?.actions) ? hand.actions : [];
+  const handResult = record(flow?.handResult) ?? record(body.handResult);
+  const phase = stringField(flow?.phase) ?? stringField(body.phase);
   return {
     type: stringField(message.type) ?? "unknown",
-    phase: stringField(flow?.phase) ?? stringField(body.phase),
+    phase,
     sequence: numberField(flow?.sequence) ?? numberField(body.phaseSequence) ?? numberField(body.sequence),
-    handNumber: numberField(hand?.number) ?? numberField(body.handNumber),
+    handNumber,
     street: stringField(hand?.street) ?? stringField(body.street),
     boardLength: Array.isArray(board)
       ? board.length
       : numberField(body.boardLength) ??
         (numberField(body.cardIndex) === null ? null : numberField(body.cardIndex)! + 1),
+    board: Array.isArray(board) ? board.filter((card): card is string => typeof card === "string") : [],
+    actionIds: actions.flatMap((candidate, index) => actionFingerprint(candidate, handNumber, index)),
+    resultId: numberField(handResult?.handNumber) === null ? null : `hand-${numberField(handResult?.handNumber)}`,
+    privateCardVisibility: visibility(countUnexpectedPrivateCards(parsed, phase)),
     pot: numberField(hand?.pot) ?? numberField(body.pot),
     actor: stringField(hand?.actorId) ?? stringField(body.actorId) ?? stringField(body.actor),
     privateCardKeyPresent: hasPrivateCardKey(parsed)
@@ -178,6 +190,7 @@ export async function installBrowserTelemetry(
 
 function browserTelemetryInitScript({ bindingName }: { bindingName: string }): void {
   const NativeWebSocket = window.WebSocket;
+  const visibility = (cardCount: number) => ({ visible: cardCount > 0, cardCount });
   const emit = (event: TelemetryEvent) => {
     const binding = (window as unknown as Record<string, unknown>)[bindingName];
     if (typeof binding === "function") {
@@ -193,7 +206,7 @@ function browserTelemetryInitScript({ bindingName }: { bindingName: string }): v
   const project = (text: string): SafeWebSocketProjection => {
     const empty = (): SafeWebSocketProjection => ({
       type: "malformed", phase: null, sequence: null, handNumber: null,
-      street: null, boardLength: null, pot: null, actor: null,
+      street: null, boardLength: null, board: [], actionIds: [], resultId: null, privateCardVisibility: visibility(0), pot: null, actor: null,
       privateCardKeyPresent: false
     });
     let parsed: unknown;
@@ -220,13 +233,51 @@ function browserTelemetryInitScript({ bindingName }: { bindingName: string }): v
     const flow = asRecord(body.flow) ?? asRecord(message.flow);
     const hand = asRecord(body.hand) ?? asRecord(message.hand);
     const cardIndex = numberValue(body.cardIndex);
+    const board = Array.isArray(hand?.board) ? hand.board.filter((card): card is string => typeof card === "string") : [];
+    const handNumber = numberValue(hand?.number) ?? numberValue(body.handNumber);
+    const actions = Array.isArray(hand?.actions) ? hand.actions : [];
+    const actionId = (candidate: unknown, index: number): string[] => {
+      const action = asRecord(candidate); const type = stringValue(action?.type); const playerId = stringValue(action?.playerId);
+      if (!type || !playerId || handNumber === null) return [];
+      const amount = numberValue(action?.amount);
+      return [`h${handNumber}-a${index + 1}-${playerId}-${type}${amount === null ? "" : `-${amount}`}`];
+    };
+    const privateCount = (value: unknown): number => {
+      if (Array.isArray(value)) return value.reduce((sum, nested) => sum + privateCount(nested), 0);
+      const object = asRecord(value); if (!object) return 0;
+      return Object.entries(object).reduce((sum, [key, nested]) => sum + ((key === "holeCards" || key === "privateCards") && Array.isArray(nested) ? nested.length : privateCount(nested)), 0);
+    };
+    const unexpectedPrivateCount = (value: unknown, path: string[] = []): number => {
+      if (Array.isArray(value)) return value.reduce((sum, nested, index) => sum + unexpectedPrivateCount(nested, [...path, String(index)]), 0);
+      const object = asRecord(value); if (!object) return 0;
+      return Object.entries(object).reduce((sum, [key, nested]) => {
+        const next = [...path, key];
+        if ((key === "privateCards" || key === "holeCardsByParticipantId") && typeof nested === "object" && nested !== null) {
+          const cardLeaves = (candidate: unknown): number => Array.isArray(candidate) ? candidate.reduce<number>((total, leaf) => total + (typeof leaf === "string" ? 1 : cardLeaves(leaf)), 0) : Object.values(asRecord(candidate) ?? {}).reduce<number>((total, leaf) => total + cardLeaves(leaf), 0);
+          return sum + cardLeaves(nested);
+        }
+        if (key === "holeCards" && Array.isArray(nested)) {
+          const joined = next.join(".");
+          const publicSeatReveal = (phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary") && /hand\.seats\.\d+\.holeCards$/.test(joined);
+          const publicNoticeReveal = /showdownPlayers\.\d+\.holeCards$/.test(joined);
+          return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
+        }
+        return sum + unexpectedPrivateCount(nested, next);
+      }, 0);
+    };
+    const result = asRecord(flow?.handResult) ?? asRecord(body.handResult);
+    const phase = stringValue(flow?.phase) ?? stringValue(body.phase);
     return {
       type: stringValue(message.type) ?? "unknown",
-      phase: stringValue(flow?.phase) ?? stringValue(body.phase),
+      phase,
       sequence: numberValue(flow?.sequence) ?? numberValue(body.phaseSequence) ?? numberValue(body.sequence),
-      handNumber: numberValue(hand?.number) ?? numberValue(body.handNumber),
+      handNumber,
       street: stringValue(hand?.street) ?? stringValue(body.street),
-      boardLength: Array.isArray(hand?.board) ? hand.board.length : numberValue(body.boardLength) ?? (cardIndex === null ? null : cardIndex + 1),
+      boardLength: board.length > 0 ? board.length : numberValue(body.boardLength) ?? (cardIndex === null ? null : cardIndex + 1),
+      board,
+      actionIds: actions.flatMap(actionId),
+      resultId: numberValue(result?.handNumber) === null ? null : `hand-${numberValue(result?.handNumber)}`,
+      privateCardVisibility: visibility(unexpectedPrivateCount(parsed)),
       pot: numberValue(hand?.pot) ?? numberValue(body.pot),
       actor: stringValue(hand?.actorId) ?? stringValue(body.actorId) ?? stringValue(body.actor),
       privateCardKeyPresent: containsPrivateKey(parsed)
@@ -264,10 +315,68 @@ function emptyProjection(type: string): SafeWebSocketProjection {
     handNumber: null,
     street: null,
     boardLength: null,
+    board: [],
+    actionIds: [],
+    resultId: null,
+    privateCardVisibility: visibility(0),
     pot: null,
     actor: null,
     privateCardKeyPresent: false
   };
+}
+
+function actionFingerprint(candidate: unknown, handNumber: number | null, index: number): string[] {
+  const action = record(candidate);
+  const type = stringField(action?.type);
+  const playerId = stringField(action?.playerId);
+  if (!type || !playerId || handNumber === null) return [];
+  const amount = numberField(action?.amount);
+  return [`h${handNumber}-a${index + 1}-${playerId}-${type}${amount === null ? "" : `-${amount}`}`];
+}
+
+function countPrivateCards(value: unknown): number {
+  if (Array.isArray(value)) return value.reduce((sum, nested) => sum + countPrivateCards(nested), 0);
+  const object = record(value);
+  if (!object) return 0;
+  return Object.entries(object).reduce((sum, [key, nested]) =>
+    sum + ((key === "holeCards" || key === "privateCards") && Array.isArray(nested) ? nested.length : countPrivateCards(nested)), 0);
+}
+
+function visibility(cardCount: number): { visible: boolean; cardCount: number } {
+  return { visible: cardCount > 0, cardCount };
+}
+
+function isPublicRevealPhase(phase: string | null): boolean {
+  return phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary";
+}
+
+function countUnexpectedPrivateCards(value: unknown, phase: string | null, path: string[] = []): number {
+  if (Array.isArray(value)) return value.reduce((sum, nested, index) => sum + countUnexpectedPrivateCards(nested, phase, [...path, String(index)]), 0);
+  const object = record(value);
+  if (!object) return 0;
+  return Object.entries(object).reduce((sum, [key, nested]) => {
+    const next = [...path, key];
+    if ((key === "privateCards" || key === "holeCardsByParticipantId") && typeof nested === "object" && nested !== null) return sum + countPrivateCardsContainer(nested);
+    if (key === "holeCards" && Array.isArray(nested)) {
+      const joined = next.join(".");
+      const publicSeatReveal = isPublicRevealPhase(phase) && /hand\.seats\.\d+\.holeCards$/.test(joined);
+      const publicNoticeReveal = /showdownPlayers\.\d+\.holeCards$/.test(joined);
+      return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
+    }
+    return sum + countUnexpectedPrivateCards(nested, phase, next);
+  }, 0);
+}
+
+function countPrivateCardsContainer(value: unknown): number {
+  if (Array.isArray(value)) return value.reduce((sum, nested) => sum + (typeof nested === "string" ? 1 : countPrivateCardsContainer(nested)), 0);
+  const object = record(value);
+  return object ? Object.values(object).reduce<number>((sum, nested) => sum + countPrivateCardsContainer(nested), 0) : 0;
+}
+
+function visibilityRecord(value: unknown): { visible: boolean; cardCount: number } {
+  const candidate = record(value);
+  const cardCount = numberField(candidate?.cardCount) ?? 0;
+  return { visible: candidate?.visible === true || cardCount > 0, cardCount };
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -339,6 +448,10 @@ function sanitizeBrowserTelemetryEvent(
           handNumber: numberField(projection.handNumber),
           street: stringField(projection.street),
           boardLength: numberField(projection.boardLength),
+          board: Array.isArray(projection.board) ? projection.board.filter((card): card is string => typeof card === "string") : [],
+          actionIds: Array.isArray(projection.actionIds) ? projection.actionIds.filter((id): id is string => typeof id === "string") : [],
+          resultId: stringField(projection.resultId),
+          privateCardVisibility: visibilityRecord(projection.privateCardVisibility),
           pot: numberField(projection.pot),
           actor: stringField(projection.actor),
           privateCardKeyPresent: projection.privateCardKeyPresent === true

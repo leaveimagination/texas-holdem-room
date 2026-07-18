@@ -136,6 +136,15 @@ export class ActorPool {
     actor.traceStarted = true;
   }
 
+  async startJourneyTraceBeforeNavigation(actorId: string): Promise<void> {
+    const actor = this.get(actorId);
+    if (actor.traceStarted) throw new Error(`Actor ${actorId} trace already started`);
+    // Action/screenshot-only trace covers visible join without retaining response
+    // bodies that contain the participant credential created by that join.
+    await actor.context.tracing.start({ screenshots: true, snapshots: false, sources: false });
+    actor.traceStarted = true;
+  }
+
   async closeAll(): Promise<void> {
     const failures: unknown[] = [];
     await Promise.all(this.list().map(async (actor) => {
