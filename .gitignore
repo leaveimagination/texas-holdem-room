@@ -10,7 +10,6 @@ output/
 outputs/
 outputs/site-test/
 outputs/site-test/.case-evidence-*/
-outputs/site-test/**/retained-resources.json
 .site-test-*.env
 *.site-test.env.tmp
 tmp/

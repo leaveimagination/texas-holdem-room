@@ -229,7 +229,8 @@ describe("deriveRunVerdict", () => {
         code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
         summary: "gated",
         stage: "EXP-010-A05",
-        evidenceEventIds: []
+        evidenceEventIds: [],
+        details: { executed: false }
       }]
     };
     const failed = {
@@ -243,6 +244,43 @@ describe("deriveRunVerdict", () => {
     expect(deriveRunVerdict({ cases: [failed, gated], results: { ...PASSING_RESULTS, product: failed.results.product } }))
       .toBe("FAIL");
     expect(deriveRunVerdict({ cases: [{ ...gated, caseId: "EXP-009" }], results: PASSING_RESULTS }))
+      .toBe("INCONCLUSIVE");
+  });
+
+  it.each([
+    ["wrong case", { caseId: "EXP-009" }],
+    ["wrong attempt", { attemptId: "A-002" }],
+    ["wrong stage", { stage: "EXP-010-A04" }],
+    ["executed", { details: { executed: true } }],
+    ["missing details", { details: undefined }],
+    ["generic same code", { stage: undefined, details: { reason: "generic" } }]
+  ])("does not exempt a malformed smoke gate: %s", (_label, mutation) => {
+    const failure = {
+      code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
+      summary: "gated",
+      stage: "EXP-010-A05",
+      evidenceEventIds: [],
+      details: { executed: false },
+      ...mutation
+    };
+    const malformed = {
+      caseId: "EXP-010",
+      attemptId: "A-001",
+      results: PASSING_RESULTS,
+      assertions: [assertion("inconclusive")],
+      failures: [failure]
+    };
+    const failed = {
+      caseId: "EXP-002",
+      attemptId: "A-001",
+      results: { ...PASSING_RESULTS, product: { status: "fail" as const, summary: "failed", evidenceEventIds: [] } },
+      assertions: [assertion("fail")],
+      failures: []
+    };
+    if ("caseId" in mutation) malformed.caseId = mutation.caseId!;
+    if ("attemptId" in mutation) malformed.attemptId = mutation.attemptId!;
+
+    expect(deriveRunVerdict({ cases: [failed, malformed], results: { ...PASSING_RESULTS, product: failed.results.product } }))
       .toBe("INCONCLUSIVE");
   });
 

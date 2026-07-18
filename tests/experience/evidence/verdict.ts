@@ -48,11 +48,7 @@ export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
   }
 
   const judgedCases = input.cases.filter(
-    ({ caseId, attemptId, failures }) => !(
-      caseId === "EXP-010" &&
-      attemptId === "A-001" &&
-      failures?.some(({ code }) => code === "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE")
-    )
+    (caseReport) => !isExactNonExecutedSmokeGate(caseReport)
   );
   const caseVerdicts = judgedCases.map(deriveCaseVerdict);
   if (caseVerdicts.includes("INCONCLUSIVE")) {
@@ -63,4 +59,19 @@ export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
   }
 
   return input.results.product.status === "pass" ? "PASS" : "INCONCLUSIVE";
+}
+
+function isExactNonExecutedSmokeGate(caseReport: CaseVerdictInput): boolean {
+  if (caseReport.caseId !== "EXP-010" || caseReport.attemptId !== "A-001") {
+    return false;
+  }
+  return caseReport.failures?.some((failure) => {
+    const details = failure.details;
+    return failure.code === "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE" &&
+      failure.stage === "EXP-010-A05" &&
+      typeof details === "object" &&
+      details !== null &&
+      !Array.isArray(details) &&
+      (details as Record<string, unknown>).executed === false;
+  }) === true;
 }
