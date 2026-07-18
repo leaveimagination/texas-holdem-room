@@ -224,7 +224,7 @@ describe("deriveRunVerdict", () => {
       caseId: "EXP-010",
       attemptId: "A-001",
       results: PASSING_RESULTS,
-      assertions: [assertion("inconclusive")],
+      assertions: [{ ...assertion("inconclusive"), id: "EXP-010-A05" }],
       failures: [{
         code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
         summary: "gated",
@@ -267,7 +267,7 @@ describe("deriveRunVerdict", () => {
       caseId: "EXP-010",
       attemptId: "A-001",
       results: PASSING_RESULTS,
-      assertions: [assertion("inconclusive")],
+      assertions: [{ ...assertion("inconclusive"), id: "EXP-010-A05" }],
       failures: [failure]
     };
     const failed = {
@@ -280,6 +280,42 @@ describe("deriveRunVerdict", () => {
     if ("caseId" in mutation) malformed.caseId = mutation.caseId!;
     if ("attemptId" in mutation) malformed.attemptId = mutation.attemptId!;
 
+    expect(deriveRunVerdict({ cases: [failed, malformed], results: { ...PASSING_RESULTS, product: failed.results.product } }))
+      .toBe("INCONCLUSIVE");
+  });
+
+  it.each([
+    ["additional failure", true, false],
+    ["additional assertion", false, true]
+  ])("does not exempt a smoke gate with %s", (_label, extraFailure, extraAssertion) => {
+    const malformed = {
+      caseId: "EXP-010",
+      attemptId: "A-001",
+      results: PASSING_RESULTS,
+      assertions: [
+        { ...assertion("inconclusive"), id: "EXP-010-A05" },
+        ...(extraAssertion ? [assertion("inconclusive")] : [])
+      ],
+      failures: [{
+        code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
+        summary: "gated",
+        stage: "EXP-010-A05",
+        evidenceEventIds: [],
+        details: { executed: false }
+      }, ...(extraFailure ? [{
+        code: "HARNESS_RUNTIME_FAILURE",
+        summary: "runtime failed",
+        stage: "attempt-runtime",
+        evidenceEventIds: []
+      }] : [])]
+    };
+    const failed = {
+      caseId: "EXP-002",
+      attemptId: "A-001",
+      results: { ...PASSING_RESULTS, product: { status: "fail" as const, summary: "failed", evidenceEventIds: [] } },
+      assertions: [assertion("fail")],
+      failures: []
+    };
     expect(deriveRunVerdict({ cases: [failed, malformed], results: { ...PASSING_RESULTS, product: failed.results.product } }))
       .toBe("INCONCLUSIVE");
   });

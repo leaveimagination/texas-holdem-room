@@ -65,7 +65,14 @@ function isExactNonExecutedSmokeGate(caseReport: CaseVerdictInput): boolean {
   if (caseReport.caseId !== "EXP-010" || caseReport.attemptId !== "A-001") {
     return false;
   }
-  return caseReport.failures?.some((failure) => {
+  if (caseReport.failures?.length !== 1 || caseReport.assertions.length !== 1) {
+    return false;
+  }
+  const assertion = caseReport.assertions[0];
+  if (assertion.id !== "EXP-010-A05" || assertion.outcome !== "inconclusive") {
+    return false;
+  }
+  return caseReport.failures.every((failure) => {
     const details = failure.details;
     return failure.code === "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE" &&
       failure.stage === "EXP-010-A05" &&
@@ -73,5 +80,5 @@ function isExactNonExecutedSmokeGate(caseReport: CaseVerdictInput): boolean {
       details !== null &&
       !Array.isArray(details) &&
       (details as Record<string, unknown>).executed === false;
-  }) === true;
+  });
 }
