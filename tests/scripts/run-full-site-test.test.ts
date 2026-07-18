@@ -14,6 +14,7 @@ import {
   createDefaultSiteTestRunnerDependencies,
   injectProductFailureEvidence,
   parseSiteTestArguments,
+  smokePrerequisitesSatisfied,
   runFullSiteTest,
   type CollectedCaseEvidence,
   type SiteTestRunContext,
@@ -31,6 +32,16 @@ import {
 import { writeExperienceReport } from "../experience/evidence/report-writer";
 
 const temporaryDirectories: string[] = [];
+
+test.each([
+  [[], true, true, "pass", "pass", false],
+  [["EXP-001"], true, true, "pass", "pass", true],
+  [["EXP-001"], false, true, "pass", "pass", false],
+  [["EXP-001"], true, false, "pass", "pass", false],
+  [["EXP-001"], true, true, "inconclusive", "pass", false]
+] as const)("computes deployed smoke provenance from real isolated prerequisites", (caseIds, validated, passed, harness, environment, expected) => {
+  expect(smokePrerequisitesSatisfied({ isolatedCaseIds: caseIds, evidenceValidated: validated, selectedCasesPassed: passed, harnessStatus: harness, environmentStatus: environment })).toBe(expected);
+});
 
 afterEach(async () => {
   await Promise.all(

@@ -113,6 +113,7 @@ async function runFullSiteTestWithinDeadline(
   let diagnosticsDurable = false;
   let finalPackValidated = false;
   let productInjectionApplied = false;
+  let isolatedEvidenceValidated = false;
   let failureStage = "runner-initialization";
   let failureSummary = "The runner stopped before a selected case could be judged.";
   const attemptedCaseIds = new Set<string>();
@@ -408,6 +409,7 @@ async function runFullSiteTestWithinDeadline(
                   control
                 )
             );
+            isolatedEvidenceValidated = true;
             throwIfDeadline(signal);
           } catch (error) {
             markHarnessInconclusive(
@@ -429,11 +431,16 @@ async function runFullSiteTestWithinDeadline(
           }
         }
 
-        const mayRunSmoke =
-          includesSmoke &&
-          selectedCasesPassed(evidence, isolatedCaseIds) &&
-          runResults.harness.status === "pass" &&
-          runResults.environment.status === "pass";
+        const mayRunSmoke = includesSmoke && smokePrerequisitesSatisfied({
+          isolatedCaseIds,
+          evidenceValidated: isolatedEvidenceValidated,
+          selectedCasesPassed: selectedCasesPassed(evidence, isolatedCaseIds),
+          harnessStatus: runResults.harness.status,
+          environmentStatus: runResults.environment.status
+        });
+        if (includesSmoke && !mayRunSmoke && isolatedCaseIds.length === 0) {
+          markHarnessInconclusive(runResults, diagnostics, "EXP-010 requires at least one validated passing isolated acceptance case.");
+        }
         if (mayRunSmoke) {
           requireOperationalBudget(
             signal,
@@ -455,7 +462,8 @@ async function runFullSiteTestWithinDeadline(
                 [SMOKE_CASE_ID],
                 control.timeoutMs,
                 control.signal,
-                undefined
+                undefined,
+                true
               )
           );
           throwIfDeadline(signal);
@@ -948,7 +956,8 @@ async function runGroup(
   caseIds: readonly string[],
   timeoutMs: number,
   signal: AbortSignal | undefined,
-  fixtureSeedBroker: FixtureSeedBrokerClient | undefined
+  fixtureSeedBroker: FixtureSeedBrokerClient | undefined,
+  isolatedAcceptancePassed = false
 ): Promise<PlaywrightGroupResult> {
   try {
     return await dependencies.runPlaywrightGroup({
@@ -960,7 +969,7 @@ async function runGroup(
       isolatedBaseUrl: context.isolatedBaseUrl,
       databaseUrl: context.databaseUrl,
       smokeBaseUrl: context.smokeBaseUrl,
-      isolatedAcceptancePassed: caseIds.includes(SMOKE_CASE_ID),
+      isolatedAcceptancePassed,
       fixtureSeedBroker,
       timeoutMs,
       signal,
@@ -973,6 +982,17 @@ async function runGroup(
       { cause: error }
     );
   }
+}
+
+export function smokePrerequisitesSatisfied(input: {
+  isolatedCaseIds: readonly string[];
+  evidenceValidated: boolean;
+  selectedCasesPassed: boolean;
+  harnessStatus: "pass" | "fail" | "inconclusive";
+  environmentStatus: "pass" | "fail" | "inconclusive";
+}): boolean {
+  return input.isolatedCaseIds.length > 0 && input.evidenceValidated && input.selectedCasesPassed &&
+    input.harnessStatus === "pass" && input.environmentStatus === "pass";
 }
 
 export function createDefaultSiteTestRunnerDependencies(): SiteTestRunnerDependencies {
