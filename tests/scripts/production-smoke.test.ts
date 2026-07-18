@@ -1,8 +1,15 @@
 import { describe, expect, test, vi } from "vitest";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { EvidenceRecorder } from "../experience/evidence/recorder";
+import { validateEvidencePack } from "../experience/evidence/validator";
 
 import {
   buildProductionCleanupCommand,
   combineProductFailureWithRetainedCleanup,
+  combineSmokeFailureWithRetainedCleanup,
+  augmentSmokeResultWithRetainedCleanup,
   discoverProductionAppContainer,
   runExactProductionCleanup,
   type DockerCommandRunner
@@ -116,6 +123,48 @@ test("keeps a proven product FAIL while reporting exact retained cleanup", () =>
     code: "EXACT_CLEANUP_RETAINED",
     details: expect.objectContaining({ roomId: "room-1" })
   }));
+});
+
+test.each([
+  [undefined, "INCONCLUSIVE", "pass"],
+  [{ kind: "timeout" as const, message: "navigation timed out" }, "INCONCLUSIVE", "inconclusive"],
+  [{ kind: "harness" as const, message: "browser crashed" }, "INCONCLUSIVE", "inconclusive"],
+  [{ kind: "product" as const, assertionId: "EXP-010-A03", message: "seat failed", actor: "player", measuredValue: false, threshold: true, artifactIds: [] }, "FAIL", "fail"]
+])("retained cleanup preserves every prior error class: %j", (priorFailure, verdict, productStatus) => {
+  const result = combineSmokeFailureWithRetainedCleanup({
+    priorFailure, roomId: "room-exact", ownershipMarker: "SITE-run-smoke-player", cleanupReason: "CLI missing"
+  });
+  expect(result.verdict).toBe(verdict);
+  expect(result.results.product.status).toBe(productStatus);
+  expect(result.results.harness.status).toBe("inconclusive");
+  expect(result.results.environment.status).toBe("inconclusive");
+  expect(result.failures.at(-1)).toMatchObject({ code: "EXACT_CLEANUP_RETAINED", details: { roomId: "room-exact" } });
+});
+
+test("augments an exact prior result without dropping evidence or failure details", () => {
+  const prior = { verdict: "FAIL" as const, results: { product: { status: "fail" as const, summary: "proven", evidenceEventIds: ["E-fail"] }, harness: { status: "pass" as const, summary: "captured", evidenceEventIds: ["E-harness"] }, environment: { status: "pass" as const, summary: "available", evidenceEventIds: [] } }, assertions: [{ id: "EXP-010-A01", outcome: "pass" as const, evidenceEventIds: ["E-pass"], summary: "passed" }, { id: "EXP-010-A03", outcome: "fail" as const, evidenceEventIds: ["E-fail"], summary: "failed", details: { exact: true } }], failures: [{ code: "PRODUCT_ASSERTION_FAILED", summary: "failed", stage: "EXP-010-A03", evidenceEventIds: ["E-fail"], details: { exact: true } }] };
+  const result = augmentSmokeResultWithRetainedCleanup(prior, { roomId: "room-exact", ownershipMarker: "SITE-run-smoke-player", cleanupReason: "CLI missing" });
+  expect(result.assertions.filter(({ id }) => id !== "EXP-010-A04")).toEqual(prior.assertions);
+  expect(result.assertions.find(({ id }) => id === "EXP-010-A04")).toMatchObject({ outcome: "inconclusive", details: { roomId: "room-exact" } });
+  expect(result.failures[0]).toEqual(prior.failures[0]);
+  expect(result.results.product).toEqual(prior.results.product);
+  expect(result.verdict).toBe("FAIL");
+  expect(result.failures.at(-1)).toMatchObject({ code: "EXACT_CLEANUP_RETAINED", details: { roomId: "room-exact" } });
+});
+
+test("redacts a host token learned after recorder construction from navigation failure pack", async () => {
+  const root = await mkdtemp(join(tmpdir(), "smoke-secrets-"));
+  const secrets: string[] = [];
+  const recorder = new EvidenceRecorder({ outputRoot: root, runId: "run-1", caseId: "EXP-010", attemptId: "A-001", actor: "host", knownSecrets: secrets });
+  const token = "host_token_learned_late";
+  await recorder.recordEvent({ stage: "host-navigation", type: "failure", status: "failure-durable", details: { message: `socket closed for ${token}` } });
+  secrets.push(token);
+  await recorder.finishCase({ verdict: "INCONCLUSIVE", results: { product: { status: "inconclusive", summary: `navigation ${token}`, evidenceEventIds: [] }, harness: { status: "inconclusive", summary: `navigation ${token}`, evidenceEventIds: [] }, environment: { status: "pass", summary: "available", evidenceEventIds: [] } }, assertions: [], failures: [{ code: "HARNESS_RUNTIME_FAILURE", summary: `navigation ${token}`, evidenceEventIds: [] }] });
+  await writeFile(join(root, "case-manifest.json"), JSON.stringify({ schemaVersion: "1.0", caseId: "EXP-010", objective: "Smoke deployment", entrypoint: "public site", fixture: { description: "public room", expectedFacts: ["room exists"] }, assertions: [{ id: "EXP-010-A01", description: "entry responds" }], forbiddenOutcomes: ["secret leaks"], acceptableAlternatives: [], stopConditions: { overallTimeoutMs: 120000, noProgressTimeoutMs: 15000 } }));
+  const pack = `${await readFile(join(root, "events.json"), "utf8")}\n${await readFile(join(root, "report.json"), "utf8")}`;
+  expect(pack).not.toContain(token);
+  expect(pack).toContain("[REDACTED]");
+  await expect(validateEvidencePack(root, [token])).resolves.toMatchObject({ filesScanned: 4, artifactCount: 0 });
 });
 
 function scriptedDocker(outputs: Array<{ stdout: string; stderr?: string; exitCode?: number }>): DockerCommandRunner {

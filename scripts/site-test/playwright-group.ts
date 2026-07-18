@@ -35,6 +35,7 @@ export interface RunPlaywrightGroupInput {
   isolatedBaseUrl: string;
   databaseUrl: string;
   smokeBaseUrl: string;
+  isolatedAcceptancePassed?: boolean;
   fixtureSeedBroker?: {
     endpoint: string;
     authorizationToken: string;
@@ -96,6 +97,7 @@ export async function runPlaywrightGroup(
       SITE_TEST_ISOLATED_BASE_URL: input.isolatedBaseUrl,
       SITE_TEST_DATABASE_URL: input.databaseUrl,
       SITE_TEST_SMOKE_URL: input.smokeBaseUrl,
+      ...(input.isolatedAcceptancePassed ? { SITE_TEST_ISOLATED_ACCEPTANCE_PASSED: "1" } : {}),
       ...(input.fixtureSeedBroker ? {
         SITE_TEST_FIXTURE_BROKER_ENDPOINT: input.fixtureSeedBroker.endpoint,
         SITE_TEST_FIXTURE_BROKER_TOKEN: input.fixtureSeedBroker.authorizationToken

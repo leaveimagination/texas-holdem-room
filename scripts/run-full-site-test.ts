@@ -960,6 +960,7 @@ async function runGroup(
       isolatedBaseUrl: context.isolatedBaseUrl,
       databaseUrl: context.databaseUrl,
       smokeBaseUrl: context.smokeBaseUrl,
+      isolatedAcceptancePassed: caseIds.includes(SMOKE_CASE_ID),
       fixtureSeedBroker,
       timeoutMs,
       signal,

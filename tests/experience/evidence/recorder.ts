@@ -160,6 +160,12 @@ export class EvidenceRecorder {
   finishCase(input: FinishCaseInput): Promise<CaseReport> {
     return this.enqueue(async () => {
       await mkdir(this.options.outputRoot, { recursive: true });
+      const finalizedEvents = EvidenceEventSchema.array().parse(
+        redactForEvidence(this.events, this.options.knownSecrets)
+      );
+      const finalizedArtifacts = ArtifactRecordSchema.array().parse(
+        redactForEvidence(this.artifacts, this.options.knownSecrets)
+      );
       const report = CaseReportSchema.parse(
         redactForEvidence(
           {
@@ -173,16 +179,16 @@ export class EvidenceRecorder {
             results: input.results,
             assertions: input.assertions,
             failures: input.failures,
-            artifacts: this.artifacts
+            artifacts: finalizedArtifacts
           },
           this.options.knownSecrets
         )
       );
 
-      await atomicWriteJson(join(this.options.outputRoot, "events.json"), this.events);
+      await atomicWriteJson(join(this.options.outputRoot, "events.json"), finalizedEvents);
       await atomicWriteJson(
         join(this.options.outputRoot, "artifacts.json"),
-        this.artifacts
+        finalizedArtifacts
       );
       await atomicWriteJson(join(this.options.outputRoot, "report.json"), report);
       return report;

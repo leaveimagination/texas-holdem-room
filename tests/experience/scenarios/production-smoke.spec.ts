@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 import {
-  combineProductFailureWithRetainedCleanup,
+  augmentSmokeResultWithRetainedCleanup,
   discoverProductionAppContainer,
   runExactProductionCleanup
 } from "../../../scripts/site-test/production-smoke";
@@ -31,12 +31,13 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
   test.setTimeout(135_000);
   const environment = readEnvironment();
   const recorders = new Map<string, EvidenceRecorder>();
+  const secrets = new SecretRegistry();
 
   await runExperienceCase({
     runId: environment.runId,
     caseId: "EXP-010",
     recorderFactory: (coordinates) => {
-      const recorder = createRecorder(environment, coordinates);
+      const recorder = createRecorder(environment, coordinates, secrets.knownSecrets);
       recorders.set(coordinates.attemptId, recorder);
       return recorder;
     },
@@ -44,7 +45,7 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
       coordinates,
       recorder: requiredRecorder(recorders, coordinates.attemptId),
       contexts: [] as BrowserContext[],
-      secrets: new SecretRegistry(),
+      secrets,
       assertionEvents: new Map<string, string[]>(),
       roomId: null as string | null,
       ownershipMarker: `SITE-${environment.runId}-smoke-player`,
@@ -86,16 +87,9 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
           details: { roomId: fixture.roomId, ownershipMarker: fixture.ownershipMarker, retainedReason: cleanupError.message }
         });
       }
-      if (productError instanceof ProductAssertionError && cleanupError instanceof Error) {
-        return combineProductFailureWithRetainedCleanup({
-          productFailure: {
-            assertionId: productError.context.assertionId,
-            message: productError.message,
-            actor: productError.context.actor,
-            measuredValue: productError.context.measuredValue,
-            threshold: productError.context.threshold,
-            artifactIds: productError.context.artifactIds
-          },
+      if (cleanupError instanceof Error) {
+        return augmentSmokeResultWithRetainedCleanup(
+          priorSmokeResult(fixture, productError), {
           roomId: fixture.roomId ?? "unrecorded",
           ownershipMarker: fixture.ownershipMarker,
           cleanupReason: cleanupError.message
@@ -103,13 +97,12 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
       }
       if (productError instanceof ProductAssertionError) throw productError;
       if (productError !== undefined) throw productError;
-      if (cleanupError instanceof Error) return inconclusiveCleanup(fixture, cleanupError);
       return passingResult(fixture);
     },
     disposeFixture: async (fixture) => {
       await Promise.all(fixture.contexts.map(async (context) => await context.close()));
     },
-    persistFallbackReport: async (coordinates, input) => await createRecorder(environment, coordinates).finishCase(input)
+    persistFallbackReport: async (coordinates, input) => await createRecorder(environment, coordinates, secrets.knownSecrets).finishCase(input)
   });
 });
 
@@ -127,15 +120,16 @@ async function assertPublicEntrypoints(request: { get(url: string): Promise<{ ok
 async function executePublicJourney(browser: Browser, page: Page, environment: Environment, fixture: SmokeFixture, c: AttemptCoordinates) {
   const createPage = new CreateRoomPage(page, environment.smokeBaseUrl);
   await createPage.goto();
-  const links = await observeProduct(() => createPage.create(SETTINGS), context(c, "EXP-010-A02", "creator", { links: false }, { links: true }));
+  const links = await observeProduct(() => createPage.create(SETTINGS, async ({ roomId }) => {
+    fixture.roomId = roomId;
+    await persistOwnedRoom(environment, fixture);
+  }), context(c, "EXP-010-A02", "creator", { links: false }, { links: true }));
   const inviteUrl = new URL(links.inviteUrl, environment.smokeBaseUrl);
   const hostUrl = new URL(links.hostUrl, environment.smokeBaseUrl);
   const hostToken = hostUrl.searchParams.get("host");
-  const roomId = roomIdFromUrl(inviteUrl);
-  fixture.roomId = roomId;
+  const roomId = links.roomId;
   if (hostToken) fixture.secrets.add(hostToken);
-  await persistOwnedRoom(environment, fixture);
-  assertProductCondition(Boolean(hostToken) && !inviteUrl.searchParams.has("host") && inviteUrl.pathname === hostUrl.pathname,
+  assertProductCondition(Boolean(hostToken) && roomIdFromUrl(inviteUrl) === roomId && !inviteUrl.searchParams.has("host") && inviteUrl.pathname === hostUrl.pathname,
     context(c, "EXP-010-A02", "creator", { roomId, hostTokenPresent: Boolean(hostToken) }, { usableHostAndInviteLinks: true }));
   await pass(fixture, "EXP-010-A02", "creator", { roomId, inviteCredentialFree: true, hostCredentialPresent: true });
 
@@ -156,7 +150,9 @@ async function executePublicJourney(browser: Browser, page: Page, environment: E
   await spectatorRoom.join("Spectator", "spectator");
   await spectatorPage.getByRole("dialog", { name: "Join flow" }).waitFor({ state: "hidden", timeout: 3_000 });
   await pass(fixture, "EXP-010-A03", "roles", { playerJoined: true, seatClaimedThroughWebSocket: true, spectatorJoined: true });
-  await pass(fixture, "EXP-010-A05", "runner", { selectedAfterIsolatedAcceptance: true });
+  const gate = process.env.SITE_TEST_ISOLATED_ACCEPTANCE_PASSED === "1";
+  assertProductCondition(gate, context(c, "EXP-010-A05", "runner", { isolatedAcceptanceGate: gate }, { isolatedAcceptanceGate: true }));
+  await pass(fixture, "EXP-010-A05", "runner", { isolatedAcceptanceGate: "runner-proven" });
 }
 
 async function cleanupExactRoom(environment: Environment, fixture: SmokeFixture): Promise<void> {
@@ -194,19 +190,24 @@ function passingResult(fixture: SmokeFixture): FinishCaseInput {
   return { verdict: "PASS", results: { product: { status: "pass", summary: "The deployed smoke journey passed.", evidenceEventIds: ids }, harness: { status: "pass", summary: "Smoke evidence and exact cleanup completed.", evidenceEventIds: ids }, environment: { status: "pass", summary: "The deployed app remained healthy.", evidenceEventIds: ids } }, assertions, failures: [] };
 }
 
-function inconclusiveCleanup(fixture: SmokeFixture, error: Error): FinishCaseInput {
-  const passed = [...fixture.assertionEvents.entries()].filter(([id]) => id !== "EXP-010-A04").map(([id, evidenceEventIds]) => ({ id, outcome: "pass" as const, evidenceEventIds, summary: `${id} passed before cleanup.` }));
-  return { verdict: "INCONCLUSIVE", results: { product: { status: "pass", summary: "The public smoke product assertions passed.", evidenceEventIds: passed.flatMap((a) => a.evidenceEventIds) }, harness: { status: "inconclusive", summary: error.message, evidenceEventIds: [] }, environment: { status: "inconclusive", summary: "Exact deployed cleanup could not be proven; the room was retained.", evidenceEventIds: [] } }, assertions: [...passed, { id: "EXP-010-A04", outcome: "inconclusive", evidenceEventIds: [], summary: error.message, details: { roomId: fixture.roomId, ownershipMarker: fixture.ownershipMarker } }], failures: [{ code: "EXACT_CLEANUP_RETAINED", summary: error.message, stage: "EXP-010-A04", evidenceEventIds: [], details: { roomId: fixture.roomId, ownershipMarker: fixture.ownershipMarker } }] };
+function priorSmokeResult(fixture: SmokeFixture, error: unknown): FinishCaseInput {
+  if (error === undefined) return passingResult(fixture);
+  const passed = [...fixture.assertionEvents.entries()].map(([id, evidenceEventIds]) => ({ id, outcome: "pass" as const, evidenceEventIds: [...evidenceEventIds], summary: `${id} passed before the later failure.` }));
+  if (error instanceof ProductAssertionError) {
+    return { verdict: "FAIL", results: { product: { status: "fail", summary: error.message, evidenceEventIds: [] }, harness: { status: "pass", summary: "The product failure was durably captured.", evidenceEventIds: [] }, environment: { status: "pass", summary: "The deployed app was available.", evidenceEventIds: [] } }, assertions: [...passed, { id: error.context.assertionId, outcome: "fail", evidenceEventIds: [], summary: error.message, details: { actor: error.context.actor, measuredValue: error.context.measuredValue, threshold: error.context.threshold, artifactIds: [...error.context.artifactIds] } }], failures: [{ code: "PRODUCT_ASSERTION_FAILED", summary: error.message, stage: error.context.assertionId, evidenceEventIds: [], details: { actor: error.context.actor, artifactIds: [...error.context.artifactIds] } }] };
+  }
+  const summary = error instanceof Error ? error.message : String(error);
+  return { verdict: "INCONCLUSIVE", results: { product: { status: "inconclusive", summary: "Product behavior could not be fully judged.", evidenceEventIds: passed.flatMap((item) => item.evidenceEventIds) }, harness: { status: "inconclusive", summary, evidenceEventIds: [] }, environment: { status: "pass", summary: "The deployed app was available.", evidenceEventIds: [] } }, assertions: passed, failures: [{ code: error instanceof Error && error.name === "TimeoutError" ? "HARNESS_TIMEOUT" : "HARNESS_RUNTIME_FAILURE", summary, stage: "attempt-runtime", evidenceEventIds: [] }] };
 }
 
 async function pass(fixture: SmokeFixture, id: string, actor: string, details: Record<string, unknown>) { const event = await fixture.recorder.recordEvent({ actor, stage: id, type: "product-assertion", status: "pass", details }); fixture.assertionEvents.set(id, [...(fixture.assertionEvents.get(id) ?? []), event.id]); }
 function context(c: AttemptCoordinates, assertionId: string, actor: string, measuredValue: unknown, threshold: unknown) { return { assertionId, caseId: c.caseId, attemptId: c.attemptId, actor, earliestDivergentProjection: null, measuredValue, threshold, artifactIds: [] }; }
 function roomIdFromUrl(url: URL) { const match = url.pathname.match(/^\/room\/([^/]+)$/u); if (!match) throw new Error("Invite link did not contain an exact room ID"); return decodeURIComponent(match[1]); }
-function createRecorder(e: Environment, c: AttemptCoordinates) { return new EvidenceRecorder({ outputRoot: join(e.caseOutputRoot, c.caseId, c.attemptId), runId: c.runId, caseId: c.caseId, attemptId: c.attemptId, actor: "production-smoke" }); }
+function createRecorder(e: Environment, c: AttemptCoordinates, knownSecrets: readonly string[]) { return new EvidenceRecorder({ outputRoot: join(e.caseOutputRoot, c.caseId, c.attemptId), runId: c.runId, caseId: c.caseId, attemptId: c.attemptId, actor: "production-smoke", knownSecrets }); }
 function requiredRecorder(map: Map<string, EvidenceRecorder>, id: string) { const recorder = map.get(id); if (!recorder) throw new Error(`Missing recorder for ${id}`); return recorder; }
 function readEnvironment(): Environment { return { runId: requiredEnv("SITE_TEST_RUN_ID"), outputRoot: requiredEnv("SITE_TEST_OUTPUT_ROOT"), caseOutputRoot: requiredEnv("SITE_TEST_CASE_OUTPUT_ROOT"), smokeBaseUrl: requiredEnv("SITE_TEST_SMOKE_URL") }; }
 function requiredEnv(name: string) { const value = process.env[name]?.trim(); if (!value) throw new Error(`Missing required smoke environment: ${name}`); return value; }
 
-class SecretRegistry implements KnownSecretRegistry { private readonly values = new Set<string>(); add(secret: string) { this.values.add(secret); } }
+class SecretRegistry implements KnownSecretRegistry { readonly knownSecrets: string[] = []; private readonly values = new Set<string>(); add(secret: string) { if (!this.values.has(secret)) { this.values.add(secret); this.knownSecrets.push(secret); } } }
 interface Environment { runId: string; outputRoot: string; caseOutputRoot: string; smokeBaseUrl: string }
 interface SmokeFixture { coordinates: AttemptCoordinates; recorder: EvidenceRecorder; contexts: BrowserContext[]; secrets: SecretRegistry; assertionEvents: Map<string, string[]>; roomId: string | null; ownershipMarker: string; cleanup: "pending" | "cleaned" | "retained" }

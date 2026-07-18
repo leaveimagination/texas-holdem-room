@@ -123,28 +123,42 @@ export function combineProductFailureWithRetainedCleanup(input: {
   ownershipMarker: string;
   cleanupReason: string;
 }): FinishCaseInput {
-  const product = input.productFailure;
+  return combineSmokeFailureWithRetainedCleanup({
+    priorFailure: { kind: "product", ...input.productFailure },
+    roomId: input.roomId,
+    ownershipMarker: input.ownershipMarker,
+    cleanupReason: input.cleanupReason
+  });
+}
+
+export type SmokePriorFailure =
+  | { kind: "timeout" | "harness"; message: string }
+  | { kind: "product"; assertionId: string; message: string; actor: string; measuredValue: unknown; threshold: unknown; artifactIds: readonly string[] };
+
+export function combineSmokeFailureWithRetainedCleanup(input: {
+  priorFailure?: SmokePriorFailure;
+  roomId: string;
+  ownershipMarker: string;
+  cleanupReason: string;
+}): FinishCaseInput {
+  const product = input.priorFailure?.kind === "product" ? input.priorFailure : undefined;
   const retentionDetails = {
     roomId: input.roomId,
     ownershipMarker: input.ownershipMarker,
     retainedReason: input.cleanupReason
   };
-  return {
-    verdict: "FAIL",
+  const prior: FinishCaseInput = {
+    verdict: product ? "FAIL" : "INCONCLUSIVE",
     results: {
-      product: { status: "fail", summary: product.message, evidenceEventIds: [] },
-      harness: {
-        status: "inconclusive",
-        summary: "Exact cleanup could not be proven after the product failure.",
-        evidenceEventIds: []
-      },
-      environment: {
-        status: "inconclusive",
-        summary: input.cleanupReason,
-        evidenceEventIds: []
-      }
+      product: product
+        ? { status: "fail", summary: product.message, evidenceEventIds: [] }
+        : input.priorFailure
+          ? { status: "inconclusive", summary: input.priorFailure.message, evidenceEventIds: [] }
+          : { status: "pass", summary: "The public smoke journey passed before cleanup.", evidenceEventIds: [] },
+      harness: { status: "pass", summary: "Prior smoke evidence was captured.", evidenceEventIds: [] },
+      environment: { status: "pass", summary: "The deployed app was available.", evidenceEventIds: [] }
     },
-    assertions: [{
+    assertions: product ? [{
       id: product.assertionId,
       outcome: "fail",
       evidenceEventIds: [],
@@ -155,13 +169,40 @@ export function combineProductFailureWithRetainedCleanup(input: {
         threshold: product.threshold,
         artifactIds: [...product.artifactIds]
       }
-    }],
-    failures: [{
+    }] : [],
+    failures: product ? [{
       code: "PRODUCT_ASSERTION_FAILED",
       summary: product.message,
       stage: product.assertionId,
       evidenceEventIds: []
-    }, {
+    }] : input.priorFailure ? [{
+      code: input.priorFailure.kind === "timeout" ? "HARNESS_TIMEOUT" : "HARNESS_RUNTIME_FAILURE",
+      summary: input.priorFailure.message,
+      stage: "attempt-runtime",
+      evidenceEventIds: []
+    }] : []
+  };
+  return augmentSmokeResultWithRetainedCleanup(prior, input);
+}
+
+export function augmentSmokeResultWithRetainedCleanup(
+  prior: FinishCaseInput,
+  input: { roomId: string; ownershipMarker: string; cleanupReason: string }
+): FinishCaseInput {
+  const retentionDetails = { roomId: input.roomId, ownershipMarker: input.ownershipMarker, retainedReason: input.cleanupReason };
+  return {
+    ...prior,
+    verdict: prior.verdict === "FAIL" ? "FAIL" : "INCONCLUSIVE",
+    results: {
+      product: prior.results.product,
+      harness: { status: "inconclusive", summary: `Exact cleanup could not be proven. Prior harness: ${prior.results.harness.summary}`, evidenceEventIds: [...(prior.results.harness.evidenceEventIds ?? [])] },
+      environment: { status: "inconclusive", summary: input.cleanupReason, evidenceEventIds: [...(prior.results.environment.evidenceEventIds ?? [])] }
+    },
+    assertions: [
+      ...prior.assertions.filter(({ id }) => id !== "EXP-010-A04"),
+      { id: "EXP-010-A04", outcome: "inconclusive", evidenceEventIds: [], summary: input.cleanupReason, details: retentionDetails }
+    ],
+    failures: [...prior.failures, {
       code: "EXACT_CLEANUP_RETAINED",
       summary: input.cleanupReason,
       stage: "EXP-010-A04",

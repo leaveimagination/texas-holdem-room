@@ -19,6 +19,11 @@ describe("experience page objects", () => {
     lookup("link:Host link").getAttribute.mockResolvedValue("http://site/room/r1?host=secret");
     const page = {
       goto: vi.fn(async (url: string) => { calls.push(`goto:${url}`); }),
+      waitForResponse: vi.fn(async (predicate: (response: unknown) => boolean) => {
+        const response = { request: () => ({ method: () => "POST" }), url: () => "http://site/api/rooms", json: async () => ({ roomId: "r1", hostUrl: "contains-secret" }) };
+        expect(predicate(response)).toBe(true);
+        return response;
+      }),
       getByLabel: vi.fn((name: string) => lookup(`label:${name}`)),
       getByRole: vi.fn((role: string, options: { name: string }) => lookup(`${role}:${options.name}`))
     } as unknown as Page;
@@ -35,6 +40,7 @@ describe("experience page objects", () => {
     });
 
     expect(links).toEqual({
+      roomId: "r1",
       inviteUrl: "http://site/room/r1",
       hostUrl: "http://site/room/r1?host=secret"
     });
@@ -48,6 +54,27 @@ describe("experience page objects", () => {
       "fill:label:Action timer seconds:",
       "click:button:Create"
     ]);
+  });
+
+  it("reports the authoritative room ID before malformed rendered links fail", async () => {
+    const calls: string[] = [];
+    const controls = new Map<string, ReturnType<typeof control>>();
+    const lookup = (key: string) => controls.get(key) ?? (() => {
+      const created = control(key, calls);
+      controls.set(key, created);
+      return created;
+    })();
+    const page = {
+      waitForResponse: vi.fn(async () => ({ request: () => ({ method: () => "POST" }), url: () => "http://site/api/rooms", json: async () => ({ roomId: "authoritative-room", hostUrl: "secret" }) })),
+      getByLabel: vi.fn((name: string) => lookup(`label:${name}`)),
+      getByRole: vi.fn((role: string, options: { name: string }) => lookup(`${role}:${options.name}`))
+    } as unknown as Page;
+    const recorded: string[] = [];
+
+    await expect(new CreateRoomPage(page, "http://site").create({
+      mode: "cash", seats: 6, initialChips: 200, smallBlind: 10, bigBlind: 20, actionTimerSeconds: null
+    }, async ({ roomId }) => { recorded.push(roomId); })).rejects.toThrow(/Invite link/);
+    expect(recorded).toEqual(["authoritative-room"]);
   });
 
   it("drives room actions through accessible names and semantic attributes", async () => {
