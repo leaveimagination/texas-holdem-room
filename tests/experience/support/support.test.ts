@@ -291,6 +291,20 @@ describe("experience support", () => {
     await expect(observeProduct(async () => { throw transport; }, context)).rejects.toBe(transport);
   });
 
+  it("keeps browser and transport faults inconclusive while bounded expected-state misses are product failures", async () => {
+    const context = {
+      assertionId: "EXP-006-A05", caseId: "EXP-006", attemptId: "A-001", actor: "target",
+      earliestDivergentProjection: { handNumber: 2 }, measuredValue: "pending", threshold: "hand 3", artifactIds: []
+    };
+    const boundedMiss = Object.assign(new Error("expected hand boundary was not observed"), { name: "TimeoutError" });
+    const browserCrash = Object.assign(new Error("page closed"), { name: "TargetClosedError" });
+    const transport = Object.assign(new Error("websocket reset"), { code: "ECONNRESET" });
+
+    await expect(observeProduct(async () => { throw boundedMiss; }, context)).rejects.toBeInstanceOf(ProductAssertionError);
+    await expect(observeProduct(async () => { throw browserCrash; }, context)).rejects.toBe(browserCrash);
+    await expect(observeProduct(async () => { throw transport; }, context)).rejects.toBe(transport);
+  });
+
   it("preserves both declared attempts with separate fixtures before throwing a product failure", async () => {
     const events: string[] = [];
     const fixtures: object[] = [];

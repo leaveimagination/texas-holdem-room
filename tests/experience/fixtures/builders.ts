@@ -207,6 +207,10 @@ export function buildTopUpAccountingFixture(
   nextHandTargetCumulativeBuyIn: number;
   appliedAtHandNumber: number;
   applicationCount: number;
+  handResults: ReadonlyArray<{
+    handNumber: number;
+    rows: ReadonlyArray<{ role: TopUpRole; startChips: number; endChips: number; netChips: number }>;
+  }>;
   handAwards: ReadonlyArray<{ handNumber: number; pot: number; awardsByRole: Partial<Record<TopUpRole, number>> }>;
   finalRows: ReadonlyArray<{ role: TopUpRole; initialChips: number; topUpChips: number; finalChips: number; netChips: number }>;
   finalChipTotal: number;
@@ -251,6 +255,13 @@ export function buildTopUpAccountingFixture(
       nextHandTargetCumulativeBuyIn: 1_500,
       appliedAtHandNumber: 2,
       applicationCount: 1,
+      handResults: [{
+        handNumber: 1,
+        rows: [
+          { role: "target", startChips: 1_000, endChips: 990, netChips: -10 },
+          { role: "opponent", startChips: 1_000, endChips: 1_010, netChips: 10 }
+        ]
+      }],
       handAwards: [
         { handNumber: 1, pot: 30, awardsByRole: { opponent: 30 } },
         { handNumber: 2, pot: 30, awardsByRole: { target: 30 } }
