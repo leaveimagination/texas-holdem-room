@@ -5,6 +5,12 @@ export interface FixtureSeedBrokerClient {
   authorizationToken: string;
 }
 
+export type SeedFixtureDescriptor =
+  | { kind: "normal-betting"; participantIds: { button: string; small: string; big: string } }
+  | { kind: "four-player-all-in" | "side-pot"; participantIds: { aces: string; kings: string; queens: string; jacks: string } }
+  | { kind: "split-pot"; participantIds: { left: string; right: string } }
+  | { kind: "top-up-accounting"; participantIds: { target: string; opponent: string } };
+
 let consumedBrokerEnvironment: FixtureSeedBrokerClient | null | undefined;
 
 export function consumeFixtureSeedBrokerForPlaywrightWorker(
@@ -65,6 +71,21 @@ export async function seedNormalBettingThroughBroker(input: {
   requestId?: string;
   fetch?: typeof fetch;
 }): Promise<{ roomId: string; fixtureId: "normal-betting"; handNumber: number }> {
+  return await seedFixtureThroughBroker({
+    ...input,
+    fixture: { kind: "normal-betting", participantIds: input.participantIds }
+  }) as { roomId: string; fixtureId: "normal-betting"; handNumber: number };
+}
+
+export async function seedFixtureThroughBroker(input: {
+  broker: FixtureSeedBrokerClient;
+  runId: string;
+  roomId: string;
+  fixture: SeedFixtureDescriptor;
+  now?: () => Date;
+  requestId?: string;
+  fetch?: typeof fetch;
+}): Promise<{ roomId: string; fixtureId: SeedFixtureDescriptor["kind"]; handNumber: number }> {
   const response = await (input.fetch ?? fetch)(input.broker.endpoint, {
     method: "POST",
     headers: {
@@ -76,11 +97,11 @@ export async function seedNormalBettingThroughBroker(input: {
       roomId: input.roomId,
       requestId: input.requestId ?? randomBytes(16).toString("base64url"),
       issuedAt: (input.now ?? (() => new Date()))().toISOString(),
-      fixture: { kind: "normal-betting", participantIds: input.participantIds }
+      fixture: input.fixture
     })
   });
   const body = await response.json() as unknown;
-  if (!response.ok || !isSeedResponse(body)) {
+  if (!response.ok || !isSeedResponse(body) || body.fixtureId !== input.fixture.kind) {
     throw new Error(`Fixture seed broker rejected request (${response.status}): ${errorText(body)}`);
   }
   return body;
@@ -88,12 +109,12 @@ export async function seedNormalBettingThroughBroker(input: {
 
 function isSeedResponse(input: unknown): input is {
   roomId: string;
-  fixtureId: "normal-betting";
+  fixtureId: SeedFixtureDescriptor["kind"];
   handNumber: number;
 } {
   return typeof input === "object" && input !== null &&
     typeof (input as Record<string, unknown>).roomId === "string" &&
-    (input as Record<string, unknown>).fixtureId === "normal-betting" &&
+    ["normal-betting", "four-player-all-in", "side-pot", "split-pot", "top-up-accounting"].includes(String((input as Record<string, unknown>).fixtureId)) &&
     typeof (input as Record<string, unknown>).handNumber === "number";
 }
 

@@ -20,6 +20,12 @@ const participantIds = {
   small: "participant-small",
   big: "participant-big"
 };
+const rankedParticipantIds = {
+  aces: "participant-aces",
+  kings: "participant-kings",
+  queens: "participant-queens",
+  jacks: "participant-jacks"
+};
 const handles: FixtureSeedBrokerHandle[] = [];
 
 afterEach(async () => {
@@ -63,6 +69,31 @@ describe("run-scoped fixture seed broker", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "invalid constrained fixture request" });
     expect(seedNormalBetting).not.toHaveBeenCalled();
+  });
+
+  test("accepts only the declared deterministic fixture union and rejects nested extras", async () => {
+    const { handle, seedFixture } = await broker({
+      liveSeats: 4,
+      ownedParticipantIds: rankedParticipantIds
+    });
+    const accepted = await send(handle, requestBody({
+      fixture: { kind: "four-player-all-in", participantIds: rankedParticipantIds }
+    }));
+    expect(accepted.status).toBe(200);
+    expect(seedFixture).toHaveBeenCalledWith(
+      roomId,
+      { kind: "four-player-all-in", participantIds: rankedParticipantIds },
+      expect.objectContaining({ timeoutMs: 5_000 })
+    );
+
+    for (const [requestId, fixture] of [
+      ["FFFFFFFFFFFFFFFFFFFFFF", { kind: "forged", participantIds: rankedParticipantIds }],
+      ["GGGGGGGGGGGGGGGGGGGGGG", { kind: "four-player-all-in", participantIds: rankedParticipantIds, redisUrl: "redis://127.0.0.1" }]
+    ] as const) {
+      const response = await send(handle, requestBody({ requestId, fixture }));
+      expect(response.status).toBe(400);
+    }
+    expect(seedFixture).toHaveBeenCalledTimes(1);
   });
 
   test("rejects a wrong run, expired request, replay, and non-owned target room", async () => {
@@ -211,6 +242,8 @@ describe("run-scoped fixture seed broker", () => {
 
 async function broker(options: {
   operationTimeoutMs?: number;
+  liveSeats?: number;
+  ownedParticipantIds?: Record<string, string>;
   dependencyOverrides?: Partial<{
     readOwnedRoom(roomId: string): Promise<ReturnType<typeof ownedRoom>>;
     readLiveRoom(roomId: string): Promise<RoomState | null>;
@@ -221,13 +254,14 @@ async function broker(options: {
   const snapshot = await verifiedStackSnapshot();
   const liveRoom = createInitialRoomState({
     mode: "cash",
-    seats: 3,
+    seats: options.liveSeats ?? 3,
     smallBlind: 10,
     bigBlind: 20,
     initialChips: 200,
     actionTimerSeconds: null
   }, roomId);
   const seedNormalBetting = vi.fn(async () => liveRoom);
+  const seedFixture = vi.fn(async () => liveRoom);
   const close = options.dependencyOverrides?.close ?? vi.fn(async () => undefined);
   const handle = await startFixtureSeedBroker({
     snapshot,
@@ -238,23 +272,24 @@ async function broker(options: {
     operationTimeoutMs: options.operationTimeoutMs,
     dependencies: {
       readOwnedRoom: options.dependencyOverrides?.readOwnedRoom ?? (async (requestedRoomId: string) =>
-        requestedRoomId === roomId ? ownedRoom() : null),
+        requestedRoomId === roomId ? ownedRoom(options.ownedParticipantIds) : null),
       readLiveRoom: options.dependencyOverrides?.readLiveRoom ?? (async (requestedRoomId: string): Promise<RoomState | null> =>
         requestedRoomId === roomId ? liveRoom : null),
       seedNormalBetting: options.dependencyOverrides?.seedNormalBetting ?? seedNormalBetting,
+      seedFixture,
       close
     }
   });
   handles.push(handle);
-  return { handle, seedNormalBetting, close };
+  return { handle, seedNormalBetting, seedFixture, close };
 }
 
-function ownedRoom() {
+function ownedRoom(ids: Record<string, string> = participantIds) {
   return {
     id: roomId,
     createdAt: new Date("2026-07-17T12:59:56.000Z"),
     endedAt: null,
-    participants: Object.entries(participantIds).map(([role, id]) => ({
+    participants: Object.entries(ids).map(([role, id]) => ({
       id,
       displayName: `SITE-${runId}-${role}`
     }))

@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 import type { RoomState } from "@/lib/poker/engine";
-import { buildNormalBettingFixture } from "../../tests/experience/fixtures/builders";
+import { buildFourPlayerAllInFixture, buildNormalBettingFixture, buildSidePotFixture, buildSplitPotFixture, buildTopUpAccountingFixture } from "../../tests/experience/fixtures/builders";
 import {
   createFixtureTargetEnvironment,
   FixtureRuntime
@@ -21,21 +21,23 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 10_000;
 const CLOSE_GRACE_MS = 10;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-const ROLE_NAMES = ["button", "small", "big"] as const;
+const idsFor = <T extends readonly [string, ...string[]]>(roles: T) => z.object(
+  Object.fromEntries(roles.map((role) => [role, z.string().min(1).max(128)])) as { [K in T[number]]: z.ZodString }
+).strict();
+const FixtureSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("normal-betting"), participantIds: idsFor(["button", "small", "big"]) }).strict(),
+  z.object({ kind: z.literal("four-player-all-in"), participantIds: idsFor(["aces", "kings", "queens", "jacks"]) }).strict(),
+  z.object({ kind: z.literal("side-pot"), participantIds: idsFor(["aces", "kings", "queens", "jacks"]) }).strict(),
+  z.object({ kind: z.literal("split-pot"), participantIds: idsFor(["left", "right"]) }).strict(),
+  z.object({ kind: z.literal("top-up-accounting"), participantIds: idsFor(["target", "opponent"]) }).strict()
+]);
 
 const SeedRequestSchema = z.object({
   runId: z.string().min(1).max(64),
   roomId: z.string().regex(ROOM_ID_PATTERN),
   requestId: z.string().regex(REQUEST_ID_PATTERN),
   issuedAt: z.string().datetime({ offset: true }),
-  fixture: z.object({
-    kind: z.literal("normal-betting"),
-    participantIds: z.object({
-      button: z.string().min(1).max(128),
-      small: z.string().min(1).max(128),
-      big: z.string().min(1).max(128)
-    }).strict()
-  }).strict()
+  fixture: FixtureSchema
 }).strict();
 
 type SeedRequest = z.infer<typeof SeedRequestSchema>;
@@ -71,9 +73,10 @@ interface FixtureSeedBrokerDependencies {
   readLiveRoom(roomId: string, control?: FixtureSeedBrokerControl): Promise<RoomState | null>;
   seedNormalBetting(
     roomId: string,
-    participantIds: SeedRequest["fixture"]["participantIds"],
+    participantIds: Extract<SeedRequest["fixture"], { kind: "normal-betting" }>["participantIds"],
     control?: FixtureSeedBrokerControl
   ): Promise<RoomState>;
+  seedFixture?(roomId: string, fixture: SeedRequest["fixture"], control?: FixtureSeedBrokerControl): Promise<RoomState>;
   close(): Promise<void>;
 }
 
@@ -261,16 +264,14 @@ async function handleRequest(
     const seeded = await runDependencyOperation(
       context.signal,
       context.operationTimeoutMs,
-      async (operationControl) => await context.dependencies.seedNormalBetting(
-        seedRequest.roomId,
-        seedRequest.fixture.participantIds,
-        operationControl
-      )
+      async (operationControl) => seedRequest.fixture.kind === "normal-betting"
+        ? await context.dependencies.seedNormalBetting(seedRequest.roomId, seedRequest.fixture.participantIds, operationControl)
+        : await requiredSeedFixture(context.dependencies)(seedRequest.roomId, seedRequest.fixture, operationControl)
     );
     return json(response, 200, {
       ok: true,
       roomId: seedRequest.roomId,
-      fixtureId: "normal-betting",
+      fixtureId: seedRequest.fixture.kind,
       handNumber: seeded.hand?.number ?? null
     });
   } catch {
@@ -302,9 +303,19 @@ function defaultDependencies(
     async seedNormalBetting(roomId, participantIds, control) {
       return await runtime.seedRoom(
         roomId,
-        buildNormalBettingFixture({ runId: target.runId, participantIds }),
+        buildNormalBettingFixture({ runId: target.runId, participantIds: participantIds as { button: string; small: string; big: string } }),
         control
       );
+    },
+    async seedFixture(roomId, fixture, control) {
+      const built = fixture.kind === "four-player-all-in"
+        ? buildFourPlayerAllInFixture({ runId: target.runId, participantIds: fixture.participantIds as { aces: string; kings: string; queens: string; jacks: string } })
+        : fixture.kind === "side-pot"
+          ? buildSidePotFixture({ runId: target.runId, participantIds: fixture.participantIds as { aces: string; kings: string; queens: string; jacks: string } })
+          : fixture.kind === "split-pot"
+            ? buildSplitPotFixture({ runId: target.runId, participantIds: fixture.participantIds as { left: string; right: string } })
+            : buildTopUpAccountingFixture({ runId: target.runId, participantIds: fixture.participantIds as { target: string; opponent: string } });
+      return await runtime.seedRoom(roomId, built as never, control);
     },
     async close() {
       await prisma.$disconnect();
@@ -326,17 +337,23 @@ function isOwnedRoom(
     ownedRoom.endedAt !== null ||
     ownedRoom.createdAt.getTime() < runStartedAtMs - FUTURE_SKEW_MS ||
     liveRoom.status !== "lobby" ||
-    liveRoom.settings.seats !== 3
+    liveRoom.settings.seats !== Object.keys(request.fixture.participantIds).length
   ) {
     return false;
   }
   const requestedIds = Object.values(request.fixture.participantIds);
-  if (new Set(requestedIds).size !== ROLE_NAMES.length) return false;
+  const roles = Object.keys(request.fixture.participantIds);
+  if (new Set(requestedIds).size !== roles.length) return false;
   const participants = new Map(ownedRoom.participants.map((participant) => [participant.id, participant]));
-  return ROLE_NAMES.every((role) => {
-    const participant = participants.get(request.fixture.participantIds[role]);
+  return roles.every((role) => {
+    const participant = participants.get(request.fixture.participantIds[role as keyof typeof request.fixture.participantIds]);
     return participant?.displayName === `SITE-${request.runId}-${role}`;
   });
+}
+
+function requiredSeedFixture(dependencies: FixtureSeedBrokerDependencies): NonNullable<FixtureSeedBrokerDependencies["seedFixture"]> {
+  if (!dependencies.seedFixture) throw new Error("Fixture seed dependency is unavailable");
+  return dependencies.seedFixture;
 }
 
 function authorized(value: string | undefined, expectedToken: string): boolean {

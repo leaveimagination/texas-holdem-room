@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   consumeFixtureSeedBrokerEnvironment,
-  consumeFixtureSeedBrokerForPlaywrightWorker
+  consumeFixtureSeedBrokerForPlaywrightWorker,
+  seedFixtureThroughBroker
 } from "./seed-broker-client";
 
 const previousEndpoint = process.env.SITE_TEST_FIXTURE_BROKER_ENDPOINT;
@@ -11,6 +12,25 @@ const previousToken = process.env.SITE_TEST_FIXTURE_BROKER_TOKEN;
 afterEach(() => {
   restore("SITE_TEST_FIXTURE_BROKER_ENDPOINT", previousEndpoint);
   restore("SITE_TEST_FIXTURE_BROKER_TOKEN", previousToken);
+});
+
+describe("fixture seed broker requests", () => {
+  it("sends only a whitelisted fixture descriptor and validates the echoed kind", async () => {
+    const request = vi.fn(async (_url: string, init?: RequestInit) => new Response(JSON.stringify({
+      ok: true, roomId: "room-1", fixtureId: "side-pot", handNumber: 1
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await expect(seedFixtureThroughBroker({
+      broker: { endpoint: "http://127.0.0.1:47000/v1/seed", authorizationToken: "secret" },
+      runId: "run-1",
+      roomId: "room-1",
+      fixture: { kind: "side-pot", participantIds: { aces: "a", kings: "k", queens: "q", jacks: "j" } },
+      fetch: request as typeof fetch,
+      requestId: "AAAAAAAAAAAAAAAAAAAAAA",
+      now: () => new Date("2026-07-18T00:00:00Z")
+    })).resolves.toMatchObject({ fixtureId: "side-pot" });
+    const sent = JSON.parse(String(request.mock.calls[0]?.[1]?.body));
+    expect(sent.fixture).toEqual({ kind: "side-pot", participantIds: { aces: "a", kings: "k", queens: "q", jacks: "j" } });
+  });
 });
 
 describe("fixture seed broker client bootstrap", () => {

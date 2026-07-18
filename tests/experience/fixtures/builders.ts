@@ -200,6 +200,10 @@ export function buildTopUpAccountingFixture(
   pendingTotal: number;
   currentHandTargetStackBeforeQueue: number;
   currentHandTargetStackAfterQueue: number;
+  handOneTargetSettlementDelta: number;
+  handTwoTargetBlind: number;
+  handTwoTargetStackAfterBlind: number;
+  appliedTopUpChips: number;
   nextHandTargetCumulativeBuyIn: number;
   appliedAtHandNumber: number;
   applicationCount: number;
@@ -240,6 +244,10 @@ export function buildTopUpAccountingFixture(
       pendingTotal: 500,
       currentHandTargetStackBeforeQueue: 990,
       currentHandTargetStackAfterQueue: 990,
+      handOneTargetSettlementDelta: 0,
+      handTwoTargetBlind: 20,
+      handTwoTargetStackAfterBlind: 1_470,
+      appliedTopUpChips: 500,
       nextHandTargetCumulativeBuyIn: 1_500,
       appliedAtHandNumber: 2,
       applicationCount: 1,
