@@ -9,7 +9,8 @@ export type SeedFixtureDescriptor =
   | { kind: "normal-betting"; participantIds: { button: string; small: string; big: string } }
   | { kind: "four-player-all-in" | "side-pot"; participantIds: { aces: string; kings: string; queens: string; jacks: string } }
   | { kind: "split-pot"; participantIds: { left: string; right: string } }
-  | { kind: "top-up-accounting"; participantIds: { target: string; opponent: string } };
+  | { kind: "top-up-accounting"; participantIds: { target: string; opponent: string } }
+  | { kind: "reconnect"; participantIds: { actor: string; opponent: string } };
 
 let consumedBrokerEnvironment: FixtureSeedBrokerClient | null | undefined;
 
@@ -114,7 +115,7 @@ function isSeedResponse(input: unknown): input is {
 } {
   return typeof input === "object" && input !== null &&
     typeof (input as Record<string, unknown>).roomId === "string" &&
-    ["normal-betting", "four-player-all-in", "side-pot", "split-pot", "top-up-accounting"].includes(String((input as Record<string, unknown>).fixtureId)) &&
+    ["normal-betting", "four-player-all-in", "side-pot", "split-pot", "top-up-accounting", "reconnect"].includes(String((input as Record<string, unknown>).fixtureId)) &&
     typeof (input as Record<string, unknown>).handNumber === "number";
 }
 

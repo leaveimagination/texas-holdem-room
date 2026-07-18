@@ -39,7 +39,7 @@ export class ExperienceCaseRunError extends Error {
   ) {
     super(
       persistenceErrors.length > 0
-        ? `${caseId} could not persist every declared attempt report`
+        ? `${caseId} could not persist every declared attempt report: ${persistenceErrors.map(errorMessage).join("; ")}`
         : `${caseId} completed with ${reports.filter(({ verdict }) => verdict !== "PASS").length} non-passing attempt(s)`
     );
     this.name = "ExperienceCaseRunError";

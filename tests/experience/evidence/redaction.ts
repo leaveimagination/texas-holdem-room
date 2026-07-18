@@ -145,7 +145,9 @@ export function redactForEvidence(
       seen.add(current);
 
       if (Array.isArray(current)) {
-        return current.map(visit);
+        const result = current.map(visit);
+        seen.delete(current);
+        return result;
       }
 
       const redacted: Record<string, unknown> = {};
@@ -158,6 +160,7 @@ export function redactForEvidence(
           redacted[key] = visit(nested);
         }
       }
+      seen.delete(current);
       return redacted;
     }
 

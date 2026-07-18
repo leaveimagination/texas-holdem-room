@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 import type { RoomState } from "@/lib/poker/engine";
-import { buildFourPlayerAllInFixture, buildNormalBettingFixture, buildSidePotFixture, buildSplitPotFixture, buildTopUpAccountingFixture } from "../../tests/experience/fixtures/builders";
+import { buildFourPlayerAllInFixture, buildNormalBettingFixture, buildReconnectFixture, buildSidePotFixture, buildSplitPotFixture, buildTopUpAccountingFixture } from "../../tests/experience/fixtures/builders";
 import {
   createFixtureTargetEnvironment,
   FixtureRuntime
@@ -29,7 +29,8 @@ const FixtureSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("four-player-all-in"), participantIds: idsFor(["aces", "kings", "queens", "jacks"]) }).strict(),
   z.object({ kind: z.literal("side-pot"), participantIds: idsFor(["aces", "kings", "queens", "jacks"]) }).strict(),
   z.object({ kind: z.literal("split-pot"), participantIds: idsFor(["left", "right"]) }).strict(),
-  z.object({ kind: z.literal("top-up-accounting"), participantIds: idsFor(["target", "opponent"]) }).strict()
+  z.object({ kind: z.literal("top-up-accounting"), participantIds: idsFor(["target", "opponent"]) }).strict(),
+  z.object({ kind: z.literal("reconnect"), participantIds: idsFor(["actor", "opponent"]) }).strict()
 ]);
 
 const SeedRequestSchema = z.object({
@@ -314,7 +315,9 @@ function defaultDependencies(
           ? buildSidePotFixture({ runId: target.runId, participantIds: fixture.participantIds as { aces: string; kings: string; queens: string; jacks: string } })
           : fixture.kind === "split-pot"
             ? buildSplitPotFixture({ runId: target.runId, participantIds: fixture.participantIds as { left: string; right: string } })
-            : buildTopUpAccountingFixture({ runId: target.runId, participantIds: fixture.participantIds as { target: string; opponent: string } });
+          : fixture.kind === "top-up-accounting"
+            ? buildTopUpAccountingFixture({ runId: target.runId, participantIds: fixture.participantIds as { target: string; opponent: string } })
+            : buildReconnectFixture({ runId: target.runId, participantIds: fixture.participantIds as { actor: string; opponent: string } });
       return await runtime.seedRoom(roomId, built as never, control);
     },
     async close() {

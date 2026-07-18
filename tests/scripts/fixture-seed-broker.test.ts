@@ -96,6 +96,37 @@ describe("run-scoped fixture seed broker", () => {
     expect(seedFixture).toHaveBeenCalledTimes(1);
   });
 
+  test("accepts the exact reconnect fixture but rejects forged fields and wrong participant ownership", async () => {
+    const reconnectIds = { actor: "participant-actor", opponent: "participant-opponent" };
+    const { handle, seedFixture } = await broker({
+      liveSeats: 2,
+      ownedParticipantIds: reconnectIds
+    });
+
+    const accepted = await send(handle, requestBody({
+      fixture: { kind: "reconnect", participantIds: reconnectIds }
+    }));
+    expect(accepted.status).toBe(200);
+    expect(seedFixture).toHaveBeenCalledWith(
+      roomId,
+      { kind: "reconnect", participantIds: reconnectIds },
+      expect.objectContaining({ timeoutMs: 5_000 })
+    );
+
+    const forged = await send(handle, requestBody({
+      requestId: "HHHHHHHHHHHHHHHHHHHHHH",
+      fixture: { kind: "reconnect", participantIds: reconnectIds, redisUrl: "redis://forged" }
+    }));
+    expect(forged.status).toBe(400);
+
+    const wrongOwnership = await send(handle, requestBody({
+      requestId: "IIIIIIIIIIIIIIIIIIIIII",
+      fixture: { kind: "reconnect", participantIds: { actor: "participant-actor", opponent: "not-owned" } }
+    }));
+    expect(wrongOwnership.status).toBe(403);
+    expect(seedFixture).toHaveBeenCalledTimes(1);
+  });
+
   test("rejects a wrong run, expired request, replay, and non-owned target room", async () => {
     const { handle, seedNormalBetting } = await broker();
 

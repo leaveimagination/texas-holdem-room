@@ -92,6 +92,35 @@ export class ActorPool {
     return actor;
   }
 
+  async recreateActor(actorId: string): Promise<ActorHandle> {
+    const actor = this.get(actorId);
+    const storageState = await actor.context.storageState();
+    const failures: unknown[] = [];
+    if (actor.traceStarted) {
+      try {
+        await actor.context.tracing.stop({ path: actor.tracePath });
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    try {
+      await actor.context.close();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await actor.telemetry.flush();
+    } catch (error) {
+      failures.push(error);
+    }
+    this.actors.delete(actorId);
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `Actor ${actorId} could not be closed for recreation`);
+    }
+    await this.createActor(actor.metadata, { storageState });
+    return this.get(actorId);
+  }
+
   async startTraceAfterBootstrap(
     actorId: string,
     identity: { traceReady: true }
@@ -147,7 +176,7 @@ export class ActorPool {
     }
   }
 
-  private async createActor(metadata: ActorMetadata): Promise<void> {
+  private async createActor(metadata: ActorMetadata, overrides: BrowserContextOptions = {}): Promise<void> {
     const videoDirectory = join(this.options.outputRoot, "videos", metadata.id);
     const screenshotNamespace = join(this.options.outputRoot, "screenshots", metadata.id);
     const tracePath = join(this.options.outputRoot, "traces", `${metadata.id}.zip`);
@@ -158,6 +187,7 @@ export class ActorPool {
     ]);
     const context = await this.options.browser.newContext({
       ...this.options.contextOptions,
+      ...overrides,
       recordVideo: { dir: videoDirectory }
     });
     this.partialContexts.add(context);

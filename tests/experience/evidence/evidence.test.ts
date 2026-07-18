@@ -32,6 +32,40 @@ afterEach(async () => {
   );
 });
 
+it("durably preserves multiple product failures and safe privacy counts", async () => {
+  const root = await temporaryRoot();
+  const recorder = new EvidenceRecorder({ outputRoot: root, runId: "RUN-MULTI", caseId: "EXP-008", attemptId: "A-001", actor: "scenario" });
+  const first = await recorder.recordEvent({ stage: "EXP-008-A01", type: "product-assertion", status: "fail", details: { unauthorizedVisibleCount: 0, boardCount: 3 } });
+  const second = await recorder.recordEvent({ stage: "EXP-008-A03", type: "product-assertion", status: "fail", details: { duplicateCount: 1 } });
+  const report = await recorder.finishCase({
+    verdict: "FAIL",
+    results: {
+      product: { status: "fail", summary: "Two product assertions failed.", evidenceEventIds: [first.id, second.id] },
+      harness: { status: "pass", summary: "Harness remained trustworthy.", evidenceEventIds: [first.id, second.id] },
+      environment: { status: "pass", summary: "Environment remained healthy.", evidenceEventIds: [] }
+    },
+    assertions: [
+      { id: "EXP-008-A01", outcome: "fail", evidenceEventIds: [first.id], summary: "Guidance missed.", details: { unauthorizedVisibleCount: 0 } },
+      { id: "EXP-008-A03", outcome: "fail", evidenceEventIds: [second.id], summary: "Duplicate observed.", details: { duplicateCount: 1 } }
+    ],
+    failures: [
+      { code: "PRODUCT_ASSERTION_FAILED", summary: "Guidance missed.", stage: "EXP-008-A01", evidenceEventIds: [first.id] },
+      { code: "PRODUCT_ASSERTION_FAILED", summary: "Duplicate observed.", stage: "EXP-008-A03", evidenceEventIds: [second.id] }
+    ]
+  });
+  expect(report.assertions).toHaveLength(2);
+  expect(report.failures).toHaveLength(2);
+  const durable = JSON.parse(await readFile(join(root, "report.json"), "utf8"));
+  expect(durable.verdict).toBe("FAIL");
+  expect(durable.assertions[0].details).toEqual({ unauthorizedVisibleCount: 0 });
+});
+
+it("keeps numeric privacy counters but summarizes concrete card payloads", () => {
+  const redacted = redactForEvidence({ unauthorizedVisibleCount: 0, boardCount: 5, privateCards: ["As", "Kd"] });
+  expect(redacted).toEqual({ unauthorizedVisibleCount: 0, boardCount: 5, privateCards: { visible: true, cardCount: 2 } });
+  expect(JSON.stringify(redacted)).not.toMatch(/As|Kd/);
+});
+
 const event = {
   id: "E-001",
   runId: "RUN-001",
