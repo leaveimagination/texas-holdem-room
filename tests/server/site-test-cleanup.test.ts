@@ -28,15 +28,17 @@ describe("site test cleanup", () => {
     const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
     const hasRunMarkerParticipant = vi.fn().mockResolvedValue(true);
     const snapshotAndDelete = vi.fn().mockResolvedValue({ rawState: '{"roomId":"room_exact"}', ttlSeconds: 120 });
-    const getRedisKey = vi.fn().mockResolvedValue('{"roomId":"room_exact"}');
+    const getRedisKey = vi.fn().mockResolvedValue(null);
+    const compareAndDelete = vi.fn();
     const setRedisKey = vi.fn();
     const deleteExactRoom = vi.fn().mockResolvedValue(undefined);
 
     const result = await cleanupSiteTestRoom(
       { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
       {
-        redis: { snapshotAndDelete, get: getRedisKey, set: setRedisKey },
+        redis: { snapshotAndDelete, compareAndDelete, get: getRedisKey, set: setRedisKey },
         repository: { hasRunMarkerParticipant, deleteExactRoom }
+        ,sleep: vi.fn()
       }
     );
 
@@ -61,6 +63,7 @@ describe("site test cleanup", () => {
     const redis = {
       get: vi.fn().mockResolvedValue("raw-room"),
       snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: "raw-room", ttlSeconds: 77 }),
+      compareAndDelete: vi.fn(),
       set: vi.fn().mockResolvedValue("OK")
     };
     const result = await cleanupSiteTestRoom(
@@ -77,6 +80,7 @@ describe("site test cleanup", () => {
     const redis = {
       get: vi.fn(),
       snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: "raw-room", ttlSeconds: 77 }),
+      compareAndDelete: vi.fn(),
       set: vi.fn()
     };
     const result = await cleanupSiteTestRoom(
@@ -96,6 +100,7 @@ describe("site test cleanup", () => {
     const redis = {
       get: vi.fn().mockResolvedValue(observed),
       snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: "raw-room", ttlSeconds: 77 }),
+      compareAndDelete: vi.fn(),
       set: vi.fn().mockResolvedValue(setResult)
     };
     const result = await cleanupSiteTestRoom(
@@ -103,6 +108,47 @@ describe("site test cleanup", () => {
       { redis, repository: { hasRunMarkerParticipant: vi.fn().mockResolvedValue(true), deleteExactRoom: vi.fn().mockRejectedValue(new Error("db down")) } }
     );
     expect(result).toMatchObject({ deleted: false, cleanupStatus: "partial", retainedReason: null, failureReason: "redis-restore-not-proven" });
+  });
+
+  it("CAS-deletes a same-run Redis recreation and proves three consecutive absent observations", async () => {
+    const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
+    const recreated = JSON.stringify({ seats: [{ displayName: "SITE-run_exact-smoke-player" }] });
+    const redis = {
+      get: vi.fn().mockResolvedValueOnce(recreated).mockResolvedValue(null),
+      snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: "original", ttlSeconds: 77 }),
+      compareAndDelete: vi.fn().mockResolvedValue(true),
+      set: vi.fn()
+    };
+    const result = await cleanupSiteTestRoom(
+      { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
+      { redis, repository: { hasRunMarkerParticipant: vi.fn().mockResolvedValue(true), deleteExactRoom: vi.fn() }, sleep: vi.fn() }
+    );
+    expect(redis.compareAndDelete).toHaveBeenCalledWith("room:room_exact", recreated);
+    expect(redis.get).toHaveBeenCalledTimes(4);
+    expect(result).toMatchObject({ deleted: true, cleanupStatus: "deleted" });
+  });
+
+  it("reports partial when Redis is recreated by an unowned writer", async () => {
+    const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
+    const redis = { get: vi.fn().mockResolvedValue(JSON.stringify({ seats: [{ displayName: "ordinary-player" }], history: ["SITE-run_exact-old"] })), snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: null, ttlSeconds: -2 }), compareAndDelete: vi.fn(), set: vi.fn() };
+    const result = await cleanupSiteTestRoom(
+      { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
+      { redis, repository: { hasRunMarkerParticipant: vi.fn().mockResolvedValue(true), deleteExactRoom: vi.fn() }, sleep: vi.fn() }
+    );
+    expect(redis.compareAndDelete).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ deleted: false, cleanupStatus: "partial", failureReason: "redis-post-delete-unowned-recreation" });
+  });
+
+  it("reports partial when a same-run writer continuously recreates Redis through the bounded budget", async () => {
+    const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
+    const recreated = JSON.stringify({ seats: [{ displayName: "SITE-run_exact-timer" }] });
+    const redis = { get: vi.fn().mockResolvedValue(recreated), snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: null, ttlSeconds: -2 }), compareAndDelete: vi.fn().mockResolvedValue(true), set: vi.fn() };
+    const result = await cleanupSiteTestRoom(
+      { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
+      { redis, repository: { hasRunMarkerParticipant: vi.fn().mockResolvedValue(true), deleteExactRoom: vi.fn() }, sleep: vi.fn() }
+    );
+    expect(redis.compareAndDelete).toHaveBeenCalledTimes(6);
+    expect(result).toMatchObject({ deleted: false, cleanupStatus: "partial", failureReason: "redis-post-delete-quiescence-budget-exhausted" });
   });
 
   it.each([
@@ -146,7 +192,7 @@ describe("site test cleanup", () => {
     const deleteExactRoom = vi.fn();
 
     const result = await cleanupSiteTestRoom(request, {
-      redis: { snapshotAndDelete, get: vi.fn(), set: vi.fn() },
+      redis: { snapshotAndDelete, compareAndDelete: vi.fn(), get: vi.fn(), set: vi.fn() },
       repository: { hasRunMarkerParticipant, deleteExactRoom }
     });
 
@@ -166,7 +212,7 @@ describe("site test cleanup", () => {
     const result = await cleanupSiteTestRoom(
       { roomId: "room_exact", runId: "different_run", cleanupAllowed: "1" },
       {
-        redis: { snapshotAndDelete, get: vi.fn(), set: vi.fn() },
+        redis: { snapshotAndDelete, compareAndDelete: vi.fn(), get: vi.fn(), set: vi.fn() },
         repository: { hasRunMarkerParticipant, deleteExactRoom }
       }
     );
@@ -192,14 +238,16 @@ describe("site test cleanup", () => {
       { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
       {
         redis: {
-          get: vi.fn().mockResolvedValue("raw-room"),
+          get: vi.fn().mockResolvedValue(null),
           snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: "raw-room", ttlSeconds: 120 }),
+          compareAndDelete: vi.fn(),
           set: vi.fn()
         },
         repository: {
           hasRunMarkerParticipant: vi.fn().mockResolvedValue(true),
           deleteExactRoom: vi.fn().mockResolvedValue(undefined)
-        }
+        },
+        sleep: vi.fn()
       },
       writeLine
     );

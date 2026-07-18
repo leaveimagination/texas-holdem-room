@@ -142,12 +142,16 @@ export function combineProductFailureWithRetainedCleanup(input: {
   roomId: string;
   ownershipMarker: string;
   cleanupReason: string;
+  productEvidenceEventIds?: readonly string[];
+  cleanupEvidenceEventIds?: readonly string[];
 }): FinishCaseInput {
   return combineSmokeFailureWithRetainedCleanup({
     priorFailure: { kind: "product", ...input.productFailure },
     roomId: input.roomId,
     ownershipMarker: input.ownershipMarker,
-    cleanupReason: input.cleanupReason
+    cleanupReason: input.cleanupReason,
+    productEvidenceEventIds: input.productEvidenceEventIds,
+    cleanupEvidenceEventIds: input.cleanupEvidenceEventIds
   });
 }
 
@@ -160,6 +164,8 @@ export function combineSmokeFailureWithRetainedCleanup(input: {
   roomId: string;
   ownershipMarker: string;
   cleanupReason: string;
+  productEvidenceEventIds?: readonly string[];
+  cleanupEvidenceEventIds?: readonly string[];
 }): FinishCaseInput {
   const product = input.priorFailure?.kind === "product" ? input.priorFailure : undefined;
   const retentionDetails = {
@@ -207,7 +213,7 @@ export function combineSmokeFailureWithRetainedCleanup(input: {
 
 export function augmentSmokeResultWithRetainedCleanup(
   prior: FinishCaseInput,
-  input: { roomId: string; ownershipMarker: string; cleanupReason: string; cleanupStatus?: "retained" | "partial" }
+  input: { roomId: string; ownershipMarker: string; cleanupReason: string; cleanupStatus?: "retained" | "partial"; productEvidenceEventIds?: readonly string[]; cleanupEvidenceEventIds?: readonly string[] }
 ): FinishCaseInput {
   const cleanupStatus = input.cleanupStatus ?? "retained";
   const retentionDetails = { roomId: input.roomId, ownershipMarker: input.ownershipMarker, retainedReason: input.cleanupReason, cleanupStatus };
@@ -220,14 +226,20 @@ export function augmentSmokeResultWithRetainedCleanup(
       environment: { status: "inconclusive", summary: input.cleanupReason, evidenceEventIds: [...(prior.results.environment.evidenceEventIds ?? [])] }
     },
     assertions: [
-      ...prior.assertions.filter(({ id }) => id !== "EXP-010-A04"),
-      { id: "EXP-010-A04", outcome: "inconclusive", evidenceEventIds: [], summary: input.cleanupReason, details: retentionDetails }
+      ...prior.assertions.filter(({ id }) => id !== "EXP-010-A04").map((assertion) =>
+        assertion.outcome === "fail" && input.productEvidenceEventIds
+          ? { ...assertion, evidenceEventIds: [...input.productEvidenceEventIds] }
+          : assertion),
+      { id: "EXP-010-A04", outcome: "inconclusive", evidenceEventIds: [...(input.cleanupEvidenceEventIds ?? [])], summary: input.cleanupReason, details: retentionDetails }
     ],
-    failures: [...prior.failures, {
+    failures: [...prior.failures.map((failure) =>
+      failure.code === "PRODUCT_ASSERTION_FAILED" && input.productEvidenceEventIds
+        ? { ...failure, evidenceEventIds: [...input.productEvidenceEventIds] }
+        : failure), {
       code: cleanupStatus === "partial" ? "EXACT_CLEANUP_PARTIAL" : "EXACT_CLEANUP_RETAINED",
       summary: input.cleanupReason,
       stage: "EXP-010-A04",
-      evidenceEventIds: [],
+      evidenceEventIds: [...(input.cleanupEvidenceEventIds ?? [])],
       details: retentionDetails
     }]
   };

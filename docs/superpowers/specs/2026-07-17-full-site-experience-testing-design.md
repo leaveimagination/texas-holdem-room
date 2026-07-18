@@ -282,6 +282,7 @@ Rules:
 - Failures are not blindly retried. The first failure preserves the complete scene before any second attempt.
 - A failure report identifies the earliest divergent stage and links the relevant video, trace, screenshot, and events.
 - Every confirmed product defect is reduced to the smallest reproducible permanent regression test.
+- The sole cleanup-only exception is EXP-010/A-001 with exactly one evidenced failed product assertion and exactly one evidenced inconclusive EXP-010-A04 assertion. It requires exactly one traceable `PRODUCT_ASSERTION_FAILED` and one traceable `EXACT_CLEANUP_RETAINED`, with no other failures or uncertainty. Wrong identity, empty or non-intersecting evidence, partial cleanup, or any extra/malformed record is `INCONCLUSIVE`.
 
 ## 10. Cleanup and Safety
 
@@ -289,6 +290,7 @@ Rules:
 - No wildcard database deletion, broad Redis scan-and-delete, recursive project deletion, or volume deletion is permitted.
 - Evidence is durable before cleanup begins.
 - A cleanup failure is reported as an environment/harness issue and does not erase evidence.
+- After durable database deletion, exact Redis cleanup is not considered complete until the exact room key is absent for three bounded, spaced observations. A same-run recreation may be removed only by compare-raw-and-delete CAS; foreign or changed state, read/CAS failure, repeated recreation, or budget exhaustion is partial. No wildcard or broad deletion is used.
 - Host tokens, participant tokens, database credentials, and full private-card payloads are redacted from reports and logs.
 - The isolated test stack may be destroyed after evidence validation; the deployed production stack is never restarted or replaced by the experience runner.
 

@@ -13,9 +13,11 @@ export interface SiteTestCleanupRequest {
 export interface SiteTestCleanupDependencies {
   redis: Pick<KeyValueStore, "get"> & {
     snapshotAndDelete(key: string): Promise<{ rawState: string | null; ttlSeconds: number }>;
+    compareAndDelete(key: string, expectedRawState: string): Promise<boolean>;
     set(key: string, value: string, mode: "EX", ttlSeconds: number, condition: "NX"): Promise<unknown>;
   };
   repository: Pick<RoomRepository, "hasRunMarkerParticipant" | "deleteExactRoom">;
+  sleep?: (milliseconds: number) => Promise<void>;
 }
 
 export interface SiteTestCleanupResult {
@@ -70,7 +72,56 @@ export async function cleanupSiteTestRoom(
     return partial(roomId, runId, "redis-restore-not-proven");
   }
 
-  return { deleted: true, retainedReason: null, roomId, runId, cleanupStatus: "deleted", failureReason: null };
+  return await proveRedisQuiescence(key, roomId, runId, dependencies);
+}
+
+async function proveRedisQuiescence(
+  key: string,
+  roomId: string,
+  runId: string,
+  dependencies: SiteTestCleanupDependencies
+): Promise<SiteTestCleanupResult> {
+  const sleep = dependencies.sleep ?? (async (milliseconds: number) =>
+    await new Promise<void>((resolveSleep) => setTimeout(resolveSleep, milliseconds)));
+  let consecutiveAbsent = 0;
+  for (let observation = 0; observation < 6; observation += 1) {
+    let observed: string | null;
+    try {
+      observed = await dependencies.redis.get(key);
+    } catch {
+      return partial(roomId, runId, "redis-post-delete-read-failed");
+    }
+    if (observed === null) {
+      consecutiveAbsent += 1;
+      if (consecutiveAbsent === 3) {
+        return { deleted: true, retainedReason: null, roomId, runId, cleanupStatus: "deleted", failureReason: null };
+      }
+    } else {
+      consecutiveAbsent = 0;
+      if (!rawStateHasExactRunOwner(observed, runId)) {
+        return partial(roomId, runId, "redis-post-delete-unowned-recreation");
+      }
+      const removed = await dependencies.redis.compareAndDelete(key, observed).catch(() => false);
+      if (!removed) {
+        return partial(roomId, runId, "redis-post-delete-cas-failed");
+      }
+    }
+    await sleep(10);
+  }
+  return partial(roomId, runId, "redis-post-delete-quiescence-budget-exhausted");
+}
+
+function rawStateHasExactRunOwner(rawState: string, runId: string): boolean {
+  let parsed: unknown;
+  try { parsed = JSON.parse(rawState); } catch { return false; }
+  if (typeof parsed !== "object" || parsed === null || !("seats" in parsed) || !Array.isArray((parsed as { seats?: unknown }).seats)) {
+    return false;
+  }
+  const exactPrefix = `SITE-${runId}-`;
+  return (parsed as { seats: unknown[] }).seats.some((seat) =>
+    typeof seat === "object" && seat !== null &&
+    "displayName" in seat && typeof seat.displayName === "string" &&
+    seat.displayName.startsWith(exactPrefix));
 }
 
 export async function runSiteTestCleanup(
@@ -174,6 +225,13 @@ async function createProductionDependencies() {
         get: (key: string) => redisClient.get(key),
         set: (key: string, value: string, mode: "EX", ttlSeconds: number, condition: "NX") =>
           redisClient.set(key, value, mode, ttlSeconds, condition),
+        compareAndDelete: async (key: string, expectedRawState: string) =>
+          Number(await redisClient.eval(
+            "if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end",
+            1,
+            key,
+            expectedRawState
+          )) === 1,
         snapshotAndDelete: async (key: string) => {
           const result = await redisClient.eval(
             "local v=redis.call('GET',KEYS[1]); local t=redis.call('TTL',KEYS[1]); if v then redis.call('DEL',KEYS[1]); end; return {v,t}",

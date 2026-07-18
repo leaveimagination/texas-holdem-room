@@ -1,8 +1,10 @@
-import type { CaseReport, OverallVerdict } from "./contracts";
+import type { CaseReport, EvidenceEvent, OverallVerdict } from "./contracts";
 
 export interface CaseVerdictInput {
   caseId?: string;
   attemptId?: string;
+  runId?: string;
+  evidenceEvents?: readonly EvidenceEvent[];
   results: CaseReport["results"];
   assertions: readonly CaseReport["assertions"][number][];
   failures?: readonly CaseReport["failures"][number][];
@@ -74,6 +76,8 @@ export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
 }
 
 function isCleanupOnlyUncertainty(caseReport: CaseVerdictInput): boolean {
+  if (caseReport.caseId !== "EXP-010" || caseReport.attemptId !== "A-001") return false;
+  const failedAssertions = caseReport.assertions.filter(({ outcome }) => outcome === "fail");
   const inconclusiveAssertions = caseReport.assertions.filter(
     ({ outcome }) => outcome === "inconclusive"
   );
@@ -81,25 +85,48 @@ function isCleanupOnlyUncertainty(caseReport: CaseVerdictInput): boolean {
     caseReport.results.product.status !== "fail" ||
     caseReport.results.harness.status !== "inconclusive" ||
     caseReport.results.environment.status !== "inconclusive" ||
-    !caseReport.assertions.some(({ outcome }) => outcome === "fail") ||
+    failedAssertions.length !== 1 ||
+    failedAssertions[0]?.id === "EXP-010-A04" ||
     inconclusiveAssertions.length !== 1 ||
-    inconclusiveAssertions[0]?.id !== "EXP-010-A04"
+    inconclusiveAssertions[0]?.id !== "EXP-010-A04" ||
+    new Set(caseReport.assertions.map(({ id }) => id)).size !== caseReport.assertions.length ||
+    caseReport.assertions.some(({ outcome }) => outcome !== "pass" && outcome !== "fail" && outcome !== "inconclusive")
   ) {
     return false;
   }
-  const cleanupFailures = caseReport.failures?.filter(({ code }) => code === "EXACT_CLEANUP_RETAINED") ?? [];
-  if (cleanupFailures.length !== 1 || caseReport.failures?.some(({ code }) => code !== "EXACT_CLEANUP_RETAINED" && code !== "PRODUCT_ASSERTION_FAILED")) {
+  const failures = caseReport.failures ?? [];
+  const cleanupFailures = failures.filter(({ code }) => code === "EXACT_CLEANUP_RETAINED");
+  const productFailures = failures.filter(({ code }) => code === "PRODUCT_ASSERTION_FAILED");
+  if (failures.length !== 2 || cleanupFailures.length !== 1 || productFailures.length !== 1) {
     return false;
   }
   const cleanup = cleanupFailures[0];
+  const product = productFailures[0];
+  const failedAssertion = failedAssertions[0];
+  const cleanupAssertion = inconclusiveAssertions[0];
   const details = cleanup.details;
-  return cleanup.stage === "EXP-010-A04" &&
+  return product.stage === failedAssertion.id &&
+    hasTraceableEvidence(product.evidenceEventIds, failedAssertion.evidenceEventIds, caseReport.evidenceEvents, failedAssertion.id, "product-failure") &&
+    cleanup.stage === "EXP-010-A04" &&
+    hasTraceableEvidence(cleanup.evidenceEventIds, cleanupAssertion.evidenceEventIds, caseReport.evidenceEvents, "EXP-010-A04", "environment-cleanup") &&
     typeof details === "object" && details !== null && !Array.isArray(details) &&
-    typeof (details as Record<string, unknown>).roomId === "string" &&
-    typeof (details as Record<string, unknown>).ownershipMarker === "string" &&
-    typeof (details as Record<string, unknown>).retainedReason === "string" &&
+    nonemptyString((details as Record<string, unknown>).roomId) &&
+    nonemptyString(caseReport.runId) &&
+    nonemptyString((details as Record<string, unknown>).ownershipMarker) &&
+    ((details as Record<string, unknown>).ownershipMarker as string).startsWith(`SITE-${caseReport.runId}-`) &&
+    nonemptyString((details as Record<string, unknown>).retainedReason) &&
     ((details as Record<string, unknown>).cleanupStatus === undefined ||
       (details as Record<string, unknown>).cleanupStatus === "retained");
+}
+
+function hasTraceableEvidence(left: readonly string[], right: readonly string[], events: readonly EvidenceEvent[] | undefined, stage: string, type: string): boolean {
+  return left.every(nonemptyString) && right.every(nonemptyString) &&
+    left.length > 0 && right.length > 0 && left.some((id) =>
+      right.includes(id) && events?.some((event) => event.id === id && event.stage === stage && event.type === type));
+}
+
+function nonemptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function isExactNonExecutedSmokeGate(caseReport: CaseVerdictInput): boolean {

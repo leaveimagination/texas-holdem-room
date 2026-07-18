@@ -240,19 +240,6 @@ export async function writeExperienceReport(
   options: WriteExperienceReportOptions = {}
 ): Promise<RunReport> {
   options.signal?.throwIfAborted();
-  const cases = CaseReportSchema.array()
-    .parse(input.cases)
-    .map((caseReport) =>
-      CaseReportSchema.parse(
-        redactForEvidence(
-          {
-            ...caseReport,
-            verdict: deriveCaseVerdict(caseReport)
-          },
-          input.knownSecrets
-        )
-      )
-    );
   const events = sortedEvents(
     EvidenceEventSchema.array()
       .parse(input.events)
@@ -262,6 +249,19 @@ export async function writeExperienceReport(
         )
       )
   );
+  const cases = CaseReportSchema.array()
+    .parse(input.cases)
+    .map((caseReport) =>
+      CaseReportSchema.parse(
+        redactForEvidence(
+          {
+            ...caseReport,
+            verdict: deriveCaseVerdict({ ...caseReport, evidenceEvents: events })
+          },
+          input.knownSecrets
+        )
+      )
+    );
   const resources = RunResourceRecordSchema.array()
     .parse(input.resources ?? [])
     .map((resource) =>
@@ -297,7 +297,7 @@ export async function writeExperienceReport(
     runId: input.runId,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
-    verdict: deriveRunVerdict({ cases, results, baseResults }),
+    verdict: deriveRunVerdict({ cases: cases.map((caseReport) => ({ ...caseReport, evidenceEvents: events })), results, baseResults }),
     results,
     thresholds: EXPERIENCE_THRESHOLDS,
     cases,

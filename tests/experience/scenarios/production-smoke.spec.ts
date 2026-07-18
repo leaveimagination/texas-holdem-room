@@ -61,9 +61,9 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
         productError = error;
       }
 
-      await fixture.recorder.recordEvent({
+      const durableResultEvent = await fixture.recorder.recordEvent({
         actor: "production-smoke",
-        stage: "pre-cleanup-evidence",
+        stage: productError instanceof ProductAssertionError ? productError.context.assertionId : "pre-cleanup-evidence",
         type: productError instanceof ProductAssertionError ? "product-failure" : "journey-complete",
         status: productError === undefined ? "pass" : "failure-durable",
         details: productError instanceof ProductAssertionError
@@ -88,24 +88,28 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
             exactCleanupError instanceof Error ? { cause: exactCleanupError } : undefined
           )
         : exactCleanupError;
+      let cleanupEvidenceEventId: string | undefined;
       if (cleanupError instanceof Error) {
         fixture.cleanup = cleanupError instanceof ProductionCleanupError && cleanupError.cleanupStatus === "partial" ? "failed" : "retained";
         await writeOwnedRoomResource(environment, fixture);
-        await fixture.recorder.recordEvent({
+        const cleanupResultEvent = await fixture.recorder.recordEvent({
           actor: "cleanup",
           stage: "EXP-010-A04",
           type: "environment-cleanup",
           status: "inconclusive",
           details: { roomId: fixture.roomId, ownershipMarker: fixture.ownershipMarker, retainedReason: cleanupError.message }
         });
+        cleanupEvidenceEventId = cleanupResultEvent.id;
       }
       if (cleanupError instanceof Error) {
         return augmentSmokeResultWithRetainedCleanup(
           priorSmokeResult(fixture, productError), {
           roomId: fixture.roomId ?? "unrecorded",
           ownershipMarker: fixture.ownershipMarker,
-          cleanupReason: cleanupError.message
-          ,cleanupStatus: cleanupError instanceof ProductionCleanupError ? cleanupError.cleanupStatus : "retained"
+          cleanupReason: cleanupError.message,
+          cleanupStatus: cleanupError instanceof ProductionCleanupError ? cleanupError.cleanupStatus : "retained",
+          productEvidenceEventIds: productError instanceof ProductAssertionError ? [durableResultEvent.id] : [],
+          cleanupEvidenceEventIds: cleanupEvidenceEventId ? [cleanupEvidenceEventId] : []
         });
       }
       if (productError instanceof ProductAssertionError) throw productError;

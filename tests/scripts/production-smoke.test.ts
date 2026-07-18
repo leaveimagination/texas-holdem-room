@@ -148,15 +148,20 @@ test("preserves FAIL through report aggregation only for exact cleanup-only unce
   const root = await mkdtemp(join(tmpdir(), "smoke-cleanup-aggregate-"));
   const prior = combineProductFailureWithRetainedCleanup({
     productFailure: { assertionId: "EXP-010-A03", message: "seat claim failed", actor: "player", measuredValue: false, threshold: true, artifactIds: [] },
-    roomId: "room-1", ownershipMarker: "SITE-run-1-smoke-player", cleanupReason: "ownership-marker-not-found"
+    roomId: "room-1", ownershipMarker: "SITE-run-1-smoke-player", cleanupReason: "ownership-marker-not-found",
+    productEvidenceEventIds: ["EXP-010-A-001-E-000001"], cleanupEvidenceEventIds: ["EXP-010-A-001-E-000002"]
   });
+  const provenanceEvents = [
+    { id: "EXP-010-A-001-E-000001", runId: "run-1", caseId: "EXP-010", attemptId: "A-001", actor: "production-smoke", seq: 1, timestamp: "2026-07-17T00:00:10.000Z", monotonicMs: 10, stage: "EXP-010-A03", type: "product-failure", status: "failure-durable", details: {}, artifactIds: [] },
+    { id: "EXP-010-A-001-E-000002", runId: "run-1", caseId: "EXP-010", attemptId: "A-001", actor: "cleanup", seq: 2, timestamp: "2026-07-17T00:00:20.000Z", monotonicMs: 20, stage: "EXP-010-A04", type: "environment-cleanup", status: "inconclusive", details: {}, artifactIds: [] }
+  ];
   const report = await writeExperienceReport({
     outputRoot: root,
     runId: "run-1",
     startedAt: "2026-07-17T00:00:00.000Z",
     finishedAt: "2026-07-17T00:01:00.000Z",
     cases: [CaseReportSchema.parse({ schemaVersion: "1.0", runId: "run-1", caseId: "EXP-010", attemptId: "A-001", startedAt: "2026-07-17T00:00:00.000Z", finishedAt: "2026-07-17T00:01:00.000Z", artifacts: [], ...prior })],
-    events: [], resources: [], artifacts: [],
+    events: provenanceEvents, resources: [], artifacts: [],
     runResults: {
       product: { status: "pass", summary: "runner" },
       harness: { status: "pass", summary: "runner" },
@@ -169,7 +174,7 @@ test("preserves FAIL through report aggregation only for exact cleanup-only unce
   malformed.failures.push({ code: "HARNESS_RUNTIME_FAILURE", summary: "browser crashed", stage: "runtime", evidenceEventIds: [] });
   const malformedReport = await writeExperienceReport({
     outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
-    cases: [malformed], events: [], resources: [], artifacts: [],
+    cases: [malformed], events: provenanceEvents, resources: [], artifacts: [],
     runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
   });
   expect(malformedReport.verdict).toBe("INCONCLUSIVE");
@@ -183,10 +188,53 @@ test("preserves FAIL through report aggregation only for exact cleanup-only unce
   });
   const unrelatedReport = await writeExperienceReport({
     outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
-    cases: [unrelatedUncertainty], events: [], resources: [], artifacts: [],
+    cases: [unrelatedUncertainty], events: provenanceEvents, resources: [], artifacts: [],
     runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
   });
   expect(unrelatedReport.verdict).toBe("INCONCLUSIVE");
+
+  const strictMutations: Array<[string, (caseReport: typeof malformed) => void]> = [
+    ["wrong case", (caseReport) => { caseReport.caseId = "EXP-009"; }],
+    ["wrong attempt", (caseReport) => { caseReport.attemptId = "A-002"; }],
+    ["missing product failure", (caseReport) => { caseReport.failures = caseReport.failures.filter(({ code }) => code !== "PRODUCT_ASSERTION_FAILED"); }],
+    ["missing cleanup failure", (caseReport) => { caseReport.failures = caseReport.failures.filter(({ code }) => code !== "EXACT_CLEANUP_RETAINED"); }],
+    ["empty product evidence", (caseReport) => {
+      caseReport.failures.find(({ code }) => code === "PRODUCT_ASSERTION_FAILED")!.evidenceEventIds = [];
+    }],
+    ["empty cleanup evidence", (caseReport) => {
+      caseReport.assertions.find(({ id }) => id === "EXP-010-A04")!.evidenceEventIds = [];
+    }],
+    ["mismatched cleanup evidence", (caseReport) => {
+      caseReport.failures.find(({ code }) => code === "EXACT_CLEANUP_RETAINED")!.evidenceEventIds = ["EXP-010-A-001-E-999999"];
+    }],
+    ["mismatched product stage", (caseReport) => {
+      caseReport.failures.find(({ code }) => code === "PRODUCT_ASSERTION_FAILED")!.stage = "EXP-010-A02";
+    }],
+    ["wrong-run ownership marker", (caseReport) => {
+      const cleanup = caseReport.failures.find(({ code }) => code === "EXACT_CLEANUP_RETAINED")!;
+      cleanup.details = { ...(cleanup.details as Record<string, unknown>), ownershipMarker: "SITE-run-other-smoke-player" };
+    }],
+    ["extra product failure", (caseReport) => { caseReport.failures.push(structuredClone(caseReport.failures[0])); }]
+  ];
+  for (const [label, mutate] of strictMutations) {
+    const strictCase = structuredClone(report.cases[0]);
+    mutate(strictCase);
+    const strictReport = await writeExperienceReport({
+      outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
+      cases: [strictCase], events: provenanceEvents, resources: [], artifacts: [],
+      runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
+    });
+    expect(strictReport.verdict, label).toBe("INCONCLUSIVE");
+  }
+
+  const unrelatedEventReport = await writeExperienceReport({
+    outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
+    cases: [structuredClone(report.cases[0])],
+    events: provenanceEvents.map((event) => event.id === "EXP-010-A-001-E-000001" ? { ...event, stage: "unrelated-stage", type: "diagnostic" } : event),
+    resources: [], artifacts: [],
+    runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
+  });
+  expect(unrelatedEventReport.verdict, "unrelated event provenance").toBe("INCONCLUSIVE");
 });
 
 test.each([
