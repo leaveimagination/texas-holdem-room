@@ -73,7 +73,7 @@ export function projectWebSocketPayload(payload: unknown): SafeWebSocketProjecti
     board: Array.isArray(board) ? board.filter((card): card is string => typeof card === "string") : [],
     actionIds: actions.flatMap((candidate, index) => actionFingerprint(candidate, handNumber, index)),
     resultId: numberField(handResult?.handNumber) === null ? null : `hand-${numberField(handResult?.handNumber)}`,
-    privateCardVisibility: visibility(countUnexpectedPrivateCards(parsed, phase)),
+    privateCardVisibility: visibility(countUnexpectedPrivateCards(parsed, phase, stringField(message.type))),
     pot: numberField(hand?.pot) ?? numberField(body.pot),
     actor: stringField(hand?.actorId) ?? stringField(body.actorId) ?? stringField(body.actor),
     privateCardKeyPresent: hasPrivateCardKey(parsed)
@@ -259,7 +259,7 @@ function browserTelemetryInitScript({ bindingName }: { bindingName: string }): v
         if (key === "holeCards" && Array.isArray(nested)) {
           const joined = next.join(".");
           const publicSeatReveal = (phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary") && /hand\.seats\.\d+\.holeCards$/.test(joined);
-          const publicNoticeReveal = (phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary") && /showdownPlayers\.\d+\.holeCards$/.test(joined);
+          const publicNoticeReveal = stringValue(message.type) === "hand_finished" && phase === "hand-summary" && /showdownPlayers\.\d+\.holeCards$/.test(joined);
           return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
         }
         return sum + unexpectedPrivateCount(nested, next);
@@ -350,8 +350,8 @@ function isPublicRevealPhase(phase: string | null): boolean {
   return phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary";
 }
 
-function countUnexpectedPrivateCards(value: unknown, phase: string | null, path: string[] = []): number {
-  if (Array.isArray(value)) return value.reduce((sum, nested, index) => sum + countUnexpectedPrivateCards(nested, phase, [...path, String(index)]), 0);
+function countUnexpectedPrivateCards(value: unknown, phase: string | null, messageType: string | null, path: string[] = []): number {
+  if (Array.isArray(value)) return value.reduce((sum, nested, index) => sum + countUnexpectedPrivateCards(nested, phase, messageType, [...path, String(index)]), 0);
   const object = record(value);
   if (!object) return 0;
   return Object.entries(object).reduce((sum, [key, nested]) => {
@@ -360,10 +360,10 @@ function countUnexpectedPrivateCards(value: unknown, phase: string | null, path:
     if (key === "holeCards" && Array.isArray(nested)) {
       const joined = next.join(".");
       const publicSeatReveal = isPublicRevealPhase(phase) && /hand\.seats\.\d+\.holeCards$/.test(joined);
-      const publicNoticeReveal = isPublicRevealPhase(phase) && /showdownPlayers\.\d+\.holeCards$/.test(joined);
+      const publicNoticeReveal = messageType === "hand_finished" && phase === "hand-summary" && /showdownPlayers\.\d+\.holeCards$/.test(joined);
       return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
     }
-    return sum + countUnexpectedPrivateCards(nested, phase, next);
+    return sum + countUnexpectedPrivateCards(nested, phase, messageType, next);
   }, 0);
 }
 

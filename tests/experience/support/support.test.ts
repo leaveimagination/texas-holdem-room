@@ -119,11 +119,17 @@ describe("experience support", () => {
   it("classifies showdown-player cards outside reveal phases as unexpected private payload", () => {
     const betting = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "betting" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
     const reveal = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "runout" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
+    const snapshotSummary = projectWebSocketPayload(JSON.stringify({ type: "room_snapshot", payload: { flow: { phase: "hand-summary" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
+    const unknownRunout = projectWebSocketPayload(JSON.stringify({ type: "mystery", payload: { flow: { phase: "runout" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
     expect(betting.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
-    expect(reveal.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
+    expect(reveal.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
+    expect(snapshotSummary.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
+    expect(unknownRunout.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
     const finished = projectWebSocketPayload(JSON.stringify({ type: "hand_finished", payload: { showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
     expect(finished.phase).toBe("hand-summary");
     expect(finished.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
+    const publicSeatSnapshot = projectWebSocketPayload(JSON.stringify({ type: "room_snapshot", payload: { flow: { phase: "runout" }, hand: { seats: [{ holeCards: ["As", "Ah"] }] } } }));
+    expect(publicSeatSnapshot.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
   });
 
   it("installs telemetry before navigation and surfaces asynchronous sink failures on flush", async () => {
