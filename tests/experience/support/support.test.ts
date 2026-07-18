@@ -116,6 +116,16 @@ describe("experience support", () => {
     expect(undocumented.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
   });
 
+  it("classifies showdown-player cards outside reveal phases as unexpected private payload", () => {
+    const betting = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "betting" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
+    const reveal = projectWebSocketPayload(JSON.stringify({ payload: { flow: { phase: "runout" }, showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
+    expect(betting.privateCardVisibility).toEqual({ visible: true, cardCount: 2 });
+    expect(reveal.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
+    const finished = projectWebSocketPayload(JSON.stringify({ type: "hand_finished", payload: { showdownPlayers: [{ holeCards: ["As", "Ah"] }] } }));
+    expect(finished.phase).toBe("hand-summary");
+    expect(finished.privateCardVisibility).toEqual({ visible: false, cardCount: 0 });
+  });
+
   it("installs telemetry before navigation and surfaces asynchronous sink failures on flush", async () => {
     const order: string[] = [];
     let binding: ((source: unknown, event: TelemetryEvent) => void) | undefined;

@@ -59,7 +59,7 @@ export function projectWebSocketPayload(payload: unknown): SafeWebSocketProjecti
   const handNumber = numberField(hand?.number) ?? numberField(body.handNumber);
   const actions = Array.isArray(hand?.actions) ? hand.actions : [];
   const handResult = record(flow?.handResult) ?? record(body.handResult);
-  const phase = stringField(flow?.phase) ?? stringField(body.phase);
+  const phase = stringField(flow?.phase) ?? stringField(body.phase) ?? (stringField(message.type) === "hand_finished" ? "hand-summary" : null);
   return {
     type: stringField(message.type) ?? "unknown",
     phase,
@@ -259,14 +259,14 @@ function browserTelemetryInitScript({ bindingName }: { bindingName: string }): v
         if (key === "holeCards" && Array.isArray(nested)) {
           const joined = next.join(".");
           const publicSeatReveal = (phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary") && /hand\.seats\.\d+\.holeCards$/.test(joined);
-          const publicNoticeReveal = /showdownPlayers\.\d+\.holeCards$/.test(joined);
+          const publicNoticeReveal = (phase === "showdown-reveal" || phase === "runout" || phase === "hand-summary") && /showdownPlayers\.\d+\.holeCards$/.test(joined);
           return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
         }
         return sum + unexpectedPrivateCount(nested, next);
       }, 0);
     };
     const result = asRecord(flow?.handResult) ?? asRecord(body.handResult);
-    const phase = stringValue(flow?.phase) ?? stringValue(body.phase);
+    const phase = stringValue(flow?.phase) ?? stringValue(body.phase) ?? (stringValue(message.type) === "hand_finished" ? "hand-summary" : null);
     return {
       type: stringValue(message.type) ?? "unknown",
       phase,
@@ -360,7 +360,7 @@ function countUnexpectedPrivateCards(value: unknown, phase: string | null, path:
     if (key === "holeCards" && Array.isArray(nested)) {
       const joined = next.join(".");
       const publicSeatReveal = isPublicRevealPhase(phase) && /hand\.seats\.\d+\.holeCards$/.test(joined);
-      const publicNoticeReveal = /showdownPlayers\.\d+\.holeCards$/.test(joined);
+      const publicNoticeReveal = isPublicRevealPhase(phase) && /showdownPlayers\.\d+\.holeCards$/.test(joined);
       return sum + (publicSeatReveal || publicNoticeReveal ? 0 : nested.length);
     }
     return sum + countUnexpectedPrivateCards(nested, phase, next);

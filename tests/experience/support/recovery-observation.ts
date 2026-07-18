@@ -31,3 +31,5 @@ export function privacyTimelineIsSafe(samples: readonly { board: readonly string
 export function requiredCountsPresent(counts: readonly { count: number; minimum: number }[]) {
   return counts.length > 0 && counts.every(({ count, minimum }) => count >= minimum);
 }
+
+export function requiredControlEvidenceComplete(expected: readonly string[], observed: readonly string[]) { return expected.length > 0 && expected.length === observed.length && expected.every((id, index) => observed[index] === id); }
