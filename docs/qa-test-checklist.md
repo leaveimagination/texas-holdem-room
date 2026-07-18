@@ -4,6 +4,7 @@ Use this checklist before sharing a build or after any change to poker rules, re
 
 ## Required Automated Commands
 
+- `npm run test:site` (explicit on-demand full-site experience acceptance)
 - `npm run typecheck`
 - `npm test`
 - `npm run test:e2e`
@@ -52,8 +53,9 @@ For release candidates, run the long-run simulation at `LONG_RUN_SECONDS=3600`.
 - All-in action has a visible animation, but it must not block cards, bets, or player names.
 - Showdown reveals involved players' cards.
 - Winner result and pot collection are visible before the next hand starts.
-- If one player busts in cash mode, the busted player sees the add-chips modal.
-- After the busted player adds chips, the service automatically starts the next hand when two or more players have chips.
+- In an all-in runout, live hands appear before the remaining board and community cards reveal one at a time; no action is enabled during presentation.
+- Winner highlighting and pot collection begin only after the fifth community card.
+- Card-gap and street-hold timing stays within the configured timing plus or minus 400ms.
 - If fewer than two players have chips after settlement, the table waits without showing invalid action buttons.
 
 ## 5. Pots And Side Pots
@@ -74,15 +76,17 @@ For release candidates, run the long-run simulation at `LONG_RUN_SECONDS=3600`.
 - Accepting insurance pays coverage if the covered player loses.
 - Insurance modal blocks table clicks until resolved.
 
-## 7. Rebuy And Buy-In Records
+## 7. Next-Hand Top-Ups And Accounting
 
-- Cash players can add chips only after their stack reaches zero.
-- Cash players cannot add chips while still active in a live hand.
+- Cash players can use the persistent lower-left add-chips control while chips remain.
+- Submitting 300 then 200 shows a cumulative `Pending +500` and broadcasts both submissions.
+- Queued chips do not change the live-hand stack and exactly 500 applies once at the next hand boundary.
 - Tournament players cannot add chips.
-- Rebuy increments `cumulativeBuyIn`.
-- Rebuy broadcasts a system message to the room.
-- Rebuy after a finished hand can restart the next hand automatically.
-- Rebuy must not expose payment, cash-out, wallet, or real-money language.
+- Applied top-ups increment `cumulativeBuyIn`; pending top-ups do not enter applied accounting early.
+- Each hand result lists every player with starting chips, ending chips, and signed net chips and remains visible for about 2000ms (plus or minus 400ms).
+- A room-end request during a live hand lets that hand settle first.
+- Final accounting remains visible and lists initial chips, applied top-ups, final chips, and `net = final - initial - applied top-ups`.
+- Top-up copy must not expose payment, cash-out, wallet, or real-money language.
 
 ## 8. Realtime And Recovery
 
@@ -104,7 +108,7 @@ For release candidates, run the long-run simulation at `LONG_RUN_SECONDS=3600`.
 - When call is available, check is not displayed as the primary middle action.
 - When check is available, call is not displayed as the primary middle action.
 - The slider-side mystery all-in icon is not present; all-in is a separate button.
-- Add chips appears as a modal only when the player is eligible.
+- The persistent add-chips control remains in the lower-left pattern and its popover does not obscure required table controls.
 - Mobile layout has no overlapping cards, buttons, bets, or player panels.
 
 ## 10. Long-Run Simulation Requirements

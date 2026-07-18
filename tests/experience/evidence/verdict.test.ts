@@ -219,6 +219,33 @@ describe("deriveCaseVerdict", () => {
 });
 
 describe("deriveRunVerdict", () => {
+  it("ignores only the exact non-executed smoke gate when a product failure is proven", () => {
+    const gated = {
+      caseId: "EXP-010",
+      attemptId: "A-001",
+      results: PASSING_RESULTS,
+      assertions: [assertion("inconclusive")],
+      failures: [{
+        code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
+        summary: "gated",
+        stage: "EXP-010-A05",
+        evidenceEventIds: []
+      }]
+    };
+    const failed = {
+      caseId: "EXP-002",
+      attemptId: "A-001",
+      results: { ...PASSING_RESULTS, product: { status: "fail" as const, summary: "failed", evidenceEventIds: [] } },
+      assertions: [assertion("fail")],
+      failures: []
+    };
+
+    expect(deriveRunVerdict({ cases: [failed, gated], results: { ...PASSING_RESULTS, product: failed.results.product } }))
+      .toBe("FAIL");
+    expect(deriveRunVerdict({ cases: [{ ...gated, caseId: "EXP-009" }], results: PASSING_RESULTS }))
+      .toBe("INCONCLUSIVE");
+  });
+
   it("aggregates case evidence without trusting reported case verdicts", () => {
     const passingCase = {
       results: PASSING_RESULTS,

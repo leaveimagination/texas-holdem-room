@@ -52,6 +52,7 @@ import {
   reportInput,
   resourceRecords,
   selectedCasesPassed,
+  syntheticSmokeGatedEvidence,
   syntheticInconclusiveEvidence
 } from "./site-test/runner-evidence";
 import {
@@ -440,6 +441,24 @@ async function runFullSiteTestWithinDeadline(
         });
         if (includesSmoke && !mayRunSmoke && isolatedCaseIds.length === 0) {
           markHarnessInconclusive(runResults, diagnostics, "EXP-010 requires at least one validated passing isolated acceptance case.");
+        }
+        if (
+          includesSmoke &&
+          !mayRunSmoke &&
+          isolatedCaseIds.length > 0 &&
+          isolatedEvidenceValidated &&
+          runResults.harness.status === "pass" &&
+          runResults.environment.status === "pass" &&
+          !selectedCasesPassed(evidence, isolatedCaseIds)
+        ) {
+          attemptedCaseIds.add(SMOKE_CASE_ID);
+          evidence = mergeEvidence(
+            evidence,
+            syntheticSmokeGatedEvidence(
+              context,
+              "Deployed smoke was not executed because validated isolated acceptance proved a product failure."
+            )
+          );
         }
         if (mayRunSmoke) {
           requireOperationalBudget(

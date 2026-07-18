@@ -22,7 +22,7 @@ import {
 } from "../../scripts/run-full-site-test";
 import { runPlaywrightGroup } from "../../scripts/site-test/playwright-group";
 import { writeDefaultMetadata } from "../../scripts/site-test/runner-defaults";
-import { ProcessTimeoutError } from "../../scripts/site-test/process-runner";
+import { ProcessTimeoutError, runProcess } from "../../scripts/site-test/process-runner";
 import type { DockerSiteTestStackSnapshot } from "../../scripts/site-test/docker-stack";
 import {
   EXPERIENCE_THRESHOLDS,
@@ -30,6 +30,12 @@ import {
   type EvidenceEvent
 } from "../experience/evidence/contracts";
 import { writeExperienceReport } from "../experience/evidence/report-writer";
+import { validateEvidencePack } from "../experience/evidence/validator";
+import {
+  EXPERIENCE_CASES,
+  TWO_ATTEMPT_CASE_IDS,
+  experienceAttemptIds
+} from "../experience/case-catalog";
 
 const temporaryDirectories: string[] = [];
 
@@ -107,6 +113,27 @@ describe("dedicated Playwright group", () => {
       name: "chromium",
       use: { browserName: "chromium" }
     });
+    expect(playwrightConfig.testMatch).toBe("**/*.spec.ts");
+  });
+
+  test("discovers every declared experience case exactly once and repeats only catalog cases", async () => {
+    const listed = await runProcess(process.execPath, [
+      join(process.cwd(), "node_modules", "@playwright", "test", "cli.js"),
+      "test",
+      "--config",
+      join(process.cwd(), "playwright.experience.config.ts"),
+      "--list"
+    ], { cwd: process.cwd(), timeoutMs: 30_000 });
+    const declared = EXPERIENCE_CASES.map(({ caseId }) => caseId);
+    const discovered = [...listed.stdout.matchAll(/› (EXP-\d{3})\b/gu)].map((match) => match[1]);
+
+    expect(discovered.sort()).toEqual([...declared].sort());
+    expect(new Set(discovered).size).toBe(10);
+    expect(listed.stdout).toMatch(/Total: 10 tests in 4 files/);
+    expect(declared.filter((caseId) => experienceAttemptIds(caseId).length === 2).sort())
+      .toEqual([...TWO_ATTEMPT_CASE_IDS].sort());
+    expect(declared.filter((caseId) => experienceAttemptIds(caseId).length === 1))
+      .toHaveLength(10 - TWO_ATTEMPT_CASE_IDS.length);
   });
 
   test("passes exact IDs and URLs through argv/env without shell interpolation", async () => {
@@ -616,6 +643,33 @@ describe("full site runner", () => {
     expect(result).toMatchObject({ exitCode: 1, verdict: "FAIL" });
     expect(harness.playwrightGroups).toEqual([["EXP-001"]]);
     expect(harness.calls).not.toContain("playwright:EXP-010");
+    expect(result.report?.cases).toContainEqual(expect.objectContaining({
+      caseId: "EXP-010",
+      attemptId: "A-001",
+      verdict: "INCONCLUSIVE",
+      results: {
+        product: expect.objectContaining({ status: "pass" }),
+        harness: expect.objectContaining({ status: "pass" }),
+        environment: expect.objectContaining({ status: "pass" })
+      },
+      assertions: [expect.objectContaining({
+        id: "EXP-010-A05",
+        outcome: "inconclusive"
+      })],
+      failures: [expect.objectContaining({
+        code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE"
+      })]
+    }));
+    expect(result.report?.results).toMatchObject({
+      product: { status: "fail" },
+      harness: { status: "pass" },
+      environment: { status: "pass" }
+    });
+    const html = await readFile(join(harness.context.outputRoot, "report.html"), "utf8");
+    expect(html).toMatch(/EXP-010 \/ A-001 — INCONCLUSIVE/);
+    expect(html).toMatch(/EXP-010-A05 \/ smoke-gate \/ inconclusive/);
+    await expect(validateEvidencePack(harness.context.outputRoot, harness.context.knownSecrets))
+      .resolves.toMatchObject({ filesScanned: expect.any(Number) });
   });
 
   test("classifies a timed-out Playwright group as harness-inconclusive even with product failure evidence", async () => {

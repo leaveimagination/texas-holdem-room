@@ -284,6 +284,59 @@ export function syntheticInconclusiveEvidence(
   return { cases: [report], events: [event] };
 }
 
+export function syntheticSmokeGatedEvidence(
+  context: SiteTestRunContext,
+  summary: string
+): CollectedCaseEvidence {
+  const caseId = "EXP-010";
+  const attemptId = "A-001";
+  const eventId = `${caseId}-${attemptId}-SMOKE-GATED`;
+  const event: EvidenceEvent = {
+    id: eventId,
+    runId: context.runId,
+    caseId,
+    attemptId,
+    actor: "runner",
+    seq: 1,
+    timestamp: new Date().toISOString(),
+    monotonicMs: 0,
+    stage: "EXP-010-A05",
+    type: "smoke-gate",
+    status: "inconclusive",
+    details: { executed: false, reason: summary },
+    artifactIds: []
+  };
+  const report = CaseReportSchema.parse({
+    schemaVersion: "1.0",
+    runId: context.runId,
+    caseId,
+    attemptId,
+    startedAt: context.startedAt,
+    finishedAt: event.timestamp,
+    verdict: "INCONCLUSIVE",
+    results: {
+      product: { status: "pass", summary: "No deployed-smoke product assertion was executed." },
+      harness: { status: "pass", summary: "The runner correctly enforced the isolated acceptance gate.", evidenceEventIds: [eventId] },
+      environment: { status: "pass", summary: "No smoke-target environment assertion was required." }
+    },
+    assertions: [{
+      id: "EXP-010-A05",
+      outcome: "inconclusive",
+      evidenceEventIds: [eventId],
+      summary
+    }],
+    failures: [{
+      code: "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE",
+      summary,
+      stage: "EXP-010-A05",
+      evidenceEventIds: [eventId],
+      details: { executed: false }
+    }],
+    artifacts: []
+  });
+  return { cases: [report], events: [event] };
+}
+
 export function selectedCasesPassed(
   evidence: CollectedCaseEvidence,
   caseIds: readonly string[]

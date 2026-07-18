@@ -8,6 +8,7 @@ const outputRoot = process.env.SITE_TEST_OUTPUT_ROOT?.trim() ||
 
 export default defineConfig({
   testDir: "./tests/experience/scenarios",
+  testMatch: "**/*.spec.ts",
   outputDir: resolve(outputRoot, "diagnostics", "playwright"),
   workers: 1,
   retries: 0,

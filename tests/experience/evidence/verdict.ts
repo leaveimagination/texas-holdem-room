@@ -1,8 +1,11 @@
 import type { CaseReport, OverallVerdict } from "./contracts";
 
 export interface CaseVerdictInput {
+  caseId?: string;
+  attemptId?: string;
   results: CaseReport["results"];
   assertions: readonly CaseReport["assertions"][number][];
+  failures?: readonly CaseReport["failures"][number][];
 }
 
 export interface RunVerdictInput {
@@ -44,7 +47,14 @@ export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
     return "INCONCLUSIVE";
   }
 
-  const caseVerdicts = input.cases.map(deriveCaseVerdict);
+  const judgedCases = input.cases.filter(
+    ({ caseId, attemptId, failures }) => !(
+      caseId === "EXP-010" &&
+      attemptId === "A-001" &&
+      failures?.some(({ code }) => code === "SMOKE_GATED_BY_ISOLATED_PRODUCT_FAILURE")
+    )
+  );
+  const caseVerdicts = judgedCases.map(deriveCaseVerdict);
   if (caseVerdicts.includes("INCONCLUSIVE")) {
     return "INCONCLUSIVE";
   }
