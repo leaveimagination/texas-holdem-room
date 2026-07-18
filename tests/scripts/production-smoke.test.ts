@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EvidenceRecorder } from "../experience/evidence/recorder";
 import { validateEvidencePack } from "../experience/evidence/validator";
+import { writeExperienceReport } from "../experience/evidence/report-writer";
+import { CaseReportSchema } from "../experience/evidence/contracts";
 
 import {
   buildProductionCleanupCommand,
@@ -83,7 +85,7 @@ describe("production smoke exact cleanup command", () => {
 
   test("accepts only a matching JSON result that deleted the exact room", async () => {
     const run = scriptedDocker([{
-      stdout: `${JSON.stringify({ deleted: true, retainedReason: null, roomId: "room-1", runId: "run-1" })}\n`
+      stdout: `${JSON.stringify({ deleted: true, retainedReason: null, roomId: "room-1", runId: "run-1", cleanupStatus: "deleted", failureReason: null })}\n`
     }]);
     await expect(runExactProductionCleanup({
       containerId: "app-123", roomId: "room-1", runId: "run-1", run
@@ -99,6 +101,23 @@ describe("production smoke exact cleanup command", () => {
       containerId: "app-123", roomId: "room-1", runId: "run-1",
       run: scriptedDocker([{ stdout }])
     })).rejects.toThrow(message);
+  });
+
+  test("reports partial cleanup distinctly from retained cleanup", async () => {
+    await expect(runExactProductionCleanup({
+      containerId: "app-123", roomId: "room-1", runId: "run-1",
+      run: scriptedDocker([{ stdout: JSON.stringify({ deleted: false, retainedReason: null, roomId: "room-1", runId: "run-1", cleanupStatus: "partial", failureReason: "redis-restore-not-proven" }) }])
+    })).rejects.toMatchObject({ cleanupStatus: "partial" });
+  });
+
+  test("reports a post-invocation process failure as partial cleanup", async () => {
+    await expect(runExactProductionCleanup({
+      containerId: "app-123", roomId: "room-1", runId: "run-1",
+      run: async () => { throw new Error("docker exec timed out after start"); }
+    })).rejects.toMatchObject({
+      cleanupStatus: "partial",
+      message: expect.stringMatching(/process outcome.*partial/i)
+    });
   });
 });
 
@@ -123,6 +142,51 @@ test("keeps a proven product FAIL while reporting exact retained cleanup", () =>
     code: "EXACT_CLEANUP_RETAINED",
     details: expect.objectContaining({ roomId: "room-1" })
   }));
+});
+
+test("preserves FAIL through report aggregation only for exact cleanup-only uncertainty", async () => {
+  const root = await mkdtemp(join(tmpdir(), "smoke-cleanup-aggregate-"));
+  const prior = combineProductFailureWithRetainedCleanup({
+    productFailure: { assertionId: "EXP-010-A03", message: "seat claim failed", actor: "player", measuredValue: false, threshold: true, artifactIds: [] },
+    roomId: "room-1", ownershipMarker: "SITE-run-1-smoke-player", cleanupReason: "ownership-marker-not-found"
+  });
+  const report = await writeExperienceReport({
+    outputRoot: root,
+    runId: "run-1",
+    startedAt: "2026-07-17T00:00:00.000Z",
+    finishedAt: "2026-07-17T00:01:00.000Z",
+    cases: [CaseReportSchema.parse({ schemaVersion: "1.0", runId: "run-1", caseId: "EXP-010", attemptId: "A-001", startedAt: "2026-07-17T00:00:00.000Z", finishedAt: "2026-07-17T00:01:00.000Z", artifacts: [], ...prior })],
+    events: [], resources: [], artifacts: [],
+    runResults: {
+      product: { status: "pass", summary: "runner" },
+      harness: { status: "pass", summary: "runner" },
+      environment: { status: "pass", summary: "runner" }
+    }
+  });
+  expect(report).toMatchObject({ verdict: "FAIL", results: { product: { status: "fail" }, harness: { status: "inconclusive" }, environment: { status: "inconclusive" } } });
+
+  const malformed = structuredClone(report.cases[0]);
+  malformed.failures.push({ code: "HARNESS_RUNTIME_FAILURE", summary: "browser crashed", stage: "runtime", evidenceEventIds: [] });
+  const malformedReport = await writeExperienceReport({
+    outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
+    cases: [malformed], events: [], resources: [], artifacts: [],
+    runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
+  });
+  expect(malformedReport.verdict).toBe("INCONCLUSIVE");
+
+  const unrelatedUncertainty = structuredClone(report.cases[0]);
+  unrelatedUncertainty.assertions.push({
+    id: "EXP-010-A02",
+    outcome: "inconclusive",
+    summary: "seat observation was unavailable",
+    evidenceEventIds: []
+  });
+  const unrelatedReport = await writeExperienceReport({
+    outputRoot: root, runId: "run-1", startedAt: report.startedAt, finishedAt: report.finishedAt,
+    cases: [unrelatedUncertainty], events: [], resources: [], artifacts: [],
+    runResults: { product: { status: "pass", summary: "runner" }, harness: { status: "pass", summary: "runner" }, environment: { status: "pass", summary: "runner" } }
+  });
+  expect(unrelatedReport.verdict).toBe("INCONCLUSIVE");
 });
 
 test.each([
@@ -150,6 +214,29 @@ test("augments an exact prior result without dropping evidence or failure detail
   expect(result.results.product).toEqual(prior.results.product);
   expect(result.verdict).toBe("FAIL");
   expect(result.failures.at(-1)).toMatchObject({ code: "EXACT_CLEANUP_RETAINED", details: { roomId: "room-exact" } });
+});
+
+test("classifies partial cleanup as failed state with exact room details", () => {
+  const result = augmentSmokeResultWithRetainedCleanup({
+    verdict: "FAIL",
+    results: {
+      product: { status: "fail", summary: "proven", evidenceEventIds: [] },
+      harness: { status: "pass", summary: "captured", evidenceEventIds: [] },
+      environment: { status: "pass", summary: "healthy", evidenceEventIds: [] }
+    },
+    assertions: [{ id: "EXP-010-A03", outcome: "fail", evidenceEventIds: [], summary: "failed" }],
+    failures: [{ code: "PRODUCT_ASSERTION_FAILED", summary: "failed", stage: "EXP-010-A03", evidenceEventIds: [] }]
+  }, {
+    roomId: "room-exact", ownershipMarker: "SITE-run-player",
+    cleanupReason: "redis-restore-not-proven", cleanupStatus: "partial"
+  });
+  expect(result.failures.at(-1)).toMatchObject({
+    code: "EXACT_CLEANUP_PARTIAL",
+    stage: "EXP-010-A04",
+    details: { roomId: "room-exact", cleanupStatus: "partial" }
+  });
+  expect(result.results.harness.status).toBe("inconclusive");
+  expect(result.results.environment.status).toBe("inconclusive");
 });
 
 test("redacts a host token learned after recorder construction from navigation failure pack", async () => {

@@ -6,6 +6,7 @@ import { test, type Browser, type BrowserContext, type Page } from "@playwright/
 import {
   augmentSmokeResultWithRetainedCleanup,
   discoverProductionAppContainer,
+  ProductionCleanupError,
   runExactProductionCleanup
 } from "../../../scripts/site-test/production-smoke";
 import { runProcess } from "../../../scripts/site-test/process-runner";
@@ -49,7 +50,7 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
       assertionEvents: new Map<string, string[]>(),
       roomId: null as string | null,
       ownershipMarker: `SITE-${environment.runId}-smoke-player`,
-      cleanup: "pending" as "pending" | "cleaned" | "retained"
+      cleanup: "pending" as "pending" | "cleaned" | "retained" | "failed"
     }),
     execute: async ({ fixture, ...coordinates }) => {
       let productError: unknown;
@@ -75,9 +76,20 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
           : { roomId: fixture.roomId, ownershipMarker: fixture.ownershipMarker }
       });
 
-      const cleanupError = await cleanupExactRoom(environment, fixture).catch((error) => error);
+      const closeErrors = await closeBrowserContexts([
+        page.context(),
+        ...fixture.contexts.splice(0)
+      ]);
+      const exactCleanupError = await cleanupExactRoom(environment, fixture).catch((error) => error);
+      const cleanupError = closeErrors.length > 0
+        ? new ProductionCleanupError(
+            `browser quiescence not proven (${closeErrors.join("; ")})${exactCleanupError instanceof Error ? `; exact cleanup: ${exactCleanupError.message}` : ""}`,
+            "partial",
+            exactCleanupError instanceof Error ? { cause: exactCleanupError } : undefined
+          )
+        : exactCleanupError;
       if (cleanupError instanceof Error) {
-        fixture.cleanup = "retained";
+        fixture.cleanup = cleanupError instanceof ProductionCleanupError && cleanupError.cleanupStatus === "partial" ? "failed" : "retained";
         await writeOwnedRoomResource(environment, fixture);
         await fixture.recorder.recordEvent({
           actor: "cleanup",
@@ -93,6 +105,7 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
           roomId: fixture.roomId ?? "unrecorded",
           ownershipMarker: fixture.ownershipMarker,
           cleanupReason: cleanupError.message
+          ,cleanupStatus: cleanupError instanceof ProductionCleanupError ? cleanupError.cleanupStatus : "retained"
         });
       }
       if (productError instanceof ProductAssertionError) throw productError;
@@ -100,11 +113,23 @@ test("EXP-010 smokes the deployed public poker journey and deletes only its owne
       return passingResult(fixture);
     },
     disposeFixture: async (fixture) => {
-      await Promise.all(fixture.contexts.map(async (context) => await context.close()));
+      await closeBrowserContexts(fixture.contexts.splice(0));
     },
     persistFallbackReport: async (coordinates, input) => await createRecorder(environment, coordinates, secrets.knownSecrets).finishCase(input)
   });
 });
+
+async function closeBrowserContexts(contexts: BrowserContext[]): Promise<string[]> {
+  const uniqueContexts = [...new Set(contexts)];
+  const outcomes = await Promise.allSettled(
+    uniqueContexts.map(async (context) => await context.close())
+  );
+  return outcomes.flatMap((outcome) =>
+    outcome.status === "rejected"
+      ? [outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)]
+      : []
+  );
+}
 
 async function assertPublicEntrypoints(request: { get(url: string): Promise<{ ok(): boolean; status(): number }> }, page: Page, baseUrl: string, fixture: SmokeFixture, c: AttemptCoordinates) {
   const health = await request.get(new URL("/api/health", baseUrl).toString());
@@ -210,4 +235,4 @@ function requiredEnv(name: string) { const value = process.env[name]?.trim(); if
 
 class SecretRegistry implements KnownSecretRegistry { readonly knownSecrets: string[] = []; private readonly values = new Set<string>(); add(secret: string) { if (!this.values.has(secret)) { this.values.add(secret); this.knownSecrets.push(secret); } } }
 interface Environment { runId: string; outputRoot: string; caseOutputRoot: string; smokeBaseUrl: string }
-interface SmokeFixture { coordinates: AttemptCoordinates; recorder: EvidenceRecorder; contexts: BrowserContext[]; secrets: SecretRegistry; assertionEvents: Map<string, string[]>; roomId: string | null; ownershipMarker: string; cleanup: "pending" | "cleaned" | "retained" }
+interface SmokeFixture { coordinates: AttemptCoordinates; recorder: EvidenceRecorder; contexts: BrowserContext[]; secrets: SecretRegistry; assertionEvents: Map<string, string[]>; roomId: string | null; ownershipMarker: string; cleanup: "pending" | "cleaned" | "retained" | "failed" }

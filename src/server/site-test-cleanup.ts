@@ -11,7 +11,10 @@ export interface SiteTestCleanupRequest {
 }
 
 export interface SiteTestCleanupDependencies {
-  redis: Pick<KeyValueStore, "del">;
+  redis: Pick<KeyValueStore, "get"> & {
+    snapshotAndDelete(key: string): Promise<{ rawState: string | null; ttlSeconds: number }>;
+    set(key: string, value: string, mode: "EX", ttlSeconds: number, condition: "NX"): Promise<unknown>;
+  };
   repository: Pick<RoomRepository, "hasRunMarkerParticipant" | "deleteExactRoom">;
 }
 
@@ -20,6 +23,8 @@ export interface SiteTestCleanupResult {
   retainedReason: string | null;
   roomId: string;
   runId: string;
+  cleanupStatus: "deleted" | "retained" | "partial";
+  failureReason: string | null;
 }
 
 export async function cleanupSiteTestRoom(
@@ -31,22 +36,41 @@ export async function cleanupSiteTestRoom(
   const retainedReason = invalidRequestReason(request);
 
   if (retainedReason) {
-    return { deleted: false, retainedReason, roomId, runId };
+    return retained(roomId, runId, retainedReason);
   }
 
   if (!(await dependencies.repository.hasRunMarkerParticipant(roomId, runId))) {
-    return {
-      deleted: false,
-      retainedReason: "ownership-marker-not-found",
-      roomId,
-      runId
-    };
+    return retained(roomId, runId, "ownership-marker-not-found");
   }
 
-  await dependencies.redis.del(`room:${roomId}`);
-  await dependencies.repository.deleteExactRoom(roomId);
+  const key = `room:${roomId}`;
+  const { rawState, ttlSeconds } = await dependencies.redis.snapshotAndDelete(key);
+  try {
+    await dependencies.repository.deleteExactRoom(roomId);
+  } catch {
+    const durableRoomStillExists = await dependencies.repository
+      .hasRunMarkerParticipant(roomId, runId)
+      .catch(() => false);
+    if (!durableRoomStillExists) {
+      return partial(roomId, runId, "database-delete-outcome-ambiguous");
+    }
+    if (rawState === null) {
+      return retained(roomId, runId, "database-delete-failed-redis-was-absent");
+    }
+    if (ttlSeconds <= 0) {
+      return partial(roomId, runId, "redis-ttl-not-restorable");
+    }
+    const restored = await dependencies.redis
+      .set(key, rawState, "EX", ttlSeconds, "NX")
+      .catch(() => null);
+    const verified = await dependencies.redis.get(key).catch(() => null);
+    if (restored !== null && verified === rawState) {
+      return retained(roomId, runId, "database-delete-failed-restored");
+    }
+    return partial(roomId, runId, "redis-restore-not-proven");
+  }
 
-  return { deleted: true, retainedReason: null, roomId, runId };
+  return { deleted: true, retainedReason: null, roomId, runId, cleanupStatus: "deleted", failureReason: null };
 }
 
 export async function runSiteTestCleanup(
@@ -91,10 +115,20 @@ function isExactId(value: unknown): value is string {
 function failureResult(request: SiteTestCleanupRequest): SiteTestCleanupResult {
   return {
     deleted: false,
-    retainedReason: "cleanup-failed",
+    retainedReason: null,
     roomId: exactIdOrEmpty(request.roomId),
-    runId: exactIdOrEmpty(request.runId)
+    runId: exactIdOrEmpty(request.runId),
+    cleanupStatus: "partial",
+    failureReason: "cleanup-failed"
   };
+}
+
+function retained(roomId: string, runId: string, reason: string): SiteTestCleanupResult {
+  return { deleted: false, retainedReason: reason, roomId, runId, cleanupStatus: "retained", failureReason: null };
+}
+
+function partial(roomId: string, runId: string, reason: string): SiteTestCleanupResult {
+  return { deleted: false, retainedReason: null, roomId, runId, cleanupStatus: "partial", failureReason: reason };
 }
 
 async function main(): Promise<void> {
@@ -124,9 +158,8 @@ async function main(): Promise<void> {
 }
 
 async function createProductionDependencies() {
-  const [redisModule, adapterModule, repositoryModule, dbModule] = await Promise.all([
+  const [redisModule, repositoryModule, dbModule] = await Promise.all([
     import("./redis"),
-    import("./redis-key-value-store"),
     import("./repositories/room-repository"),
     import("./db")
   ]);
@@ -137,7 +170,25 @@ async function createProductionDependencies() {
     redisClient,
     disconnectPrisma: () => dbModule.prisma.$disconnect(),
     dependencies: {
-      redis: adapterModule.createRedisKeyValueStore(redisClient),
+      redis: {
+        get: (key: string) => redisClient.get(key),
+        set: (key: string, value: string, mode: "EX", ttlSeconds: number, condition: "NX") =>
+          redisClient.set(key, value, mode, ttlSeconds, condition),
+        snapshotAndDelete: async (key: string) => {
+          const result = await redisClient.eval(
+            "local v=redis.call('GET',KEYS[1]); local t=redis.call('TTL',KEYS[1]); if v then redis.call('DEL',KEYS[1]); end; return {v,t}",
+            1,
+            key
+          );
+          if (!Array.isArray(result) || result.length !== 2) {
+            throw new Error("Redis snapshot/delete returned an invalid result");
+          }
+          return {
+            rawState: typeof result[0] === "string" ? result[0] : null,
+            ttlSeconds: Number(result[1])
+          };
+        }
+      },
       repository: new repositoryModule.RoomRepository()
     }
   };

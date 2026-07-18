@@ -14,6 +14,13 @@ export interface ProductionAppContainer {
   imageId: string;
 }
 
+export class ProductionCleanupError extends Error {
+  constructor(message: string, readonly cleanupStatus: "retained" | "partial", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ProductionCleanupError";
+  }
+}
+
 export interface DiscoverProductionAppContainerOptions {
   expectedImageId: string;
   project?: string;
@@ -83,31 +90,44 @@ export async function runExactProductionCleanup(input: {
   roomId: string;
   runId: string;
   run?: DockerCommandRunner;
-}): Promise<{ deleted: true; retainedReason: null; roomId: string; runId: string }> {
+}): Promise<{ deleted: true; retainedReason: null; roomId: string; runId: string; cleanupStatus: "deleted"; failureReason: null }> {
   const invocation = buildProductionCleanupCommand({
     containerId: input.containerId,
     roomId: input.roomId,
     runId: input.runId
   });
-  const result = await (input.run ?? runProcess)(invocation.command, invocation.args);
+  let result: Awaited<ReturnType<DockerCommandRunner>>;
+  try {
+    result = await (input.run ?? runProcess)(invocation.command, invocation.args);
+  } catch (error) {
+    throw new ProductionCleanupError(
+      "The cleanup process outcome is unknown after invocation; cleanup state is partial/unknown",
+      "partial",
+      { cause: error }
+    );
+  }
   const line = result.stdout.trim().split(/\r?\n/u).at(-1) ?? "";
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch (error) {
-    throw new Error("The deployed image did not return valid cleanup JSON; retaining the exact room", { cause: error });
+    throw new ProductionCleanupError("The deployed image did not return valid cleanup JSON; cleanup state is partial/unknown", "partial", { cause: error });
   }
   if (!isRecord(parsed)) {
-    throw new Error("The deployed image did not return valid cleanup JSON; retaining the exact room");
+    throw new ProductionCleanupError("The deployed image did not return valid cleanup JSON; cleanup state is partial/unknown", "partial");
   }
   if (parsed.roomId !== input.roomId || parsed.runId !== input.runId) {
-    throw new Error("Cleanup result identity mismatch; retaining the exact room");
+    throw new ProductionCleanupError("Cleanup result identity mismatch; cleanup state is partial/unknown", "partial");
   }
-  if (parsed.deleted !== true || parsed.retainedReason !== null) {
+  if (parsed.cleanupStatus === "partial") {
+    const reason = typeof parsed.failureReason === "string" ? parsed.failureReason : "partial-cleanup";
+    throw new ProductionCleanupError(`Cleanup partially changed the exact room: ${reason}`, "partial");
+  }
+  if (parsed.deleted !== true || parsed.retainedReason !== null || parsed.cleanupStatus !== "deleted") {
     const reason = typeof parsed.retainedReason === "string" ? parsed.retainedReason : "cleanup-not-proven";
-    throw new Error(`Cleanup retained the exact room: ${reason}`);
+    throw new ProductionCleanupError(`Cleanup retained the exact room: ${reason}`, "retained");
   }
-  return { deleted: true, retainedReason: null, roomId: input.roomId, runId: input.runId };
+  return { deleted: true, retainedReason: null, roomId: input.roomId, runId: input.runId, cleanupStatus: "deleted", failureReason: null };
 }
 
 export function combineProductFailureWithRetainedCleanup(input: {
@@ -187,9 +207,10 @@ export function combineSmokeFailureWithRetainedCleanup(input: {
 
 export function augmentSmokeResultWithRetainedCleanup(
   prior: FinishCaseInput,
-  input: { roomId: string; ownershipMarker: string; cleanupReason: string }
+  input: { roomId: string; ownershipMarker: string; cleanupReason: string; cleanupStatus?: "retained" | "partial" }
 ): FinishCaseInput {
-  const retentionDetails = { roomId: input.roomId, ownershipMarker: input.ownershipMarker, retainedReason: input.cleanupReason };
+  const cleanupStatus = input.cleanupStatus ?? "retained";
+  const retentionDetails = { roomId: input.roomId, ownershipMarker: input.ownershipMarker, retainedReason: input.cleanupReason, cleanupStatus };
   return {
     ...prior,
     verdict: prior.verdict === "FAIL" ? "FAIL" : "INCONCLUSIVE",
@@ -203,7 +224,7 @@ export function augmentSmokeResultWithRetainedCleanup(
       { id: "EXP-010-A04", outcome: "inconclusive", evidenceEventIds: [], summary: input.cleanupReason, details: retentionDetails }
     ],
     failures: [...prior.failures, {
-      code: "EXACT_CLEANUP_RETAINED",
+      code: cleanupStatus === "partial" ? "EXACT_CLEANUP_PARTIAL" : "EXACT_CLEANUP_RETAINED",
       summary: input.cleanupReason,
       stage: "EXP-010-A04",
       evidenceEventIds: [],

@@ -11,10 +11,15 @@ export interface CaseVerdictInput {
 export interface RunVerdictInput {
   results: CaseReport["results"];
   cases: readonly CaseVerdictInput[];
+  baseResults?: CaseReport["results"];
 }
 
 export function deriveCaseVerdict(input: CaseVerdictInput): OverallVerdict {
   const { assertions, results } = input;
+
+  if (isCleanupOnlyUncertainty(input)) {
+    return "FAIL";
+  }
 
   if (
     results.harness.status !== "pass" ||
@@ -38,9 +43,16 @@ export function deriveCaseVerdict(input: CaseVerdictInput): OverallVerdict {
 }
 
 export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
+  const cleanupOnly = input.cases.some(isCleanupOnlyUncertainty) &&
+    input.cases.every((caseReport) =>
+      (caseReport.results.harness.status === "pass" && caseReport.results.environment.status === "pass") ||
+      isCleanupOnlyUncertainty(caseReport)
+    ) &&
+    input.baseResults?.harness.status === "pass" &&
+    input.baseResults.environment.status === "pass";
   if (
-    input.results.harness.status !== "pass" ||
-    input.results.environment.status !== "pass" ||
+    (!cleanupOnly && input.results.harness.status !== "pass") ||
+    (!cleanupOnly && input.results.environment.status !== "pass") ||
     input.results.product.status === "inconclusive" ||
     input.cases.length === 0
   ) {
@@ -59,6 +71,35 @@ export function deriveRunVerdict(input: RunVerdictInput): OverallVerdict {
   }
 
   return input.results.product.status === "pass" ? "PASS" : "INCONCLUSIVE";
+}
+
+function isCleanupOnlyUncertainty(caseReport: CaseVerdictInput): boolean {
+  const inconclusiveAssertions = caseReport.assertions.filter(
+    ({ outcome }) => outcome === "inconclusive"
+  );
+  if (
+    caseReport.results.product.status !== "fail" ||
+    caseReport.results.harness.status !== "inconclusive" ||
+    caseReport.results.environment.status !== "inconclusive" ||
+    !caseReport.assertions.some(({ outcome }) => outcome === "fail") ||
+    inconclusiveAssertions.length !== 1 ||
+    inconclusiveAssertions[0]?.id !== "EXP-010-A04"
+  ) {
+    return false;
+  }
+  const cleanupFailures = caseReport.failures?.filter(({ code }) => code === "EXACT_CLEANUP_RETAINED") ?? [];
+  if (cleanupFailures.length !== 1 || caseReport.failures?.some(({ code }) => code !== "EXACT_CLEANUP_RETAINED" && code !== "PRODUCT_ASSERTION_FAILED")) {
+    return false;
+  }
+  const cleanup = cleanupFailures[0];
+  const details = cleanup.details;
+  return cleanup.stage === "EXP-010-A04" &&
+    typeof details === "object" && details !== null && !Array.isArray(details) &&
+    typeof (details as Record<string, unknown>).roomId === "string" &&
+    typeof (details as Record<string, unknown>).ownershipMarker === "string" &&
+    typeof (details as Record<string, unknown>).retainedReason === "string" &&
+    ((details as Record<string, unknown>).cleanupStatus === undefined ||
+      (details as Record<string, unknown>).cleanupStatus === "retained");
 }
 
 function isExactNonExecutedSmokeGate(caseReport: CaseVerdictInput): boolean {

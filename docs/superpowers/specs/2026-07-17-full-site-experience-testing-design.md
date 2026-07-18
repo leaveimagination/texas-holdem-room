@@ -235,19 +235,20 @@ outputs/site-test/<runId>/
   events.json
   report.json
   report.html
-  videos/
-    <caseId>-<role>.webm
-  traces/
-    <caseId>-<role>.zip
-  screenshots/
-    <caseId>-<checkpoint>-<role>.png
-  visual-diffs/
+  cases/
+    <caseId>/<attemptId>/
+      videos/<role>/*.webm
+      traces/<role>.zip
+      screenshots/<role>/*.png
+      visual-diffs/
   diagnostics/
     docker.txt
     server.log
     browser-console.json
     websocket-events.json
 ```
+
+The finalized `<runId>` directory is the canonical validated evidence pack. During execution, recorders also write structured per-attempt reports and events to the exact sibling `.case-evidence-<runId>/`; aggregation reads this non-canonical sidecar. It may be retained for diagnosis, but must not be shared in place of the validated canonical pack and may only be removed by its exact run-scoped path.
 
 Every structured event contains:
 

@@ -297,7 +297,7 @@ export async function writeExperienceReport(
     runId: input.runId,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
-    verdict: deriveRunVerdict({ cases, results }),
+    verdict: deriveRunVerdict({ cases, results, baseResults }),
     results,
     thresholds: EXPERIENCE_THRESHOLDS,
     cases,
