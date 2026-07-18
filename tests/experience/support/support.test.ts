@@ -7,6 +7,7 @@ import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { CaseReportSchema, type CaseReport } from "../evidence/contracts";
 import type { FinishCaseInput } from "../evidence/recorder";
 import { ActorPool } from "./actor-pool";
+import { settleBrowserMonitors } from "./browser-monitor";
 import { ProductAssertionError, observeProduct } from "./experience-test";
 import { ExperienceCaseRunError, runExperienceCase } from "./run-case";
 import { installBrowserTelemetry, projectWebSocketPayload, type TelemetryEvent } from "./telemetry";
@@ -18,6 +19,30 @@ afterEach(async () => {
 });
 
 describe("experience support", () => {
+  it("cancels and boundedly settles every eager browser monitor after an early scenario failure", async () => {
+    const events: string[] = [];
+    const monitor = (id: string) => {
+      let reject!: (error: Error) => void;
+      const result = new Promise<never>((_resolve, rejectResult) => { reject = rejectResult; });
+      return {
+        result: result.finally(() => { events.push(`settled:${id}`); }),
+        cancel: async () => { events.push(`cancel:${id}`); reject(new Error(`cancelled:${id}`)); }
+      };
+    };
+    const monitors = [monitor("timeline"), monitor("p1"), monitor("p2"), monitor("p3"), monitor("p4")];
+
+    await expect(Promise.race([
+      settleBrowserMonitors(monitors),
+      delay(100).then(() => { throw new Error("monitor cleanup exceeded failure-path budget"); })
+    ])).resolves.toBeUndefined();
+    await delay(0);
+
+    expect(events).toEqual([
+      "cancel:timeline", "cancel:p1", "cancel:p2", "cancel:p3", "cancel:p4",
+      "settled:timeline", "settled:p1", "settled:p2", "settled:p3", "settled:p4"
+    ]);
+  });
+
   it("projects WebSocket frames into safe fields without retaining raw payloads", () => {
     const projection = projectWebSocketPayload(JSON.stringify({
       type: "room_snapshot",

@@ -15,6 +15,7 @@ import { consumeFixtureSeedBrokerForPlaywrightWorker, seedFixtureThroughBroker, 
 import type { FixturePlayerAction, KnownSecretRegistry, PokerFixture } from "../fixtures/types";
 import { RoomPage } from "../page-objects/room-page";
 import { ActorPool, type ActorHandle } from "../support/actor-pool";
+import { settleBrowserMonitors, type BrowserMonitor } from "../support/browser-monitor";
 import { ProductAssertionError, assertProductCondition, observeProduct } from "../support/experience-test";
 import { runExperienceCase, type AttemptCoordinates } from "../support/run-case";
 import type { TelemetryEvent } from "../support/telemetry";
@@ -45,7 +46,7 @@ test("EXP-004 renders a four-way all-in as a complete cinematic timeline", async
       timeline = await expected(timelineMonitor.result, coordinates, "EXP-004-A03", "spectator", "complete runout timeline");
       playerActionMaxima = await Promise.all(actionMonitors.map((monitor) => expected(monitor.result, coordinates, "EXP-004-A04", "all-players", "disabled actions through settlement")));
     } finally {
-      await Promise.allSettled([timelineMonitor.cancel(), ...actionMonitors.map((monitor) => monitor.cancel())]);
+      await settleBrowserMonitors([timelineMonitor, ...actionMonitors]);
     }
     await f.recorder.recordEvent({ stage: "EXP-004-timeline", type: "rendered-frame-timeline", status: "observed", details: { timeline } });
 
@@ -204,7 +205,6 @@ async function provision<Role extends string>(f: Fx, poker: PokerFixture<Role, a
 }
 
 interface Frame { kind: "showdown" | "board" | "settlement"; at: number; boardLength: number; enabledActions: number }
-interface BrowserMonitor<T> { result: Promise<T>; cancel(): Promise<void> }
 async function startRunoutTimeline(page: Page): Promise<BrowserMonitor<Frame[]>> {
   const key = `__siteTimeline_${Math.random().toString(36).slice(2)}`;
   await page.evaluate((stateKey) => {
@@ -229,7 +229,7 @@ function monitorHandle<T>(page: Page, key: string, timeout: number): BrowserMoni
     }
     throw Object.assign(new Error(`browser monitor exceeded ${timeout}ms`), { name: "TimeoutError" });
   })();
-  return { result, cancel: async () => { await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; if (state) state.cancelled = true; }, key).catch(() => undefined); } };
+  return { result, cancel: async () => { await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; if (state) { state.cancelled = true; state.done = true; } }, key).catch(() => undefined); } };
 }
 async function perform(room: RoomPage, action: FixturePlayerAction) { await room.performAction(action.action.type, "amountTo" in action.action ? action.action.amountTo : undefined); }
 async function readHandResult(page: Page) { await page.locator('[data-hand-result-number]').waitFor({ state: "visible", timeout: 15_000 }); return await page.locator('[aria-label="Hand result"]').evaluate((root) => ({ players: Array.from(root.querySelectorAll('.hand-result-player')).map((p) => ({ name: p.querySelector('span')?.textContent?.trim() ?? "", text: p.querySelector('small')?.textContent?.trim() ?? "", net: p.querySelector('strong')?.textContent?.trim() ?? "", end: Number((p.querySelector('small')?.textContent ?? "").split('→')[1]?.replaceAll(',', '').trim()) })), pots: Array.from(root.querySelectorAll('.hand-result-pots > div')).map((p) => ({ amount: Number((p.querySelector('span')?.textContent ?? '').match(/[\d,]+$/)?.[0].replaceAll(',', '')), awards: p.querySelector('strong')?.textContent ?? "" })) })); }
