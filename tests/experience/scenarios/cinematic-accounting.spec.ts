@@ -15,7 +15,7 @@ import { consumeFixtureSeedBrokerForPlaywrightWorker, seedFixtureThroughBroker, 
 import type { FixturePlayerAction, KnownSecretRegistry, PokerFixture } from "../fixtures/types";
 import { RoomPage } from "../page-objects/room-page";
 import { ActorPool, type ActorHandle } from "../support/actor-pool";
-import { settleBrowserMonitors, type BrowserMonitor } from "../support/browser-monitor";
+import { createBrowserMonitorLifecycle, settleBrowserMonitors, type BrowserMonitor } from "../support/browser-monitor";
 import { ProductAssertionError, assertProductCondition, observeProduct } from "../support/experience-test";
 import { runExperienceCase, type AttemptCoordinates } from "../support/run-case";
 import type { TelemetryEvent } from "../support/telemetry";
@@ -220,16 +220,20 @@ async function startRunoutActionMonitor(page: Page): Promise<BrowserMonitor<numb
   return monitorHandle<number>(page, key, 21_000);
 }
 function monitorHandle<T>(page: Page, key: string, timeout: number): BrowserMonitor<T> {
-  const result = (async () => {
-    const deadline = performance.now() + timeout;
-    while (performance.now() <= deadline) {
-      const outcome = await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; return state?.done ? { done: true, error: state.error, value: state.value } : { done: false }; }, key);
-      if (outcome.done) { await page.evaluate((stateKey) => { delete (window as unknown as Record<string, any>)[stateKey]; }, key); if (outcome.error) throw Object.assign(new Error(String(outcome.error)), { name: "TimeoutError" }); return outcome.value as T; }
-      await delay(16);
-    }
-    throw Object.assign(new Error(`browser monitor exceeded ${timeout}ms`), { name: "TimeoutError" });
-  })();
-  return { result, cancel: async () => { await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; if (state) { state.cancelled = true; state.done = true; } }, key).catch(() => undefined); } };
+  return createBrowserMonitorLifecycle<T>({
+    observe: async (signal) => {
+      const deadline = performance.now() + timeout;
+      while (performance.now() <= deadline) {
+        signal.throwIfAborted();
+        const outcome = await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; return state?.done ? { done: true, error: state.error, value: state.value } : { done: false }; }, key);
+        if (outcome.done) { if (outcome.error) throw Object.assign(new Error(String(outcome.error)), { name: "TimeoutError" }); return outcome.value as T; }
+        await delay(16, undefined, { signal });
+      }
+      throw Object.assign(new Error(`browser monitor exceeded ${timeout}ms`), { name: "TimeoutError" });
+    },
+    cancelBrowser: async () => { await page.evaluate((stateKey) => { const state = (window as unknown as Record<string, any>)[stateKey]; if (state) state.cancelled = true; }, key).catch(() => undefined); },
+    cleanupBrowser: async () => { await page.evaluate((stateKey) => { delete (window as unknown as Record<string, any>)[stateKey]; }, key).catch(() => undefined); }
+  });
 }
 async function perform(room: RoomPage, action: FixturePlayerAction) { await room.performAction(action.action.type, "amountTo" in action.action ? action.action.amountTo : undefined); }
 async function readHandResult(page: Page) { await page.locator('[data-hand-result-number]').waitFor({ state: "visible", timeout: 15_000 }); return await page.locator('[aria-label="Hand result"]').evaluate((root) => ({ players: Array.from(root.querySelectorAll('.hand-result-player')).map((p) => ({ name: p.querySelector('span')?.textContent?.trim() ?? "", text: p.querySelector('small')?.textContent?.trim() ?? "", net: p.querySelector('strong')?.textContent?.trim() ?? "", end: Number((p.querySelector('small')?.textContent ?? "").split('→')[1]?.replaceAll(',', '').trim()) })), pots: Array.from(root.querySelectorAll('.hand-result-pots > div')).map((p) => ({ amount: Number((p.querySelector('span')?.textContent ?? '').match(/[\d,]+$/)?.[0].replaceAll(',', '')), awards: p.querySelector('strong')?.textContent ?? "" })) })); }
