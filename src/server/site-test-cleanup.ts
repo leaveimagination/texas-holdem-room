@@ -117,11 +117,11 @@ function rawStateHasExactRunOwner(rawState: string, runId: string): boolean {
   if (typeof parsed !== "object" || parsed === null || !("seats" in parsed) || !Array.isArray((parsed as { seats?: unknown }).seats)) {
     return false;
   }
-  const exactPrefix = `SITE-${runId}-`;
+  const exactMarker = `SITE-${runId}-smoke-player`;
   return (parsed as { seats: unknown[] }).seats.some((seat) =>
     typeof seat === "object" && seat !== null &&
     "displayName" in seat && typeof seat.displayName === "string" &&
-    seat.displayName.startsWith(exactPrefix));
+    seat.displayName === exactMarker);
 }
 
 export async function runSiteTestCleanup(

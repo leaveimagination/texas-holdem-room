@@ -159,10 +159,10 @@ describe("RoomRepository participant tokens", () => {
     expect(roomUpdateMock).not.toHaveBeenCalled();
   });
 
-  it("finds an ownership marker only within the exact room and run prefix", async () => {
+  it("finds only the exact smoke-player ownership marker within the exact room", async () => {
     findManyMock.mockResolvedValue([
       { displayName: "Guest" },
-      { displayName: "SITE-run_exact-Alice" }
+      { displayName: "SITE-run_exact-smoke-player" }
     ]);
     const repository = new RoomRepository();
 
@@ -172,6 +172,12 @@ describe("RoomRepository participant tokens", () => {
       where: { roomId: "room_exact" },
       select: { displayName: true }
     });
+  });
+
+  it("rejects a same-run prefix marker belonging to a foreign actor", async () => {
+    findManyMock.mockResolvedValue([{ displayName: "SITE-run_exact-foreign" }]);
+    const repository = new RoomRepository();
+    await expect(repository.hasRunMarkerParticipant("room_exact", "run_exact")).resolves.toBe(false);
   });
 
   it.each([

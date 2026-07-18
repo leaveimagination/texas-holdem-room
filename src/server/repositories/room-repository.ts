@@ -13,9 +13,9 @@ export class RoomRepository {
       where: { roomId },
       select: { displayName: true }
     });
-    const markerPrefix = `SITE-${runId}-`;
+    const exactMarker = `SITE-${runId}-smoke-player`;
 
-    return participants.some((participant) => participant.displayName.startsWith(markerPrefix));
+    return participants.some((participant) => participant.displayName === exactMarker);
   }
 
   async deleteExactRoom(roomId: string): Promise<void> {

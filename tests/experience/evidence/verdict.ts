@@ -105,24 +105,31 @@ function isCleanupOnlyUncertainty(caseReport: CaseVerdictInput): boolean {
   const failedAssertion = failedAssertions[0];
   const cleanupAssertion = inconclusiveAssertions[0];
   const details = cleanup.details;
+  const productEvent = traceableEvent(product.evidenceEventIds, failedAssertion.evidenceEventIds, caseReport, failedAssertion.id, "product-failure");
+  const cleanupEvent = traceableEvent(cleanup.evidenceEventIds, cleanupAssertion.evidenceEventIds, caseReport, "EXP-010-A04", "environment-cleanup");
+  const cleanupEventDetails = cleanupEvent?.details;
   return product.stage === failedAssertion.id &&
-    hasTraceableEvidence(product.evidenceEventIds, failedAssertion.evidenceEventIds, caseReport.evidenceEvents, failedAssertion.id, "product-failure") &&
+    productEvent !== undefined &&
     cleanup.stage === "EXP-010-A04" &&
-    hasTraceableEvidence(cleanup.evidenceEventIds, cleanupAssertion.evidenceEventIds, caseReport.evidenceEvents, "EXP-010-A04", "environment-cleanup") &&
+    cleanupEvent !== undefined && productEvent.id !== cleanupEvent.id &&
     typeof details === "object" && details !== null && !Array.isArray(details) &&
+    typeof cleanupEventDetails === "object" && cleanupEventDetails !== null && !Array.isArray(cleanupEventDetails) &&
     nonemptyString((details as Record<string, unknown>).roomId) &&
     nonemptyString(caseReport.runId) &&
-    nonemptyString((details as Record<string, unknown>).ownershipMarker) &&
-    ((details as Record<string, unknown>).ownershipMarker as string).startsWith(`SITE-${caseReport.runId}-`) &&
+    (details as Record<string, unknown>).ownershipMarker === `SITE-${caseReport.runId}-smoke-player` &&
+    (cleanupEventDetails as Record<string, unknown>).roomId === (details as Record<string, unknown>).roomId &&
+    (cleanupEventDetails as Record<string, unknown>).ownershipMarker === (details as Record<string, unknown>).ownershipMarker &&
     nonemptyString((details as Record<string, unknown>).retainedReason) &&
     ((details as Record<string, unknown>).cleanupStatus === undefined ||
       (details as Record<string, unknown>).cleanupStatus === "retained");
 }
 
-function hasTraceableEvidence(left: readonly string[], right: readonly string[], events: readonly EvidenceEvent[] | undefined, stage: string, type: string): boolean {
-  return left.every(nonemptyString) && right.every(nonemptyString) &&
-    left.length > 0 && right.length > 0 && left.some((id) =>
-      right.includes(id) && events?.some((event) => event.id === id && event.stage === stage && event.type === type));
+function traceableEvent(left: readonly string[], right: readonly string[], report: CaseVerdictInput, stage: string, type: string): EvidenceEvent | undefined {
+  if (!left.every(nonemptyString) || !right.every(nonemptyString) || left.length === 0 || right.length === 0) return undefined;
+  return report.evidenceEvents?.find((event) =>
+    left.includes(event.id) && right.includes(event.id) &&
+    event.runId === report.runId && event.caseId === "EXP-010" && event.attemptId === "A-001" &&
+    event.stage === stage && event.type === type);
 }
 
 function nonemptyString(value: unknown): value is string {

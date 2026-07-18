@@ -130,7 +130,7 @@ describe("site test cleanup", () => {
 
   it("reports partial when Redis is recreated by an unowned writer", async () => {
     const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
-    const redis = { get: vi.fn().mockResolvedValue(JSON.stringify({ seats: [{ displayName: "ordinary-player" }], history: ["SITE-run_exact-old"] })), snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: null, ttlSeconds: -2 }), compareAndDelete: vi.fn(), set: vi.fn() };
+    const redis = { get: vi.fn().mockResolvedValue(JSON.stringify({ seats: [{ displayName: "SITE-run_exact-foreign" }], history: ["SITE-run_exact-smoke-player"] })), snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: null, ttlSeconds: -2 }), compareAndDelete: vi.fn(), set: vi.fn() };
     const result = await cleanupSiteTestRoom(
       { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
       { redis, repository: { hasRunMarkerParticipant: vi.fn().mockResolvedValue(true), deleteExactRoom: vi.fn() }, sleep: vi.fn() }
@@ -141,7 +141,7 @@ describe("site test cleanup", () => {
 
   it("reports partial when a same-run writer continuously recreates Redis through the bounded budget", async () => {
     const { cleanupSiteTestRoom } = await import("@/server/site-test-cleanup");
-    const recreated = JSON.stringify({ seats: [{ displayName: "SITE-run_exact-timer" }] });
+    const recreated = JSON.stringify({ seats: [{ displayName: "SITE-run_exact-smoke-player" }] });
     const redis = { get: vi.fn().mockResolvedValue(recreated), snapshotAndDelete: vi.fn().mockResolvedValue({ rawState: null, ttlSeconds: -2 }), compareAndDelete: vi.fn().mockResolvedValue(true), set: vi.fn() };
     const result = await cleanupSiteTestRoom(
       { roomId: "room_exact", runId: "run_exact", cleanupAllowed: "1" },
