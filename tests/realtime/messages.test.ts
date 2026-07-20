@@ -106,6 +106,26 @@ describe("realtime messages", () => {
     ).toBe(false);
   });
 
+  it("accepts only an exact host kick command", () => {
+    expect(ClientMessageSchema.parse({
+      type: "kick_player",
+      roomId: "room1",
+      hostToken: "host-secret",
+      participantId: "p1"
+    })).toEqual({ type: "kick_player", roomId: "room1", hostToken: "host-secret", participantId: "p1" });
+
+    expect(ClientMessageSchema.safeParse({ type: "kick_player", roomId: "room1", hostToken: "host-secret", participantId: "" }).success).toBe(false);
+    expect(ClientMessageSchema.safeParse({ type: "kick_player", roomId: "room1", hostToken: "host-secret", participantId: "p1", extra: true }).success).toBe(false);
+  });
+
+  it("defines the targeted player kicked event", () => {
+    const message = {
+      type: "player_kicked",
+      payload: { participantId: "p1", displayName: "Alice" }
+    } satisfies ServerMessage;
+    expect(message.type).toBe("player_kicked");
+  });
+
   it("defines the authoritative flow event messages", () => {
     const messages = [
       {

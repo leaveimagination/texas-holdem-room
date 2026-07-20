@@ -35,6 +35,7 @@ model RoomParticipant {
   tokenHash     String?
   seatNumber    Int?
   joinedAt      DateTime @default(now())
+  kickedAt      DateTime?
   room          Room     @relation(fields: [roomId], references: [id])
   handPlayers   HandPlayer[]
   actions       HandAction[]
@@ -43,6 +44,7 @@ model RoomParticipant {
 
   @@unique([roomId, seatNumber])
   @@index([roomId, tokenHash])
+  @@index([roomId, kickedAt])
 }
 
 model Hand {

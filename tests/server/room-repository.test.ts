@@ -15,6 +15,7 @@ const {
   buyInDeleteManyMock,
   tournamentResultDeleteManyMock,
   participantDeleteManyMock,
+  participantUpdateManyMock,
   roomDeleteMock
 } = vi.hoisted(() => ({
   buyInUpsertMock: vi.fn(),
@@ -30,6 +31,7 @@ const {
   buyInDeleteManyMock: vi.fn(),
   tournamentResultDeleteManyMock: vi.fn(),
   participantDeleteManyMock: vi.fn(),
+  participantUpdateManyMock: vi.fn(),
   roomDeleteMock: vi.fn()
 }));
 
@@ -45,7 +47,8 @@ vi.mock("@/server/db", () => ({
     roomParticipant: {
       create: createMock,
       findFirst: findFirstMock,
-      findMany: findManyMock
+      findMany: findManyMock,
+      updateMany: participantUpdateManyMock
     }
   }
 }));
@@ -65,6 +68,7 @@ describe("RoomRepository participant tokens", () => {
     buyInDeleteManyMock.mockReset();
     tournamentResultDeleteManyMock.mockReset();
     participantDeleteManyMock.mockReset();
+    participantUpdateManyMock.mockReset();
     roomDeleteMock.mockReset();
   });
 
@@ -97,10 +101,26 @@ describe("RoomRepository participant tokens", () => {
     expect(findFirstMock).toHaveBeenCalledWith({
       where: {
         roomId: "room_1",
-        tokenHash: hashToken("participant_secret")
+        tokenHash: hashToken("participant_secret"),
+        kickedAt: null
       },
       select: { id: true }
     });
+  });
+
+  it("revokes an exact participant only once without deleting history", async () => {
+    participantUpdateManyMock.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const repository = new RoomRepository();
+    const kickedAt = new Date(10_000);
+
+    await expect(repository.kickParticipant("room_1", "participant_1", kickedAt)).resolves.toBe(true);
+    await expect(repository.kickParticipant("room_1", "participant_1", kickedAt)).resolves.toBe(false);
+
+    expect(participantUpdateManyMock).toHaveBeenCalledWith({
+      where: { roomId: "room_1", id: "participant_1", kickedAt: null },
+      data: { kickedAt }
+    });
+    expect(participantDeleteManyMock).not.toHaveBeenCalled();
   });
 
   it("upserts one deterministic cumulative top-up per participant and target hand", async () => {

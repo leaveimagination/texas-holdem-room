@@ -24,4 +24,13 @@ describe("Prisma migration", () => {
 
     expect(sql).toContain('ALTER TABLE "Room" ADD COLUMN "sessionSummary" JSONB');
   });
+
+  it("adds durable participant kick revocation", () => {
+    const sql = readFileSync(
+      join(process.cwd(), "prisma", "migrations", "20260720130000_add_participant_kicked_at", "migration.sql"),
+      "utf8"
+    );
+    expect(sql).toContain('ADD COLUMN "kickedAt" TIMESTAMP(3)');
+    expect(sql).toContain('CREATE INDEX "RoomParticipant_roomId_kickedAt_idx"');
+  });
 });

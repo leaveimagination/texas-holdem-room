@@ -184,12 +184,21 @@ export class RoomRepository {
     const participant = await prisma.roomParticipant.findFirst({
       where: {
         roomId,
-        tokenHash: hashToken(token)
+        tokenHash: hashToken(token),
+        kickedAt: null
       },
       select: { id: true }
     });
 
     return participant?.id ?? null;
+  }
+
+  async kickParticipant(roomId: string, participantId: string, kickedAt: Date): Promise<boolean> {
+    const result = await prisma.roomParticipant.updateMany({
+      where: { roomId, id: participantId, kickedAt: null },
+      data: { kickedAt }
+    });
+    return result.count === 1;
   }
 
   async createParticipant(roomId: string, displayName: string): Promise<CreatedParticipant> {
