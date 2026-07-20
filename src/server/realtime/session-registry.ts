@@ -42,4 +42,23 @@ export class SessionRegistry {
       session.socket.send(JSON.stringify(makeMessage(session)));
     }
   }
+
+  evictParticipant(
+    roomId: string,
+    participantId: string,
+    event: Extract<ServerMessage, { type: "player_kicked" }>
+  ): number {
+    let evicted = 0;
+    for (const session of this.sessions) {
+      if (session.roomId !== roomId || session.participantId !== participantId) {
+        continue;
+      }
+      session.socket.send(JSON.stringify(event));
+      session.roomId = "";
+      session.participantId = null;
+      session.host = false;
+      evicted += 1;
+    }
+    return evicted;
+  }
 }

@@ -421,7 +421,8 @@ function repositoryMocks() {
     recordHand: vi.fn().mockResolvedValue(undefined),
     recordBuyIn: vi.fn().mockResolvedValue(undefined),
     recordTopUp: vi.fn().mockResolvedValue(undefined),
-    finishRoom: vi.fn().mockResolvedValue(undefined)
+    finishRoom: vi.fn().mockResolvedValue(undefined),
+    kickParticipant: vi.fn().mockResolvedValue(true)
   };
 }
 

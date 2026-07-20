@@ -15,6 +15,7 @@ import {
   claimSeat,
   finalizeSession,
   getApplicableTopUps,
+  kickParticipant as kickRoomParticipant,
   markDisconnected,
   queueTopUp,
   requestRoomEnd,
@@ -31,7 +32,7 @@ import { SessionRegistry, type Session } from "./session-registry";
 
 type GameRoomRepository = Pick<
   RoomRepository,
-  "recordHand" | "recordBuyIn" | "recordTopUp" | "finishRoom"
+  "recordHand" | "recordBuyIn" | "recordTopUp" | "finishRoom" | "kickParticipant"
 >;
 
 export interface GameServerOptions {
@@ -291,6 +292,38 @@ async function handleClientCommand(
         return;
       }
       await saveBroadcastAndSchedule(context, requested, [requestEvent]);
+      return;
+    }
+    case "kick_player": {
+      requireHost(session);
+      const targetSeat = room.seats.find((seat) => seat.participantId === message.participantId);
+      if (!targetSeat) {
+        throw new RealtimeCommandError("PARTICIPANT_NOT_FOUND", "Participant is not in the room");
+      }
+      const displayName = targetSeat.displayName ?? "A player";
+      const updated = kickRoomParticipant(room, message.participantId, context.now());
+      const revoked = await context.roomRepository.kickParticipant(
+        room.roomId,
+        message.participantId,
+        new Date(context.now())
+      );
+      if (!revoked) {
+        throw new RealtimeCommandError("PARTICIPANT_NOT_FOUND", "Participant is not in the room");
+      }
+      if (updated.hand?.finished && !room.hand?.finished) {
+        await context.roomRepository.recordHand(updated);
+      }
+      await context.liveRooms.saveRoom(updated);
+      context.sessions.evictParticipant(room.roomId, message.participantId, {
+        type: "player_kicked",
+        payload: { participantId: message.participantId, displayName }
+      });
+      broadcastSnapshot(context.sessions, updated);
+      context.sessions.broadcast(room.roomId, () => ({
+        type: "system_message",
+        payload: { message: `${displayName} was removed by the host` }
+      }));
+      scheduleRoomTimer(context, updated);
       return;
     }
     case "handle_disconnect": {
@@ -593,6 +626,7 @@ type SupportedClientMessage = Extract<
       | "claim_seat"
       | "start_room"
       | "end_room"
+      | "kick_player"
       | "player_action"
       | "insurance_decision"
       | "rebuy"
@@ -607,6 +641,7 @@ function isSupportedMessage(message: ClientMessage): message is SupportedClientM
     "claim_seat",
     "start_room",
     "end_room",
+    "kick_player",
     "player_action",
     "insurance_decision",
     "rebuy",

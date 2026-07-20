@@ -54,6 +54,28 @@ describe("SessionRegistry", () => {
 
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "system_message", payload: { message: "p1" } }));
   });
+
+  it("evicts every matching participant before later room broadcasts", () => {
+    const registry = new SessionRegistry();
+    const playerSocket = { send: vi.fn() };
+    const spectatorSocket = { send: vi.fn() };
+    const player = registry.add("room1", "p1", playerSocket);
+    registry.add("room1", null, spectatorSocket);
+
+    expect(registry.evictParticipant("room1", "p1", {
+      type: "player_kicked",
+      payload: { participantId: "p1", displayName: "Alice" }
+    })).toBe(1);
+    registry.broadcast("room1", () => ({ type: "system_message", payload: { message: "remaining" } }));
+
+    expect(playerSocket.send).toHaveBeenCalledTimes(1);
+    expect(playerSocket.send).toHaveBeenCalledWith(JSON.stringify({
+      type: "player_kicked",
+      payload: { participantId: "p1", displayName: "Alice" }
+    }));
+    expect(player).toMatchObject({ roomId: "", participantId: null, host: false });
+    expect(spectatorSocket.send).toHaveBeenCalledWith(JSON.stringify({ type: "system_message", payload: { message: "remaining" } }));
+  });
 });
 
 describe("createGameServer", () => {
@@ -254,7 +276,8 @@ describe("createGameServer", () => {
       recordHand,
       recordBuyIn: vi.fn(),
       recordTopUp: vi.fn(),
-      finishRoom: vi.fn()
+      finishRoom: vi.fn(),
+      kickParticipant: vi.fn().mockResolvedValue(true)
     });
     const playerSocket = connect(url);
 
@@ -326,7 +349,8 @@ describe("createGameServer", () => {
       recordHand: vi.fn(),
       recordBuyIn: vi.fn(),
       recordTopUp: vi.fn(),
-      finishRoom: vi.fn()
+      finishRoom: vi.fn(),
+      kickParticipant: vi.fn().mockResolvedValue(true)
     });
     const p1Socket = connect(url);
     const p2Socket = connect(url);
@@ -382,6 +406,72 @@ describe("createGameServer", () => {
     });
   });
 
+  it("lets the host revoke and evict a player before notifying the remaining room", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+    const kickParticipant = vi.fn().mockResolvedValue(true);
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(), recordBuyIn: vi.fn(), recordTopUp: vi.fn(), finishRoom: vi.fn(), kickParticipant
+    });
+    const playerSocket = connect(url);
+    const hostSocket = connect(url);
+    await Promise.all([waitForOpen(playerSocket), waitForOpen(hostSocket)]);
+
+    const joined = nextMessage(playerSocket);
+    playerSocket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "P1" }));
+    await joined;
+
+    const playerKicked = nextMessage(playerSocket);
+    const hostMessages = nextMessages(hostSocket, 2);
+    hostSocket.send(JSON.stringify({ type: "kick_player", roomId, hostToken: "host-token", participantId: "p1" }));
+
+    await expect(playerKicked).resolves.toEqual({ type: "player_kicked", payload: { participantId: "p1", displayName: "P1" } });
+    await expect(hostMessages).resolves.toEqual([
+      expect.objectContaining({ type: "room_snapshot", payload: expect.objectContaining({ seats: expect.any(Array) }) }),
+      { type: "system_message", payload: { message: "P1 was removed by the host" } }
+    ]);
+    expect(kickParticipant).toHaveBeenCalledWith(roomId, "p1", expect.any(Date));
+    expect((await liveRooms.getRoom(roomId))?.seats.some((seat) => seat.participantId === "p1")).toBe(false);
+  });
+
+  it("does not mutate or broadcast when durable kick persistence fails", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(), recordBuyIn: vi.fn(), recordTopUp: vi.fn(), finishRoom: vi.fn(),
+      kickParticipant: vi.fn().mockRejectedValue(new Error("database unavailable"))
+    });
+    const hostSocket = connect(url);
+    await waitForOpen(hostSocket);
+
+    const error = nextMessage(hostSocket);
+    hostSocket.send(JSON.stringify({ type: "kick_player", roomId, hostToken: "host-token", participantId: "p1" }));
+
+    await expect(error).resolves.toMatchObject({ type: "error", payload: { code: "SERVER_BUSY" } });
+    expect((await liveRooms.getRoom(roomId))?.seats.some((seat) => seat.participantId === "p1")).toBe(true);
+  });
+
+  it("rejects forged and duplicate host kick commands without changing the room", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+    const kickParticipant = vi.fn().mockResolvedValue(false);
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(), recordBuyIn: vi.fn(), recordTopUp: vi.fn(), finishRoom: vi.fn(), kickParticipant
+    });
+    const socket = connect(url);
+    await waitForOpen(socket);
+
+    const forged = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "kick_player", roomId, hostToken: "forged", participantId: "p1" }));
+    await expect(forged).resolves.toMatchObject({ type: "error", payload: { code: "INVALID_HOST_TOKEN" } });
+    expect(kickParticipant).not.toHaveBeenCalled();
+
+    const duplicate = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "kick_player", roomId, hostToken: "host-token", participantId: "p1" }));
+    await expect(duplicate).resolves.toMatchObject({ type: "error", payload: { code: "PARTICIPANT_NOT_FOUND" } });
+    expect((await liveRooms.getRoom(roomId))?.seats.some((seat) => seat.participantId === "p1")).toBe(true);
+  });
+
   it("automatically starts the next hand after a busted player rebuys", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createFinishedHeadsUpRoomWithBustedPlayer());
@@ -392,7 +482,8 @@ describe("createGameServer", () => {
       recordHand: vi.fn(),
       recordBuyIn,
       recordTopUp,
-      finishRoom: vi.fn()
+      finishRoom: vi.fn(),
+      kickParticipant: vi.fn().mockResolvedValue(true)
     });
     const playerSocket = connect(url);
 

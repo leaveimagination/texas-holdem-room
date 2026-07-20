@@ -72,7 +72,8 @@ describe("spectator and disconnect realtime rules", () => {
       recordHand: vi.fn().mockResolvedValue(undefined),
       recordBuyIn,
       recordTopUp,
-      finishRoom: vi.fn().mockResolvedValue(undefined)
+      finishRoom: vi.fn().mockResolvedValue(undefined),
+      kickParticipant: vi.fn().mockResolvedValue(true)
     });
     const playerSocket = connect(url);
     const spectatorSocket = connect(url);
@@ -188,7 +189,8 @@ async function startTestServer(
     recordHand: vi.fn().mockResolvedValue(undefined),
     recordBuyIn: vi.fn().mockResolvedValue(undefined),
     recordTopUp: vi.fn().mockResolvedValue(undefined),
-    finishRoom: vi.fn().mockResolvedValue(undefined)
+    finishRoom: vi.fn().mockResolvedValue(undefined),
+    kickParticipant: vi.fn().mockResolvedValue(true)
   }
 ): Promise<{ server: HttpServer; url: string }> {
   const server = createServer();
