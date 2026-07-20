@@ -38,6 +38,15 @@ export interface RoomState {
   endAfterCurrentHand: boolean;
   sessionEndedAt: number | null;
   sessionSummary: SessionPlayerResult[] | null;
+  removedParticipants: Record<string, RemovedParticipantLedger>;
+}
+
+export interface RemovedParticipantLedger {
+  participantId: string;
+  displayName: string;
+  initialChips: number;
+  cumulativeBuyIn: number;
+  finalChips: number;
 }
 
 export interface HandActionRecord {
@@ -101,7 +110,8 @@ export function createInitialRoomState(settings: RoomSettings, roomId: string): 
     pendingTopUps: {},
     endAfterCurrentHand: false,
     sessionEndedAt: null,
-    sessionSummary: null
+    sessionSummary: null,
+    removedParticipants: {}
   };
 }
 
@@ -323,7 +333,7 @@ export function finalizeSession(state: RoomState, now: number): RoomState {
     return state;
   }
 
-  const players = state.seats
+  const seatedPlayers = state.seats
     .flatMap((seat) => {
       if (!seat.participantId) {
         return [];
@@ -340,6 +350,18 @@ export function finalizeSession(state: RoomState, now: number): RoomState {
         seatNumber: seat.seatNumber
       }];
     })
+    .map(({ seatNumber, ...player }) => ({ ...player, seatNumber }));
+  const removedPlayers = Object.values(state.removedParticipants).map((player) => ({
+    participantId: player.participantId,
+    displayName: player.displayName,
+    initialChips: player.initialChips,
+    topUpChips: Math.max(0, player.cumulativeBuyIn - player.initialChips),
+    finalChips: player.finalChips,
+    netChips: player.finalChips - player.cumulativeBuyIn,
+    seatNumber: Number.MAX_SAFE_INTEGER
+  }));
+  const players = [...seatedPlayers, ...removedPlayers]
+    .filter((player, index, all) => all.findIndex((candidate) => candidate.participantId === player.participantId) === index)
     .sort((left, right) => right.netChips - left.netChips || left.seatNumber - right.seatNumber)
     .map(({ seatNumber: _seatNumber, ...player }) => player);
 
@@ -355,6 +377,89 @@ export function finalizeSession(state: RoomState, now: number): RoomState {
       deadlineAt: null,
       nextRunoutStep: null,
       handResult: null
+    }
+  };
+}
+
+export function kickParticipant(state: RoomState, participantId: string, now = 0): RoomState {
+  const seat = state.seats.find((candidate) => candidate.participantId === participantId);
+  if (!seat || state.removedParticipants[participantId]) {
+    throw new Error("PARTICIPANT_NOT_FOUND: participant is not in the room");
+  }
+
+  let progressed = state;
+  const canRewriteActiveHand =
+    state.hand !== null &&
+    !state.hand.finished &&
+    (state.flow.phase === "betting" || state.flow.phase === "insurance-pending");
+  if (canRewriteActiveHand) {
+    const target = state.hand!.betting.players.find((player) => player.id === participantId);
+    if (target && !target.folded) {
+      const betting = {
+        ...state.hand!.betting,
+        players: state.hand!.betting.players.map((player) =>
+          player.id === participantId ? { ...player, folded: true } : { ...player }
+        )
+      };
+      const hand = {
+        ...state.hand!,
+        betting,
+        insuranceOffer: state.hand!.insuranceOffer?.status === "pending" && state.hand!.insuranceOffer.offeredTo === participantId
+          ? { ...state.hand!.insuranceOffer, status: "declined" as const }
+          : state.hand!.insuranceOffer,
+        actions: [...state.hand!.actions, { playerId: participantId, type: "fold" as const, street: state.hand!.street }]
+      };
+      progressed = finishHandIfReady({
+        ...state,
+        status: state.status === "paused" ? "playing" : state.status,
+        flow: state.flow.phase === "insurance-pending"
+          ? { ...state.flow, phase: "betting", deadlineAt: null }
+          : state.flow,
+        seats: state.seats.map((candidate) =>
+          candidate.participantId === participantId ? { ...candidate, chips: target.stack, status: "folded" } : candidate
+        ),
+        hand
+      }, now);
+
+      if (progressed.hand && !progressed.hand.finished && progressed.hand.actorId === participantId) {
+        const actorId = nextActorId(progressed.seats, participantId, progressed.hand.betting);
+        if (actorId) {
+          progressed = {
+            ...progressed,
+            hand: { ...progressed.hand, actorId, betting: { ...progressed.hand.betting, actorId } }
+          };
+        }
+      }
+    }
+  }
+
+  const finalSeat = progressed.seats.find((candidate) => candidate.participantId === participantId) ?? seat;
+  const pendingTopUps = { ...progressed.pendingTopUps };
+  delete pendingTopUps[participantId];
+  return {
+    ...progressed,
+    seats: progressed.seats.map((candidate) =>
+      candidate.participantId === participantId
+        ? {
+            seatNumber: candidate.seatNumber,
+            participantId: null,
+            displayName: null,
+            chips: 0,
+            cumulativeBuyIn: 0,
+            status: "empty" as const
+          }
+        : candidate
+    ),
+    pendingTopUps,
+    removedParticipants: {
+      ...progressed.removedParticipants,
+      [participantId]: {
+        participantId,
+        displayName: seat.displayName ?? participantId,
+        initialChips: state.settings.initialChips,
+        cumulativeBuyIn: seat.cumulativeBuyIn,
+        finalChips: finalSeat.chips
+      }
     }
   };
 }

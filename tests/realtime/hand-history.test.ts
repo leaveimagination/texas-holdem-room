@@ -218,6 +218,7 @@ function finishedRoom(): RoomState {
     endAfterCurrentHand: false,
     sessionEndedAt: null,
     sessionSummary: null,
+    removedParticipants: {},
     seats: [
       { seatNumber: 1, participantId: "p1", displayName: "Ada", chips: 1030, status: "active", cumulativeBuyIn: 1000 },
       { seatNumber: 2, participantId: "p2", displayName: "Linus", chips: 980, status: "folded", cumulativeBuyIn: 1000 }

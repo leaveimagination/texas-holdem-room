@@ -77,6 +77,7 @@ describe("LiveRoomStore", () => {
     delete legacy.endAfterCurrentHand;
     delete legacy.sessionEndedAt;
     delete legacy.sessionSummary;
+    delete legacy.removedParticipants;
     delete legacyHand.startingChipsByParticipantId;
     memoryStore.values.set("room:legacy-active", JSON.stringify(legacy));
 
@@ -87,6 +88,7 @@ describe("LiveRoomStore", () => {
       endAfterCurrentHand: false,
       sessionEndedAt: null,
       sessionSummary: null,
+      removedParticipants: {},
       flow: {
         phase: "betting",
         sequence: 0,

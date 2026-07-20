@@ -36,6 +36,13 @@ const PendingTopUpSchema = z.object({
   amount: z.number().int().positive(),
   requestCount: z.number().int().positive()
 });
+const RemovedParticipantLedgerSchema = z.object({
+  participantId: z.string(),
+  displayName: z.string(),
+  initialChips: z.number().int().nonnegative(),
+  cumulativeBuyIn: z.number().int().nonnegative(),
+  finalChips: z.number().int().nonnegative()
+});
 const PotAwardSchema = z.object({
   potIndex: z.number().int().nonnegative(),
   amount: z.number().int().nonnegative(),
@@ -131,7 +138,8 @@ const RoomStateSchema = z
     pendingTopUps: z.record(z.string(), PendingTopUpSchema),
     endAfterCurrentHand: z.boolean(),
     sessionEndedAt: z.number().int().nonnegative().nullable(),
-    sessionSummary: z.array(SessionPlayerResultSchema).nullable()
+    sessionSummary: z.array(SessionPlayerResultSchema).nullable(),
+    removedParticipants: z.record(z.string(), RemovedParticipantLedgerSchema)
   })
   .strict();
 const PersistedRoomStateSchema = RoomStateSchema.extend({
@@ -140,7 +148,8 @@ const PersistedRoomStateSchema = RoomStateSchema.extend({
   pendingTopUps: z.record(z.string(), PendingTopUpSchema).optional(),
   endAfterCurrentHand: z.boolean().optional(),
   sessionEndedAt: z.number().int().nonnegative().nullable().optional(),
-  sessionSummary: z.array(SessionPlayerResultSchema).nullable().optional()
+  sessionSummary: z.array(SessionPlayerResultSchema).nullable().optional(),
+  removedParticipants: z.record(z.string(), RemovedParticipantLedgerSchema).optional()
 });
 
 export class LiveRoomStore {
@@ -212,7 +221,8 @@ function normalizePersistedRoom(input: z.infer<typeof PersistedRoomStateSchema>)
     pendingTopUps: input.pendingTopUps ?? {},
     endAfterCurrentHand: input.endAfterCurrentHand ?? false,
     sessionEndedAt: input.sessionEndedAt ?? null,
-    sessionSummary: input.sessionSummary ?? null
+    sessionSummary: input.sessionSummary ?? null,
+    removedParticipants: input.removedParticipants ?? {}
   };
 }
 

@@ -388,6 +388,7 @@ function createTurnAllInInsuranceState(): RoomState {
     endAfterCurrentHand: false,
     sessionEndedAt: null,
     sessionSummary: null,
+    removedParticipants: {},
     seats: [
       { seatNumber: 1, participantId: "p1", displayName: "Aces", chips: 0, cumulativeBuyIn: 1000, status: "all-in" },
       { seatNumber: 2, participantId: "p2", displayName: "Kings", chips: 0, cumulativeBuyIn: 1000, status: "all-in" }

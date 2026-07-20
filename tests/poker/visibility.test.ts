@@ -28,6 +28,7 @@ const state: RoomState = {
   endAfterCurrentHand: false,
   sessionEndedAt: null,
   sessionSummary: null,
+  removedParticipants: {},
   seats: [
     {
       seatNumber: 1,
