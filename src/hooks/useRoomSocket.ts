@@ -44,6 +44,9 @@ export function useRoomSocket(roomId: string) {
 
       try {
         const parsed = JSON.parse(String(event.data)) as ServerMessage;
+        if (parsed.type === "error") {
+          setError(parsed.payload.message);
+        }
         setMessages((previous) => [...previous, parsed]);
       } catch {
         setError("Received an unreadable table update");

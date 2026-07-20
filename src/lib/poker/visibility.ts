@@ -33,6 +33,7 @@ export interface ParticipantRoomView {
   sessionSummary: SessionPlayerResult[] | null;
   seats: Array<{
     seatNumber: number;
+    participantId: string | null;
     displayName: string | null;
     chips: number;
     status: string;
@@ -103,6 +104,7 @@ export function toParticipantView(state: RoomState, viewer: Viewer): Participant
     sessionSummary: state.flow.phase === "session-summary" ? state.sessionSummary : null,
     seats: state.seats.map((seat) => ({
       seatNumber: seat.seatNumber,
+      participantId: seat.participantId,
       displayName: seat.displayName,
       chips: seat.chips,
       status: seat.status,

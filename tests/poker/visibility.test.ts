@@ -76,6 +76,14 @@ const state: RoomState = {
 };
 
 describe("visibility", () => {
+  it("includes occupied participant ids before a hand so hosts can moderate at any time", () => {
+    const waiting = { ...state, hand: null };
+
+    const view = toParticipantView(waiting, { participantId: null, role: "spectator", host: true });
+
+    expect(view.seats.map((seat) => seat.participantId)).toEqual(["p1", "p2"]);
+  });
+
   it("shows a player only their own hole cards", () => {
     const view = toParticipantView(state, { participantId: "p1", role: "player", host: false });
 
