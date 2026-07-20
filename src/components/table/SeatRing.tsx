@@ -22,7 +22,11 @@ export function SeatRing({
   localDisplayName,
   bigBlind,
   canClaimSeat = false,
-  onClaimSeat
+  onClaimSeat,
+  hostControls = false,
+  connected = true,
+  pendingKickParticipantId,
+  onRequestKick
 }: {
   view: unknown;
   localParticipantId?: string | null;
@@ -30,6 +34,10 @@ export function SeatRing({
   bigBlind?: number | null;
   canClaimSeat?: boolean;
   onClaimSeat?: (seatNumber: number) => void;
+  hostControls?: boolean;
+  connected?: boolean;
+  pendingKickParticipantId?: string | null;
+  onRequestKick?: (target: { participantId: string; displayName: string }) => void;
 }) {
   const seats = readSeats(view);
   const displaySeats = arrangeSeatsForViewer(seats.length > 0 ? seats : emptySeats(9), localParticipantId, localDisplayName);
@@ -59,11 +67,12 @@ export function SeatRing({
           </span>
         ) : null;
 
+        const canKick = Boolean(hostControls && seat.occupied && seat.participantId && !local);
         return (
+          <React.Fragment key={seat.seatNumber}>
           <button
             type="button"
             className={seatClassName}
-            key={seat.seatNumber}
             onClick={() => {
               if (!seat.occupied && canClaimSeat) {
                 onClaimSeat?.(seat.seatNumber);
@@ -149,6 +158,21 @@ export function SeatRing({
           )}
           {seat.isActing ? <span className="seat-timer" aria-hidden="true" /> : null}
         </button>
+        {canKick ? (
+          <button
+            type="button"
+            className={`seat-kick-button seat-kick-slot-${slot}`}
+            aria-label={`Kick ${seat.displayName ?? "player"}`}
+            disabled={!connected || pendingKickParticipantId === seat.participantId}
+            onClick={() => onRequestKick?.({
+              participantId: seat.participantId!,
+              displayName: seat.displayName ?? "Player"
+            })}
+          >
+            {pendingKickParticipantId === seat.participantId ? "Removing..." : "Kick"}
+          </button>
+        ) : null}
+        </React.Fragment>
         );
       })}
     </div>

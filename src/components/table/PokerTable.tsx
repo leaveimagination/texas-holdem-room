@@ -23,7 +23,9 @@ export function PokerTable({
   onPlayerAction,
   onInsuranceDecision,
   onRebuy,
-  onHandleDisconnect
+  onHandleDisconnect,
+  pendingKickParticipantId,
+  onKickPlayer
 }: {
   view: unknown;
   legalActions?: unknown;
@@ -39,7 +41,15 @@ export function PokerTable({
   onInsuranceDecision?: InsuranceDecision;
   onRebuy?: (amount: number) => void;
   onHandleDisconnect?: (participantId: string) => void;
+  pendingKickParticipantId?: string | null;
+  onKickPlayer?: (participantId: string, displayName: string) => void;
 }) {
+  const [kickTarget, setKickTarget] = React.useState<{ participantId: string; displayName: string } | null>(null);
+  React.useEffect(() => {
+    if (kickTarget && !viewContainsParticipant(view, kickTarget.participantId)) {
+      setKickTarget(null);
+    }
+  }, [kickTarget, view]);
   const board = readBoard(view);
   const pot = readPot(view);
   const street = readStreet(view);
@@ -101,6 +111,10 @@ export function PokerTable({
           bigBlind={settings.bigBlind}
           canClaimSeat={playerControls && connected}
           onClaimSeat={onClaimSeat}
+          hostControls={showHostControls}
+          connected={connected}
+          pendingKickParticipantId={pendingKickParticipantId}
+          onRequestKick={setKickTarget}
         />
 
         <div className="table-center">
@@ -168,7 +182,46 @@ export function PokerTable({
       />
       <HandResultPanel view={view} />
       <SessionResultPanel view={view} />
+      {kickTarget ? (
+        <KickPlayerDialog
+          target={kickTarget}
+          pending={pendingKickParticipantId === kickTarget.participantId}
+          connected={connected}
+          onCancel={() => setKickTarget(null)}
+          onConfirm={() => onKickPlayer?.(kickTarget.participantId, kickTarget.displayName)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+export function KickPlayerDialog({
+  target,
+  pending,
+  connected,
+  onCancel,
+  onConfirm
+}: {
+  target: { participantId: string; displayName: string };
+  pending: boolean;
+  connected: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="kick-dialog-backdrop">
+      <section className="kick-dialog" role="alertdialog" aria-modal="true" aria-label={`Kick ${target.displayName}`}>
+        <span className="eyebrow">Host action</span>
+        <h3>Remove {target.displayName} from this room?</h3>
+        <p>Their current hand will fold immediately. Chips already in the pot will not be returned.</p>
+        <div className="kick-dialog-actions">
+          <button type="button" onClick={onCancel} disabled={pending}>Cancel</button>
+          <button type="button" className="is-danger-action" onClick={onConfirm} disabled={!connected || pending}>
+            {pending ? "Removing..." : "Kick player"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -689,4 +742,9 @@ function readHostControls(view: unknown): boolean {
 
 function readObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
+}
+
+function viewContainsParticipant(view: unknown, participantId: string): boolean {
+  const seats = readObject(view)?.seats;
+  return Array.isArray(seats) && seats.some((candidate) => readObject(candidate)?.participantId === participantId);
 }

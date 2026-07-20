@@ -296,6 +296,9 @@ async function handleClientCommand(
     }
     case "kick_player": {
       requireHost(session);
+      if (session.participantId === message.participantId) {
+        throw new RealtimeCommandError("INVALID_MESSAGE", "The host cannot remove their own player identity");
+      }
       const targetSeat = room.seats.find((seat) => seat.participantId === message.participantId);
       if (!targetSeat) {
         throw new RealtimeCommandError("PARTICIPANT_NOT_FOUND", "Participant is not in the room");

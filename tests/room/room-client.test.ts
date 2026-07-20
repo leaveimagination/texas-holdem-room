@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { JoinRoomForm } from "@/components/room/JoinRoomForm";
-import { RoomClient, TableEventToast, createEndRoomMessage, readVisibleParticipantId } from "@/app/room/[roomId]/RoomClient";
+import { RoomClient, TableEventToast, clearKickedParticipantCredentials, createEndRoomMessage, createKickPlayerMessage, readVisibleParticipantId } from "@/app/room/[roomId]/RoomClient";
 
 describe("RoomClient", () => {
   it("shows the join flow as a modal over the table", () => {
@@ -28,6 +28,13 @@ describe("RoomClient", () => {
     expect(html).toContain("table-event-toast");
     expect(html).toContain("Player 1 queued 500 chips");
     expect(html).toContain("800 pending for hand 3");
+  });
+
+  it("surfaces the room-wide host removal notice", () => {
+    const html = renderToStaticMarkup(createElement(TableEventToast, {
+      messages: [{ type: "system_message", payload: { message: "Guest was removed by the host" } }]
+    }));
+    expect(html).toContain("Guest was removed by the host");
   });
 
   it("renders an in-room invite button that shares the player link without host credentials", () => {
@@ -59,6 +66,21 @@ describe("RoomClient", () => {
     expect(source).not.toContain("visibleHandResult");
     expect(source).not.toContain("attachHandResult");
     expect(createEndRoomMessage("r1", "host-secret")).toEqual({ type: "end_room", roomId: "r1", hostToken: "host-secret" });
+  });
+
+  it("builds the strict host kick command and clears kicked credentials", () => {
+    expect(createKickPlayerMessage("r1", "host-secret", "p2")).toEqual({
+      type: "kick_player", roomId: "r1", hostToken: "host-secret", participantId: "p2"
+    });
+    const values = new Map([
+      ["holdem:r1:participantToken", "player-secret"],
+      ["holdem:r1:participantId", "p2"],
+      ["unrelated", "keep"]
+    ]);
+    clearKickedParticipantCredentials("r1", { removeItem: (key: string) => { values.delete(key); } });
+    expect(values.has("holdem:r1:participantToken")).toBe(false);
+    expect(values.has("holdem:r1:participantId")).toBe(false);
+    expect(values.get("unrelated")).toBe("keep");
   });
 
   it("keeps join controls disabled until the realtime connection is ready", () => {

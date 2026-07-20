@@ -4,6 +4,23 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SeatRing } from "@/components/table/SeatRing";
 
 describe("SeatRing", () => {
+  it("shows host kick actions only for occupied non-local seats", () => {
+    const html = renderToStaticMarkup(createElement(SeatRing, {
+      hostControls: true,
+      localParticipantId: "p1",
+      view: {
+        seats: [
+          { seatNumber: 1, participantId: "p1", displayName: "Host", chips: 1000, status: "seated", occupied: true },
+          { seatNumber: 2, participantId: "p2", displayName: "Guest", chips: 1000, status: "seated", occupied: true },
+          { seatNumber: 3, participantId: null, displayName: null, chips: 0, status: "empty", occupied: false }
+        ],
+        hand: null
+      }
+    }));
+    expect(html).toContain('aria-label="Kick Guest"');
+    expect(html).not.toContain('aria-label="Kick Host"');
+    expect(html.match(/seat-kick-button/g)).toHaveLength(1);
+  });
   it("renders visible hole cards for the viewer seat", () => {
     const html = renderToStaticMarkup(
       createElement(SeatRing, {

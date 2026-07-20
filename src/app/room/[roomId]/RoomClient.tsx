@@ -14,6 +14,9 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [participantId, setParticipantId] = useState<string | null>(null);
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [hostToken, setHostToken] = useState<string | null>(null);
+  const [kicked, setKicked] = useState<{ participantId: string; displayName: string } | null>(null);
+  const [pendingKickParticipantId, setPendingKickParticipantId] = useState<string | null>(null);
+  const [kickRequestMessageCount, setKickRequestMessageCount] = useState<number | null>(null);
   const roomView = findLatestPayload(messages, ["room_snapshot", "table_update"]);
   const legalActions = findLatestPayload(messages, ["legal_actions"]);
 
@@ -34,6 +37,38 @@ export function RoomClient({ roomId }: { roomId: string }) {
       window.localStorage.setItem(`holdem:${roomId}:participantId`, visibleParticipantId);
     }
   }, [participantId, roomId, roomView]);
+
+  useEffect(() => {
+    const event = findLatestKickedEvent(messages, participantId);
+    if (!event || kicked?.participantId === event.participantId) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      clearKickedParticipantCredentials(roomId, window.localStorage);
+    }
+    setHasParticipantToken(false);
+    setParticipantId(null);
+    setHasJoinedRoom(false);
+    setKicked(event);
+  }, [kicked?.participantId, messages, participantId, roomId]);
+
+  useEffect(() => {
+    if (pendingKickParticipantId && !viewHasParticipant(roomView, pendingKickParticipantId)) {
+      setPendingKickParticipantId(null);
+      setKickRequestMessageCount(null);
+    }
+  }, [pendingKickParticipantId, roomView]);
+
+  useEffect(() => {
+    if (
+      pendingKickParticipantId &&
+      kickRequestMessageCount !== null &&
+      messages.slice(kickRequestMessageCount).some((message) => message.type === "error")
+    ) {
+      setPendingKickParticipantId(null);
+      setKickRequestMessageCount(null);
+    }
+  }, [kickRequestMessageCount, messages, pendingKickParticipantId]);
 
   function joinRoom(displayName: string, participantToken: string | null, joinedParticipantId?: string | null) {
     if (!connected) {
@@ -131,6 +166,28 @@ export function RoomClient({ roomId }: { roomId: string }) {
     send({ type: "handle_disconnect", roomId, hostToken, participantId, handling: "pause" });
   }
 
+  function kickPlayer(targetParticipantId: string) {
+    if (!connected || !hostToken || pendingKickParticipantId) {
+      return;
+    }
+    setPendingKickParticipantId(targetParticipantId);
+    setKickRequestMessageCount(messages.length);
+    send(createKickPlayerMessage(roomId, hostToken, targetParticipantId));
+  }
+
+  if (kicked) {
+    return (
+      <main className="room-page kicked-room-page">
+        <section className="kicked-panel" role="alert">
+          <p className="eyebrow">Removed from room</p>
+          <h1>You were removed from the room by the host</h1>
+          <p>Your previous room credential is no longer valid.</p>
+          <a href={`/room/${encodeURIComponent(roomId)}`}>Rejoin room</a>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className={hasJoinedRoom ? "room-page game-room-page is-joined" : "room-page game-room-page"}>
       <header className="room-header">
@@ -170,6 +227,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
         onInsuranceDecision={sendInsuranceDecision}
         onRebuy={rebuy}
         onHandleDisconnect={handleDisconnect}
+        pendingKickParticipantId={pendingKickParticipantId}
+        onKickPlayer={kickPlayer}
       />
       <TableEventToast messages={messages} />
     </main>
@@ -245,8 +304,10 @@ function findLatestTableEvent(messages: ServerMessage[]): string | null {
       return "Room finished";
     }
 
-    if (message.type === "system_message" && /\badded \d+ chips\b/i.test(message.payload.message)) {
-      return message.payload.message;
+    if (message.type === "system_message") {
+      if (/\badded \d+ chips\b/i.test(message.payload.message) || /was removed by the host$/i.test(message.payload.message)) {
+        return message.payload.message;
+      }
     }
   }
 
@@ -308,6 +369,41 @@ export function createEndRoomMessage(
   hostToken: string
 ): Extract<ClientMessage, { type: "end_room" }> {
   return { type: "end_room", roomId, hostToken };
+}
+
+export function createKickPlayerMessage(
+  roomId: string,
+  hostToken: string,
+  participantId: string
+): Extract<ClientMessage, { type: "kick_player" }> {
+  return { type: "kick_player", roomId, hostToken, participantId };
+}
+
+export function clearKickedParticipantCredentials(
+  roomId: string,
+  storage: Pick<Storage, "removeItem">
+): void {
+  storage.removeItem(`holdem:${roomId}:participantToken`);
+  storage.removeItem(`holdem:${roomId}:participantId`);
+}
+
+function findLatestKickedEvent(
+  messages: ServerMessage[],
+  participantId: string | null
+): { participantId: string; displayName: string } | null {
+  if (!participantId) return null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.type === "player_kicked" && message.payload.participantId === participantId) {
+      return message.payload;
+    }
+  }
+  return null;
+}
+
+function viewHasParticipant(view: unknown, participantId: string): boolean {
+  const seats = readObject(view)?.seats;
+  return Array.isArray(seats) && seats.some((candidate) => readObject(candidate)?.participantId === participantId);
 }
 
 function getParticipantToken(roomId: string): string | null {

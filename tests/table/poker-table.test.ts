@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PokerTable } from "@/components/table/PokerTable";
+import { KickPlayerDialog, PokerTable } from "@/components/table/PokerTable";
 
 describe("PokerTable", () => {
+  it("renders an accessible destructive kick confirmation", () => {
+    const html = renderToStaticMarkup(createElement(KickPlayerDialog, {
+      target: { participantId: "p2", displayName: "Guest" },
+      pending: false,
+      connected: true,
+      onCancel: () => undefined,
+      onConfirm: () => undefined
+    }));
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain("Remove Guest from this room?");
+    expect(html).toContain("Kick player");
+    expect(html).toContain("Cancel");
+  });
   it("frames the table like a fullscreen poker client with BB pot units", () => {
     const html = renderToStaticMarkup(
       createElement(PokerTable, {

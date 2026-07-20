@@ -24,6 +24,90 @@
   --card-deal-stagger: 160ms;
 }
 
+.seat-kick-button {
+  position: absolute;
+  z-index: 28;
+  transform: translate(-50%, 46px);
+  min-width: 54px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 115, 115, 0.55);
+  border-radius: 999px;
+  color: #ffd6d6;
+  background: rgba(74, 12, 18, 0.94);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.seat-kick-slot-1 { left: 50%; top: 3%; }
+.seat-kick-slot-2 { left: 78%; top: 14%; }
+.seat-kick-slot-3 { left: 91%; top: 43%; }
+.seat-kick-slot-4 { left: 78%; top: 74%; }
+.seat-kick-slot-5 { left: 50%; top: 86%; }
+.seat-kick-slot-6 { left: 22%; top: 74%; }
+.seat-kick-slot-7 { left: 9%; top: 43%; }
+.seat-kick-slot-8 { left: 22%; top: 14%; }
+.seat-kick-slot-9 { left: 50%; top: 18%; }
+
+.kick-dialog-backdrop,
+.kicked-room-page {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 8, 13, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+.kick-dialog,
+.kicked-panel {
+  width: min(440px, 100%);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  color: #f7f7f4;
+  background: #14191f;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.5);
+}
+
+.kick-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.kick-dialog-actions button,
+.kicked-panel a {
+  padding: 10px 16px;
+  border-radius: 12px;
+}
+
+.kick-dialog-actions .is-danger-action {
+  color: white;
+  background: #a9222c;
+}
+
+.kicked-panel a {
+  display: inline-block;
+  margin-top: 12px;
+  color: #07120e;
+  background: #a8f0ce;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .seat-kick-button {
+    transform: translate(-50%, 38px);
+    min-width: 48px;
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+}
+
 /* Authoritative room-flow overlays and persistent cash-table utilities. */
 .poker-client-shell .top-up-utility {
   position: fixed;

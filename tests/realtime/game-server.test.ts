@@ -472,6 +472,25 @@ describe("createGameServer", () => {
     expect((await liveRooms.getRoom(roomId))?.seats.some((seat) => seat.participantId === "p1")).toBe(true);
   });
 
+  it("does not let a playing host kick their own participant identity", async () => {
+    const liveRooms = new LiveRoomStore(new MemoryStore());
+    await liveRooms.saveRoom(createReadyHeadsUpRoomState());
+    const kickParticipant = vi.fn().mockResolvedValue(true);
+    const { url } = await startTestServer(liveRooms, validAuth, {
+      recordHand: vi.fn(), recordBuyIn: vi.fn(), recordTopUp: vi.fn(), finishRoom: vi.fn(), kickParticipant
+    });
+    const socket = connect(url);
+    await waitForOpen(socket);
+    const joined = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "join_room", roomId, participantToken: "p1-token", displayName: "P1" }));
+    await joined;
+
+    const rejected = nextMessage(socket);
+    socket.send(JSON.stringify({ type: "kick_player", roomId, hostToken: "host-token", participantId: "p1" }));
+    await expect(rejected).resolves.toMatchObject({ type: "error", payload: { code: "INVALID_MESSAGE" } });
+    expect(kickParticipant).not.toHaveBeenCalled();
+  });
+
   it("automatically starts the next hand after a busted player rebuys", async () => {
     const liveRooms = new LiveRoomStore(new MemoryStore());
     await liveRooms.saveRoom(createFinishedHeadsUpRoomWithBustedPlayer());
