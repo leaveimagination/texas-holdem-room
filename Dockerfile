@@ -4,7 +4,8 @@ ARG ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
 RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories \
     && apk add --no-cache libc6-compat openssl
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    PRISMA_ENGINES_MIRROR=https://npmmirror.com/mirrors/prisma
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./

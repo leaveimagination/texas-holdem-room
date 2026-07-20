@@ -30,6 +30,10 @@ writeFileSync(
 afterAll(() => rmSync(tempRoot, { recursive: true, force: true }));
 
 describe("production Docker deployment", () => {
+  test("uses the reachable Prisma engine mirror during image generation", () => {
+    const dockerfile = readFileSync(join(process.cwd(), "Dockerfile"), "utf8");
+    expect(dockerfile).toContain("PRISMA_ENGINES_MIRROR=https://npmmirror.com/mirrors/prisma");
+  });
   test("uses a multi-stage non-root application image with build and migration gates", () => {
     const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
 
