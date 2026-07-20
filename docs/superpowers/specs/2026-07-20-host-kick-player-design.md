@@ -96,7 +96,17 @@ type PlayerKickedEvent = {
 interface RoomParticipant {
   kickedAt: Date | null;
 }
+
+interface RemovedParticipantLedger {
+  participantId: string;
+  displayName: string;
+  initialChips: number;
+  cumulativeBuyIn: number;
+  finalChips: number;
+}
 ```
+
+`RoomState.removedParticipants` is a record keyed by participant ID. Kicking snapshots the target's displayed name, initial chips, cumulative buy-in, and uncommitted final stack before vacating the seat. It is server state, not an occupied seat and not a reconnect permission. `finalizeSession` merges this ledger with occupied seats so the final session summary still includes every removed player exactly once. The live-room schema accepts missing `removedParticipants` as `{}` for backward compatibility with currently stored production rooms.
 
 `RoomRepository.kickParticipant(roomId, participantId, kickedAt): Promise<boolean>` performs an exact scoped update where `roomId`, `id`, and `kickedAt: null` all match; it returns `true` only for the first revocation. `verifyParticipantToken` includes `kickedAt: null` in its lookup. No participant row or historical child row is deleted.
 
@@ -118,6 +128,7 @@ interface RoomParticipant {
 | Persistence failure | Durable revocation throws | No live-room save, eviction, snapshot, or notice |
 | Refresh with old token | Kicked client reconnects | `INVALID_PARTICIPANT_TOKEN`; table is not restored |
 | Rejoin | Person submits ordinary join form | A new participant ID/token can enter normally |
+| Final room summary | One player was kicked earlier | Summary includes that participant once with `finalChips` captured at removal and correct net chips |
 
 ## Boundaries
 
