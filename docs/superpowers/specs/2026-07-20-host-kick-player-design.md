@@ -1,5 +1,7 @@
 # Host Kick Player Design
 
+This approved document is the implementation source of truth. If code discovery exposes a contradiction, update and review this document before coding through it.
+
 ## Goal
 
 Allow the authenticated room host to remove any participant at any time. Removal is authoritative, immediate, visible to the room, safe during an active hand, and enforced across reconnects. The completed feature must be deployed to the production Docker site and verified through its public URL.
@@ -64,3 +66,84 @@ Browser acceptance uses separate host and player contexts against the real WebSo
 ## Out of scope
 
 - Ban lists, IP/device bans, timed suspensions, moderation notes, undo, and deleting historical results.
+
+## Project map and contracts
+
+| Area | Owned files |
+|---|---|
+| Pure poker transition | `src/lib/poker/engine.ts`, `tests/poker/host-kick.test.ts` |
+| Wire protocol | `src/lib/realtime/messages.ts`, `tests/realtime/messages.test.ts` |
+| Durable revocation | `prisma/schema.prisma`, `prisma/migrations/20260720130000_add_participant_kicked_at/migration.sql`, `src/server/repositories/room-repository.ts`, `tests/server/room-repository.test.ts` |
+| Session eviction and command orchestration | `src/server/realtime/session-registry.ts`, `src/server/realtime/game-server.ts`, `tests/realtime/game-server.test.ts` |
+| Client and table UI | `src/app/room/[roomId]/RoomClient.tsx`, `src/components/table/PokerTable.tsx`, `src/components/table/SeatRing.tsx`, `src/styles/globals.css`, component tests |
+| Browser acceptance | `tests/e2e/host-kick.spec.ts` |
+
+Canonical contracts:
+
+```ts
+type KickPlayerCommand = {
+  type: "kick_player";
+  roomId: string;
+  hostToken: string;
+  participantId: string;
+};
+
+type PlayerKickedEvent = {
+  type: "player_kicked";
+  payload: { participantId: string; displayName: string };
+};
+
+interface RoomParticipant {
+  kickedAt: Date | null;
+}
+```
+
+`RoomRepository.kickParticipant(roomId, participantId, kickedAt): Promise<boolean>` performs an exact scoped update where `roomId`, `id`, and `kickedAt: null` all match; it returns `true` only for the first revocation. `verifyParticipantToken` includes `kickedAt: null` in its lookup. No participant row or historical child row is deleted.
+
+`SessionRegistry.evictParticipant(roomId, participantId, event): number` sends the event, clears room/participant/host identity on every matching session, and returns the number evicted. The socket may remain open to show the kicked screen and allow an explicit new join, but it receives no later room broadcasts.
+
+## Conformance matrix
+
+| Case | Setup and action | Required result |
+|---|---|---|
+| Forged host | Non-host sends `kick_player` | `INVALID_HOST_TOKEN`; state, database, sessions unchanged |
+| Lobby target | Occupied player, no hand | Seat becomes empty, pending top-up removed, token revoked, target evicted |
+| Acting target | Target owns action | Forced fold, committed chips retained, actor advances or hand settles, seat vacated |
+| Non-acting target | Another player owns action | Target folds, current actor remains if still eligible, seat vacated |
+| All-in target before presentation | Unfinished betting/insurance | Target marked folded and ineligible for pot; existing commitment remains |
+| Insurance target | Target owns pending offer | Decline insurance, then forced fold/removal; flow advances without pausing |
+| Presentation target | Showdown/runout/summary already authoritative | Current outcome unchanged; target removed from future hands and room |
+| Duplicate kick | Two serialized commands target same participant | First succeeds; second returns `PARTICIPANT_NOT_FOUND` with no second notice |
+| Stale queued command | Target command executes after kick | Participant auth fails; no state mutation |
+| Persistence failure | Durable revocation throws | No live-room save, eviction, snapshot, or notice |
+| Refresh with old token | Kicked client reconnects | `INVALID_PARTICIPANT_TOKEN`; table is not restored |
+| Rejoin | Person submits ordinary join form | A new participant ID/token can enter normally |
+
+## Boundaries
+
+| Tier | Rules |
+|---|---|
+| Always | Validate host first; serialize per room; persist revocation and room state before broadcast; preserve committed chips/history; add regression tests; verify desktop/mobile and public production URL. |
+| Ask first | Add a dependency; introduce bans beyond one credential; delete/rebuild Docker volumes; change the public port or production host. |
+| Never | Trust a client-supplied participant identity without host authentication; leak tokens; delete historical rows; let revoked tokens authenticate; claim completion from localhost-only evidence. |
+
+## Commands and delivery gates
+
+- Setup: `npm install`
+- Focused tests: `npx vitest run tests/poker/host-kick.test.ts tests/realtime/messages.test.ts tests/server/room-repository.test.ts tests/realtime/game-server.test.ts tests/table/seat-ring.test.ts tests/room/room-client.test.ts`
+- Static verification: `npm run typecheck && npm run build`
+- Full regression: `npm test`
+- Browser acceptance: `npx playwright test tests/e2e/host-kick.spec.ts`
+- Deployment: run `C:\Users\admin\.codex\skills\deploying-texas-holdem-production\scripts\deploy.ps1` from the committed worktree.
+- Production proof: health and page HTTP 200 plus two-browser-context host kick through the public URL `http://120.27.143.111:32768`.
+
+No implementation is complete until focused tests, typecheck, build, full regression, browser acceptance, deployment, and public production verification all pass. Any discovered defect must first be reproduced by a failing test.
+
+## Decision log and maintenance
+
+- 2026-07-20: User approved immediate forced fold during an unfinished hand; committed chips are not refunded.
+- 2026-07-20: Presentation outcomes already made authoritative are not rewritten.
+- 2026-07-20: Revocation is per participant credential, not a person/device ban; normal rejoin creates a new identity.
+- 2026-07-20: Historical data is retained through nullable `kickedAt` rather than row deletion.
+
+There are no open product questions. Protocol, migration, or state-transition changes require updating this spec and its conformance matrix in the same commit.
