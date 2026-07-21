@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: texas-holdem-friends-room:latest
+    image: ${APP_IMAGE:-texas-holdem-friends-room:latest}
     build:
       context: .
       dockerfile: Dockerfile

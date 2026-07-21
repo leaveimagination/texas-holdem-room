@@ -124,6 +124,11 @@ describe("production Docker deployment", () => {
     expect(config.volumes).toHaveProperty("redis-data");
   });
 
+  test("allows the deploy gate to run an exact candidate image before production switches", () => {
+    const compose = readFileSync(join(root, "docker-compose.prod.yml"), "utf8");
+    expect(compose).toContain("image: ${APP_IMAGE:-texas-holdem-friends-room:latest}");
+  });
+
   test("renders an isolated loopback-only experience stack with run ownership labels", () => {
     const rendered = execFileSync(
       "docker",
