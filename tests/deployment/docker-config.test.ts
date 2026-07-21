@@ -46,6 +46,8 @@ describe("production Docker deployment", () => {
     expect(dockerfile).toContain("npx --no-install prisma generate");
     expect(dockerfile).toContain("npm run build");
     expect(dockerfile).toContain("USER node");
+    expect(dockerfile).toContain("ENV TMPDIR=/app/.tmp");
+    expect(dockerfile).toMatch(/mkdir -p \/app\/\.tmp.*chown node:node \/app\/\.tmp/);
     expect(dockerfile).toContain("npx --no-install prisma migrate deploy");
     expect(dockerfile).toContain("npm run start");
     expect(dockerfile).toContain("/api/health");

@@ -26,6 +26,8 @@ COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/prisma ./prisma
 COPY --from=build --chown=node:node /app/src ./src
 COPY --from=build --chown=node:node /app/next.config.mjs /app/tsconfig.json /app/next-env.d.ts ./
+RUN mkdir -p /app/.tmp && chown node:node /app/.tmp
+ENV TMPDIR=/app/.tmp
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=12 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
